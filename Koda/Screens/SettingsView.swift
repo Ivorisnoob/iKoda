@@ -137,7 +137,7 @@ struct SettingsView: View {
                 } header: {
                     Text("About")
                 } footer: {
-                    Text("Koda is an unofficial client and is not affiliated with YouTube or Google. Lyrics come from YouLyPlus, BetterLyrics and LRCLIB.")
+                    Text("Koda is an unofficial client and is not affiliated with YouTube or Google. Lyrics come from YouLyPlus, BetterLyrics and LRCLIB. App icon by sameerasw (github.com/sameerasw).")
                 }
             }
             .navigationTitle("Settings")

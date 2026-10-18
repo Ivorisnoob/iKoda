@@ -138,6 +138,8 @@ Found a bug or want something? Open an [issue](https://github.com/Ivorisnoob/Kod
 
 Lyrics come from [LRCLIB](https://lrclib.net), YouLyPlus and BetterLyrics.
 
+The app icon is by [sameerasw](https://github.com/sameerasw).
+
 ---
 
 Koda is an unofficial client and is not affiliated with YouTube or Google.

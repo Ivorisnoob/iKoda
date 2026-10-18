@@ -628,7 +628,7 @@ private struct MacBackupPane: View {
 
 private struct MacAboutPane: View {
     var body: some View {
-        MacSettingsGroup(footer: "Koda is an unofficial client and isn't affiliated with YouTube or Google. Lyrics come from YouLyPlus, BetterLyrics and LRCLIB.") {
+        MacSettingsGroup(footer: "Koda is an unofficial client and isn't affiliated with YouTube or Google. Lyrics come from YouLyPlus, BetterLyrics and LRCLIB. App icon by sameerasw (github.com/sameerasw).") {
             MacSettingsRow(title: "Version") {
                 Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
                     .foregroundStyle(.secondary)

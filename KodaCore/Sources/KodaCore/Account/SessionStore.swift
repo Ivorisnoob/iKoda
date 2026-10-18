@@ -2,6 +2,8 @@ import Foundation
 import Security
 
 /// The YouTube session cookie string in the Keychain, readable on this device
+
+/// The YouTube session cookie string in the Keychain, readable on this device
 /// only and never synced. Where the Keychain refuses (an unsigned Mac build
 /// has no access group), a file only this user can read stands in, so an
 /// account still works rather than failing to open. Same arrangement as the

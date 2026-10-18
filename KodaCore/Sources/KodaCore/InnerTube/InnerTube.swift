@@ -42,8 +42,7 @@ struct InnerTube: Sendable {
         // personalised (home, history, the liked songs), and a public browse
         // id answers the same shape either way. Stream resolution stays
         // anonymous on purpose — the stream clients refuse the account.
-        var authentication: [String: String]?
-        if let account { authentication = await account.requestHeaders(for: "https://music.youtube.com") }
+        let authentication = account?.requestHeaders(for: "https://music.youtube.com")
         for (field, value) in authentication ?? [:] {
             request.setValue(value, forHTTPHeaderField: field)
         }
@@ -60,7 +59,7 @@ struct InnerTube: Sendable {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw MusicError.badResponse(status) }
         if let account, let http = response as? HTTPURLResponse {
-            await account.note(response: http, body: data, sentCookies: authentication != nil)
+            account.note(response: http, body: data, sentCookies: authentication != nil)
         }
         guard let json = try? JSON(data: data), !json["error"].exists else { throw MusicError.network }
         return json

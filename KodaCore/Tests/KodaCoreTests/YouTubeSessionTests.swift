@@ -119,59 +119,89 @@ private let sampleSession = [
 
 @Suite struct AccountStoreTests {
     private func makeStore() -> AccountStore {
-        // A uniq service per store: several stores share one process, and a
+        // A unique service per store: several stores share one process, and a
         // shared Keychain entry would hand one test what another wrote.
         AccountStore(
             directory: FileManager.default.temporaryDirectory.appending(path: "koda-tests-\(UUID().uuidString)"),
             service: "ivors.Koda.test.\(UUID().uuidString)")
     }
 
-    @Test func startsSignedOut() async {
+    @Test func startsSignedOut() {
         let store = makeStore()
-        #expect(await store.isLoggedIn == false)
-        #expect(await store.isExpired == false)
-        #expect(await store.requestHeaders(for: "https://music.youtube.com") == nil)
+        #expect(store.isLoggedIn == false)
+        #expect(store.isExpired == false)
+        #expect(store.requestHeaders(for: "https://music.youtube.com") == nil)
     }
 
-    @Test func rejectsAndAcceptsAString() async {
+    @Test func rejectsAndAcceptsAString() {
         let store = makeStore()
-        #expect(await store.addCookies("SID=x") == ["SAPISID"])
-        #expect(await store.isLoggedIn == false)
+        #expect(store.addCookies("SID=x") == ["SAPISID"])
+        #expect(store.isLoggedIn == false)
         let raw = "Cookie: " + YouTubeCookies.normalize(sampleSession)
-        #expect(await store.addCookies(raw) == [])
-        #expect(await store.isLoggedIn == true)
-        let headers = await store.requestHeaders(for: "https://music.youtube.com")
+        #expect(store.addCookies(raw) == [])
+        #expect(store.isLoggedIn == true)
+        let headers = store.requestHeaders(for: "https://music.youtube.com")
         #expect(headers?["Cookie"] == sampleSession)
         #expect(headers?["X-Goog-AuthUser"] == "0")
         #expect(headers?["Authorization"]?.hasPrefix("SAPISIDHASH ") == true)
     }
 
-    @Test func aSignOutClearsEverything() async {
+    @Test func aSignOutClearsEverything() {
         let store = makeStore()
-        #expect(await store.addCookies(sampleSession) == [])
-        await store.clearSession()
-        #expect(await store.isLoggedIn == false)
-        #expect(await store.requestHeaders(for: "https://music.youtube.com") == nil)
+        #expect(store.addCookies(sampleSession) == [])
+        store.clearSession()
+        #expect(store.isLoggedIn == false)
+        #expect(store.requestHeaders(for: "https://music.youtube.com") == nil)
     }
 
-    @Test func expiredIsReconnectNotSignedOut() async {
+    @Test func expiredIsReconnectNotSignedOut() {
         let store = makeStore()
-        #expect(await store.addCookies(sampleSession) == [])
-        let body = #"{"trackingParams":[{"key":"logged_in","value":"0"}]}"#.data(using: .utf8)!
-        await store.note(response: HTTPURLResponse(), body: body, sentCookies: true)
-        #expect(await store.isExpired == true)
+        #expect(store.addCookies(sampleSession) == [])
+        let body = #"{"trackingParams":[{"key":"logged_in","value":"0"}],"responseContext":{"mainAppWebResponseContext":{"datasyncId":"tag "}}}"#.data(using: .utf8)!
+        store.note(response: HTTPURLResponse(), body: body, sentCookies: true)
+        #expect(store.isExpired == true)
+        #expect(store.datasyncId == "tag ")
         // The session keeps signing while expired: reconnect, not signed out.
-        #expect(await store.requestHeaders(for: "https://music.youtube.com")?["Cookie"] != nil)
+        #expect(store.requestHeaders(for: "https://music.youtube.com")?["Cookie"] != nil)
         let fresh = #"{"trackingParams":[{"key":"logged_in","value":"1"}]}"#.data(using: .utf8)!
-        await store.note(response: HTTPURLResponse(), body: fresh, sentCookies: true)
-        #expect(await store.isExpired == false)
+        store.note(response: HTTPURLResponse(), body: fresh, sentCookies: true)
+        #expect(store.isExpired == false)
     }
 
-    @Test func anonymousResponsesDoNothing() async {
+    @Test func anonymousResponsesDoNothing() {
         let store = makeStore()
-        #expect(await store.addCookies(sampleSession) == [])
+        #expect(store.addCookies(sampleSession) == [])
         let body = #"{"trackingParams":[{"key":"logged_in","value":"0"}]}"#.data(using: .utf8)!
-        await store.note(response: HTTPURLResponse(), body: body, sentCookies: false)
-        #expect(await store.isExpired == false)
+        store.note(response: HTTPURLResponse(), body: body, sentCookies: false)
+        #expect(store.isExpired == false)
+    }
+
+    @Test func anIdleVerdictAnnouncesNothing() {
+        let store = makeStore()
+        #expect(store.addCookies(sampleSession) == [])
+        var announced = 0
+        store.observeState { announced += 1 }
+        for _ in 0..<3 {
+            let body = #"{"trackingParams":[{"key":"logged_in","value":"1"}]}"#.data(using: .utf8)!
+            store.note(response: HTTPURLResponse(), body: body, sentCookies: true)
+        }
+        // The same verdict, an id seen before, no rotation: nothing the UI
+        // would want to redraw over.
+        #expect(announced == 0)
+    }
+
+    @Test func aRotationIsNotANewLogin() {
+        let store = makeStore()
+        #expect(store.addCookies(sampleSession) == [])
+        // One Set-Cookie header, as the response would carry it.
+        let response = HTTPURLResponse(url: URL(string: "https://music.youtube.com/youtubei/v1/browse")!,
+                                       statusCode: 200, httpVersion: nil,
+                                       headerFields: ["Set-Cookie": "__Secure-1PSIDTS=sidts-C000-fresh; Path=/; Secure"])
+        store.note(response: response!, body: #"{"responseContext":{"mainAppWebResponseContext":{"loggedOut":false}}}"#.data(using: .utf8)!, sentCookies: true)
+        let headers = store.requestHeaders(for: "https://music.youtube.com")
+        #expect(YouTubeCookies.value("__Secure-1PSIDTS", in: headers?["Cookie"] ?? "") == "sidts-C000-fresh")
+        // Every other name survives untouched.
+        #expect(YouTubeCookies.value("SID", in: headers?["Cookie"] ?? "") == "g.a000abcdefgh")
+        #expect(store.isExpired == false)
     }
 }

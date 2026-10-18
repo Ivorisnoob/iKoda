@@ -1,4 +1,5 @@
 import CryptoKit
+import Foundation
 
 /// The `Authorization` header of every authenticated InnerTube call.
 ///

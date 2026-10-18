@@ -15,6 +15,10 @@ public enum MusicError: Error, Sendable, Equatable {
 struct InnerTube: Sendable {
     let session: URLSession
     let identity: VisitorIdentity
+    /// The signed-in account, or nil signed out. Held as an actor reference so
+    /// a sign-in and a sign-out change what every future call sends without
+    /// the client being rebuilt.
+    let account: AccountStore?
 
     func music(_ endpoint: String, _ payload: [String: Any]) async throws -> JSON {
         var visitor = await identity.cached
@@ -34,6 +38,15 @@ struct InnerTube: Sendable {
         request.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(Clients.webRemixVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
         if let visitor { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
+        // Account headers ride every music call that can: signed-in reads are
+        // personalised (home, history, the liked songs), and a public browse
+        // id answers the same shape either way. Stream resolution stays
+        // anonymous on purpose — the stream clients refuse the account.
+        var authentication: [String: String]?
+        if let account { authentication = await account.requestHeaders(for: "https://music.youtube.com") }
+        for (field, value) in authentication ?? [:] {
+            request.setValue(value, forHTTPHeaderField: field)
+        }
 
         let (data, response): (Data, URLResponse)
         do {
@@ -46,6 +59,9 @@ struct InnerTube: Sendable {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw MusicError.badResponse(status) }
+        if let account, let http = response as? HTTPURLResponse {
+            await account.note(response: http, body: data, sentCookies: authentication != nil)
+        }
         guard let json = try? JSON(data: data), !json["error"].exists else { throw MusicError.network }
         return json
     }
@@ -57,14 +73,14 @@ public final class YouTubeMusic: Sendable {
     let streams: StreamResolver
     private let pages = PageCache()
 
-    public init(defaultsSuite: String? = nil) {
+    public init(account: AccountStore? = nil, defaultsSuite: String? = nil) {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
         config.httpMaximumConnectionsPerHost = 6
         config.urlCache = nil
         let session = URLSession(configuration: config)
         let identity = VisitorIdentity(session: session, suite: defaultsSuite)
-        api = InnerTube(session: session, identity: identity)
+        api = InnerTube(session: session, identity: identity, account: account)
         streams = StreamResolver(session: session, identity: identity)
     }
 

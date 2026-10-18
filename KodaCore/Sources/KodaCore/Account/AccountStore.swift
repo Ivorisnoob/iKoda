@@ -81,6 +81,14 @@ public final class AccountStore: Sendable {
         state.withLock { $0.datasyncId }
     }
 
+    /// Whether a cookie string holds a session complete enough to sign in
+    /// with: a SAPISID to sign requests with, and the SID session itself.
+    /// The login capture checks this before offering the sign-in. A stricter
+    /// bar here would reject pasted sessions that actually work.
+    public func isComplete(_ raw: String) -> Bool {
+        YouTubeCookies.missing(YouTubeCookies.normalize(raw)).isEmpty
+    }
+
     /// Sign out: forget the cookie session. What YouTube keeps on its servers
     /// stays there; locally nothing is left to sign with.
     public func clearSession() {
@@ -204,12 +212,12 @@ struct SessionVerdict: Equatable {
     /// it. HTTP 200 proves nothing: anonymous browse answers 200 too.
     init(from body: Data) {
         // Tolerant of the pretty-printed spacing so it matches either form.
-        // NSRegularExpression rather than the Swift Regex API: a string
-        // pattern must stay a string pattern, with no ambiguity to resolve
-        // per litography of the overload set.
+        // NSRegularExpression rather than the Swift Regex API: with a string
+        // pattern the overload set resolves differently per toolchain, and
+        // collection building wants nothing more to resolve.
         if let text = body.textContent,
-           let match = trackingParam.firstMatch(
-               in: text, options: [], range: NSRange(0, in: text.utf16)),
+           let match = Self.trackingParam.firstMatch(
+               in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)),
            let value = Range(match.range(at: 1), in: text).map({ text[$0] }) {
             isLoggedIn = value == "1"
             return

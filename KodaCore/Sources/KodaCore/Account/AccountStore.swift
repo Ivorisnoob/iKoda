@@ -204,9 +204,14 @@ struct SessionVerdict: Equatable {
     /// it. HTTP 200 proves nothing: anonymous browse answers 200 too.
     init(from body: Data) {
         // Tolerant of the pretty-printed spacing so it matches either form.
-        let pattern = "\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\""
-        if let text = body.textContent, let match = try? text.firstMatch(of: pattern) {
-            isLoggedIn = match.1 == "1"
+        // NSRegularExpression rather than the Swift Regex API: a string
+        // pattern must stay a string pattern, with no ambiguity to resolve
+        // per litography of the overload set.
+        if let text = body.textContent,
+           let match = trackingParam.firstMatch(
+               in: text, options: [], range: NSRange(0, in: text.utf16)),
+           let value = Range(match.range(at: 1), in: text).map({ text[$0] }) {
+            isLoggedIn = value == "1"
             return
         }
         if let json = try? JSON(data: body) {
@@ -216,6 +221,13 @@ struct SessionVerdict: Equatable {
         }
         isLoggedIn = nil
     }
+
+    /// Every signed-in response answers `logged_in` in its tracking params:
+    /// `{"key":"logged_in","value":"1"}` decoded inside the body.
+    /// Every signed-in response answers `logged_in` in its tracking params:
+    /// `{"key":"logged_in","value":"1"}` decoded inside the body.
+    private static let trackingParam = try! NSRegularExpression(
+        pattern: "\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"")
 }
 
 extension Data {

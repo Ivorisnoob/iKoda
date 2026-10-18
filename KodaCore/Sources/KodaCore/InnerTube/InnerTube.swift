@@ -235,6 +235,16 @@ public final class YouTubeMusic: Sendable {
         return Pages.queue(try await api.music("next", payload)).songs
     }
 
+    // MARK: Account
+
+    /// Who the signed-in account is. Nil signed out — the endpoint answers
+    /// empty — or when the answer carries no account header. Signing in
+    /// happens outside KodaCore, in the app's login sheet.
+    public func accountIdentity() async throws -> YouTubeAccountIdentity? {
+        let root = try await api.music("account/account_menu", [:])
+        return YouTubeAccountIdentity.parse(root)
+    }
+
     // MARK: Streams
 
     public func stream(for videoId: String) async throws -> ResolvedStream {

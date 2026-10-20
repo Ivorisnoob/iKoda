@@ -1,36 +1,65 @@
+import KodaCore
 import SwiftUI
 import UIKit
 
-/// Who the listener is on this phone: a name and a photo, nothing that leaves it.
+/// The listener's profile: the active one in the roster, and the picture it
+/// wears.
+///
+/// The roster lives in `ProfileManager`; this is the app's view of it, and
+/// the one place a picture is read and written.
 @MainActor
 @Observable
 final class Profile {
-    var name: String {
-        didSet { UserDefaults.standard.set(name, forKey: "koda.profile.name") }
-    }
-    private(set) var avatar: UIImage?
+    let manager: ProfileManager
+    private let directory: URL
+    /// The photos the listener chose, by profile.
+    private var photos: [UUID: UIImage] = [:]
 
-    private let avatarFile: URL
-
-    init(directory: URL) {
-        name = UserDefaults.standard.string(forKey: "koda.profile.name") ?? ""
-        avatarFile = directory.appending(path: "avatar.jpg")
-        avatar = (try? Data(contentsOf: avatarFile)).flatMap(UIImage.init(data:))
+    init(manager: ProfileManager, directory: URL) {
+        self.manager = manager
+        self.directory = directory
     }
 
-    var displayName: String { name.trimmingCharacters(in: .whitespaces).isEmpty ? "Listener" : name }
+    /// The active profile.
+    var profile: KodaProfile { manager.active }
+    /// The name shown for the active profile.
+    var name: String { profile.displayName }
+    /// The initials for a placeholder avatar.
+    var initials: String { profile.initials }
+    /// The photo the active profile wears, if it has one.
+    var photo: UIImage? { photos[profile.id] }
 
-    /// Initials for the placeholder avatar.
-    var initials: String {
-        let words = displayName.split(separator: " ").prefix(2)
-        return words.compactMap(\.first).map(String.init).joined().uppercased()
+    /// Read the pictures again, after a switch or a change.
+    func reload() {
+        photos[profile.id] = loadPhoto(profile)
+    }
+
+    /// The photo a profile wears, if it has one.
+    func photo(for profile: KodaProfile) -> UIImage? {
+        if let image = photos[profile.id] { return image }
+        let image = loadPhoto(profile)
+        photos[profile.id] = image
+        return image
+    }
+
+    /// Rename the active profile.
+    func setName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        manager.rename(profile.id, to: trimmed)
+        if profile.kind == .local { manager.setLocalName(trimmed) }
+    }
+
+    /// Give the active profile a drawn avatar.
+    func setDrawnAvatar(_ avatar: KodaAvatar) {
+        manager.setAvatar(profile.id, avatar: avatar)
     }
 
     /// Store a photo, shrunk to a square 512 pixels wide.
-    func setAvatar(_ data: Data?) {
+    func setPhoto(_ data: Data?) {
         guard let data, let image = UIImage(data: data) else {
-            avatar = nil
-            try? FileManager.default.removeItem(at: avatarFile)
+            photos[profile.id] = nil
+            manager.setPhoto(profile.id, photo: nil)
+            try? FileManager.default.removeItem(at: photoURL(profile.id))
             return
         }
         let side = min(image.size.width, image.size.height)
@@ -40,32 +69,72 @@ final class Profile {
         let target = CGSize(width: 512, height: 512)
         let squared = UIGraphicsImageRenderer(size: target, format: format).image { _ in
             let scale = target.width / side
-            image.draw(in: CGRect(x: -crop.minX * scale, y: -crop.minY * scale, width: image.size.width * scale, height: image.size.height * scale))
+            image.draw(in: CGRect(x: -crop.minX * scale, y: -crop.minY * scale,
+                                  width: image.size.width * scale, height: image.size.height * scale))
         }
-        avatar = squared
-        try? squared.jpegData(compressionQuality: 0.85)?.write(to: avatarFile, options: .atomic)
+        photos[profile.id] = squared
+        try? squared.jpegData(compressionQuality: 0.85)?.write(to: photoURL(profile.id), options: .atomic)
+        manager.setPhoto(profile.id, photo: photoURL(profile.id).lastPathComponent)
+    }
+
+    private func photoURL(_ id: UUID) -> URL {
+        directory.appending(path: "avatar-\(id.uuidString).jpg")
+    }
+
+    private func loadPhoto(_ profile: KodaProfile) -> UIImage? {
+        if let name = profile.photo, let image = UIImage(contentsOfFile: directory.appending(path: name).path) {
+            return image
+        }
+        // The picture this install had before it had profiles belongs to the
+        // profile on this device.
+        if profile.kind == .local, let image = UIImage(contentsOfFile: directory.appending(path: "avatar.jpg").path) {
+            return image
+        }
+        return nil
     }
 }
 
-/// The listener's photo, or their initials on a gradient.
+/// The listener's picture: the photo they chose, the drawn avatar they picked,
+/// YouTube's own picture for an account, or the drawn one their id works out
+/// to.
 struct AvatarView: View {
     @Environment(AppModel.self) private var app
     var size: CGFloat
 
     var body: some View {
-        ZStack {
-            if let avatar = app.profile.avatar {
-                Image(uiImage: avatar).resizable().scaledToFill()
+        ProfileAvatar(profile: app.profile.profile, photo: app.profile.photo, size: size)
+    }
+}
+
+/// A profile's picture, whatever it is made of.
+struct ProfileAvatar: View {
+    let profile: KodaProfile
+    let photo: UIImage?
+    var size: CGFloat
+
+    var body: some View {
+        Group {
+            if let photo {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
+            } else if let avatar = profile.avatar {
+                KodaAvatarView(avatar: avatar, size: size)
+            } else if let url = profile.avatarURL.flatMap(URL.init(string:)) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    KodaAvatarView(avatar: profile.effectiveAvatar, size: size)
+                }
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
             } else {
-                LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(app.profile.initials)
-                    .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                KodaAvatarView(avatar: profile.effectiveAvatar, size: size)
             }
         }
         .frame(width: size, height: size)
-        .clipShape(.circle)
-        .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
         .accessibilityHidden(true)
     }
 }

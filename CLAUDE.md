@@ -16,10 +16,15 @@ A YouTube Music client in SwiftUI: an iPhone app plus a Mac Catalyst app (Mac id
 ```
 KodaCore/            Swift package: everything below the UI (has tests)
   InnerTube/         YouTubeMusic API (InnerTube.swift), PageCache (10-min in-memory page cache), StreamResolver, VisitorIdentity
-  Parsing/           JSON → models (Pages.swift, Rows.swift); Rows.isVideo detects music videos
+  Account/           YouTube sign-in: AccountStore (the cookie session in the Keychain, rotations, the logged_in verdict),
+                     SessionStore (Keychain + file fallback), YouTubeCookies (merge/parse), SAPISIDHash (per-origin), AccountIdentity
+  Profiles/          the roster: KodaProfile (a profile on this device, or a YouTube account), ProfileManager (roster + active profile),
+                     KodaAvatar (the drawn avatars: six indices, deterministic per id)
+  Parsing/           JSON → models (Pages.swift, Rows.swift); Rows.isVideo detects music videos;
+                     AccountPages (an account's Home, its liked songs, its playlists)
   Models/            Song, Artwork, *Summary, Shelf, MusicItem, Mood (all Codable), YouTubeLink
   Playback/          Player (AVPlayer, queue, remote commands, persistence), PlayQueue, CachingLoader
-  Library/           Library (liked, recent, stats, user playlists → library.json), Taste (mix seeds),
+  Library/           Library (liked, recent, stats, user playlists → one file per profile), Taste (mix seeds),
                      AndroidBackup (reads Koda for Android's backup zip; Library.importAndroid merges it)
   Storage/           AudioStore (song cache + downloads; completeSongs = Ready Offline), Downloads, ZipReader
   Lyrics/, LastFM/   lyrics sources + parsing; Last.fm scrobbling
@@ -27,11 +32,14 @@ KodaCore/            Swift package: everything below the UI (has tests)
 Koda/                the app target
   App/               KodaApp (+ .appEnvironment), AppModel (long-lived objects), AppSettings (UserDefaults prefs),
                      Route (every pushable page), RootView (iPhone tabs), MacShell (Platform.isMac, MacPlayerBar, menu bar KodaCommands),
-                     Snapshot (on-disk JSON of pages for cold launch)
+                     Snapshot (on-disk JSON of pages for cold launch), AccountModel (the session, the sync, switching profiles)
   Screens/           iPhone screens (+ Mac bodies of shared ones): Home (HomeModel), Search (SearchModel), Album, Artist, Playlist, Settings…
-  Mac/               Mac-only: MacRootView (sidebar, sections, Up Next glance), MacHomeView, MacBrowseSearch, MacComponents, MacSettingsView
+                     AccountSettingsView (the YouTube Music account), ProfileSwitcherView (the roster), YouTubeSignInView (WebKit sign-in)
+  Mac/               Mac-only: MacRootView (sidebar, sections, Up Next glance), MacHomeView, MacBrowseSearch, MacComponents, MacSettingsView,
+                     MacYouTubeView (the account's library on the Mac)
   Player/            NowPlayingView (+ TransportControls), MiniPlayer (PlayPauseButton), QueuePanel, lyrics views, SleepTimer
-  Components/        SongRow, Cards, ShelfView, Loading (LoadState, AsyncContent, placeholders), SongActions (SongMenuItems)
+  Components/        SongRow, Cards, ShelfView, Loading (LoadState, AsyncContent, placeholders), SongActions (SongMenuItems),
+                     KodaAvatarView (the drawn avatars, drawn in SwiftUI)
   Images/            ArtworkView, ImagePipeline (downsampled, memory + 300 MB URLCache on disk), Palette
   Intents/           KodaIntents (App Intents + App Shortcuts + Spotlight, iPhone and Mac),
                      SiriSchemas (iOS 27 audio schemas for the new Siri; only built with the iOS 27 SDK, never Catalyst)
@@ -44,12 +52,18 @@ Koda-Info.plist      extra Info.plist keys: URL scheme koda://, background audio
 
 ## How things work
 
-- **Environment:** `AppModel` owns `Player`, `Library`, `Downloads`, `LastFM`, `settings`. Views read them with `@Environment(X.self)`. Anything *presented* (sheet, cover, popover) must add `.appEnvironment(model)` or it crashes on Catalyst.
+- **Environment:** `AppModel` owns `Player`, `Library`, `Downloads`, `LastFM`, `settings`, `profiles` (the roster) and `account` (the session). Views read them with `@Environment(X.self)`. Anything *presented* (sheet, cover, popover) must add `.appEnvironment(model)` or it crashes on Catalyst.
+- **Profiles:** the roster (`KodaCore/Profiles`) always holds a profile *on this device*; YouTube accounts join it as profiles of their own. Everything a listener builds up — likes, history, stats, searches, saved albums and playlists, their own playlists — belongs to the profile that made it: `Library` keeps one file per profile (`profile-<uuid>.json`) and is re-pointed on a switch. Switching is one write and needs no network: the session is already on the device (`AccountStore` holds one session per profile, in the Keychain, under the profile's id).
+  - **Nothing leaks between profiles.** Every async answer is bound to the profile it was asked for: `AccountModel.generation` moves on every switch, sign-in and sign-out, and `sync`, `signIn` and `HomeModel.load` compare it before writing anything. A late answer is dropped, never written into the profile that is active now. [The Android app had this bug: a response for the previous account landed in the new one.]
+  - Signing in from a profile on this device **copies** that profile's library into the new one, so nothing is taken away (`Library.copyLibrary`). An account already in the roster is repaired, not duplicated (YouTube's own `datasyncId` recognises it).
+  - A profile's name and photo are the listener's own on a device profile; an account's are YouTube's, and there is nothing to edit.
+- **YouTube sign-in:** WebKit, because YouTube Music gives a third-party client no sign-in API — `WEB_REMIX` stopped accepting OAuth and `ASWebAuthenticationSession` cannot hand back session cookies. `YouTubeSignInView` shows Google's own page in a `WKWebView` and reads the session out of `WKHTTPCookieStore` as it is written (`WKHTTPCookieStoreObserver`), so there is no polling and no pasting. Only `youtube.com` cookies are taken: the page sits on `accounts.google.com` mid-sign-in, whose jar also carries a SAPISID, and taking that one signs in as "logged in but anonymous".
+- **The session:** a cookie string, not a token. Every authenticated InnerTube call signs it with a per-origin `SAPISIDHASH` (`AccountStore.requestHeaders`), and Google's rotated `__Secure-*PSIDTS` values are folded back into the store from each response's `Set-Cookie` (redirect hops included). A rotation is *not* a new sign-in: never compare cookie strings to ask whether the session is still the one that started. The only verdict on a session is `logged_in` in the response's tracking params — HTTP 200 proves nothing. Stream resolution stays anonymous on purpose: the stream clients refuse the account.
 - **Settings:** add a property to `AppSettings` with a `didSet` that writes UserDefaults (`koda.*` keys), read it in `init`, then show it in both `Screens/SettingsView.swift` (iPhone Form) and `Mac/MacSettingsView.swift` (pane, `MacSettingsGroup`/`MacSettingsToggle`/`MacSettingsRow`). Player-owned prefs (autoplay, normalize, cache while streaming, volume) live on `Player`.
 - **Navigation:** push with `NavigationLink(value: Route.…)`; from outside a stack use `model.open(route)`. The Mac keeps one path per sidebar section (`paths[MacSection]`); Now Playing on the Mac is `Route.nowPlaying` pushed with the zoom transition.
 - **Mac toolbar:** never hide/remove the toolbar or sidebar toggle at runtime; change what the detail column shows instead (see `docs/mac.md`).
 - **Loading:** pages use `LoadState` and draw their own layout redacted from a placeholder while loading (`.loadingPlaceholder()`).
-- **Cold launch:** `HomeModel` restores its last `Snapshot` ("home") in `init` and refreshes in place when `needsRefresh`; Search's mood tiles restore from "moods". To make another page open from cache, give it a Codable state and use `Snapshot.load/save` the same way.
+- **Cold launch:** `HomeModel` restores its last `Snapshot` ("home") when it loads and refreshes in place when `needsRefresh`; the snapshot names the profile it belongs to, so another profile's Home is never shown. Search's mood tiles restore from "moods". To make another page open from cache, give it a Codable state and use `Snapshot.load/save` the same way.
 - **Artwork:** always `ArtworkView` (square crop; YouTube video thumbnails are letterboxed 4:3 and are scaled to hide the bars). Images that fill a frame go in an `.overlay` of a fixed shape so their own size never drives layout.
 - **Skip buttons:** `AppSettings.showsSkipButtons` / `skipInterval` (5/10/15/30 s, `gobackward.N`/`goforward.N` symbols) → `Player.skip(by:)`. Shown in `TransportControls` (Now Playing) and `MacPlayerBar`; ⌥⌘←/→ in the Controls menu. Lock-screen skip commands stay off so next/previous remain there.
 - **Sidebar foot (Mac):** `MacSidebarGlance` shows the next song and today's listening, attached with `safeAreaBar` so the list gets the system scroll-edge effect under it.
@@ -78,7 +92,7 @@ Work happens on two machines. Check which one you're on before building anything
 
 - **Windows 11, no Mac, no iOS simulator.** Nothing in `Koda/` can be compiled or run here; CI is the only build.
 - **WSL Ubuntu 24.04** lives on `E:\WSL\Ubuntu` (distro `Ubuntu-24.04`, use `-u root`). It has Swift 6.4.1 (swiftly: `. /root/.local/share/swiftly/env.sh`), `xtool`, `usbmuxd` and libimobiledevice.
-  - xtool can't build the app yet: it needs Apple's iOS SDK from an `Xcode.xip` that the person downloads with their Apple ID into `E:\Xcode\`. When that file exists, run `xtool sdk install` on it and add an xtool package setup next to the Xcode project, leaving the project and CI as they are.
+  - xtool can't build the app yet: it needs Apple's iOS SDK from an `Xcode.xip` that the person downloads with their Apple ID into `E:\Xcode\`. When that file exists, run `xtool sdk install /mnt/e/Xcode/Xcode.xip` in WSL and add an xtool package setup next to the Xcode project, leaving the project and CI as they are. The SDK is what lets the app's own files be type-checked here; the Mac Catalyst build still needs CI.
   - Even with xtool, install through AltStore, not `xtool install`: signing with the same free Apple ID can revoke AltStore's certificate (it happened once).
 - **Quick Linux type-check of KodaCore** before pushing core changes (catches compile errors in seconds rather than a CI round trip). Copy the portable files into a throwaway package in WSL and `swift build`: `Models/Models.swift JSON/JSON.swift Library/*.swift Lyrics/Lyrics.swift Playback/PlayQueue.swift`. Files using AVFoundation, MediaPlayer, URLSession networking, XMLParser or NSDataDetector don't build on Linux; that is expected, not an error.
 - **Shells are fragile here; write files with the file tools.** Git Bash heredocs break on Swift source (quotes, `\(…)` interpolation, backslashes): a heredoc fed to `python -` or `cat` failed with "unexpected EOF while looking for matching `''". PowerShell has its own traps (backtick escapes, `$` expansion, here-string closers that must sit at column 0, different quoting for native commands). So create and change files with Write and Edit; if a script must transform a file, write the script to `.scratchpad/` with Write and run it by path. Keep shell commands short and single-purpose: git, gh, grep, running a script.

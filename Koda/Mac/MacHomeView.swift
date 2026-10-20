@@ -38,10 +38,13 @@ struct MacHomeView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .animation(.smooth, value: model.state.value == nil)
         .navigationTitle("Home")
-        .task {
+        .task(id: app.account.generation) {
             // Loaded already: shown as it was. Last launch's snapshot, or a Home half an hour
-            // old, refreshes quietly in place.
-            if model.needsRefresh { await load() }
+            // old, refreshes quietly in place. The account is part of the id: signing in or
+            // out makes it a different Home.
+            if model.needsRefresh || model.accountGeneration != app.account.generation {
+                await load()
+            }
         }
     }
 
@@ -109,6 +112,13 @@ struct MacHomeView: View {
                 ForEach(content.charts) { MacItemCard(item: .playlist($0)) }
             }
         }
+        // The signed-in account's own shelves: "Listen again", "Albums for you"
+        // and the rest, as YouTube Music draws them for that account.
+        if content.isPersonalized {
+            ForEach(content.shelves.prefix(6)) { shelf in
+                MacItemShelf(shelf: shelf)
+            }
+        }
     }
 
     /// Your Mix and Quick picks side by side; stacked when the window is too narrow for both.
@@ -153,7 +163,7 @@ struct MacHomeView: View {
     }
 
     private func load() async {
-        await model.load(music: app.music, library: library)
+        await model.load(music: app.music, library: library, account: app.account, personalized: app.settings.personalizedHome)
     }
 
     private var greeting: String {

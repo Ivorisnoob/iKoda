@@ -23,6 +23,8 @@ enum Route: Hashable {
         case liked, recent, downloaded
         /// Every song held whole on the device: downloads and songs kept from listening.
         case offline
+        /// The songs the signed-in YouTube account liked, as of the last sync.
+        case accountLiked
     }
 
     init?(_ item: MusicItem) {

@@ -5,13 +5,14 @@ import UniformTypeIdentifiers
 
 /// A part of the Mac's Settings window.
 enum MacSettingsPane: String, CaseIterable, Identifiable {
-    case profile, playback, lyrics, appearance, lastFM, discord, privacy, storage, backup, about
+    case profile, youtube, playback, lyrics, appearance, lastFM, discord, privacy, storage, backup, about
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .profile: "Profile"
+        case .youtube: "YouTube Music"
         case .playback: "Playback"
         case .lyrics: "Lyrics"
         case .appearance: "Appearance"
@@ -27,6 +28,7 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .profile: "person.crop.circle.fill"
+        case .youtube: "play.rectangle.fill"
         case .playback: "play.fill"
         case .lyrics: "quote.bubble.fill"
         case .appearance: "circle.lefthalf.filled"
@@ -42,6 +44,7 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .profile: .accentColor
+        case .youtube: .red
         case .playback: .indigo
         case .lyrics: .purple
         case .appearance: .blue
@@ -100,6 +103,7 @@ struct MacSettingsView: View {
     private var content: some View {
         switch pane {
         case .profile: MacProfilePane()
+        case .youtube: MacYouTubePane()
         case .playback: MacPlaybackPane()
         case .lyrics: MacLyricsPane()
         case .appearance: MacAppearancePane()
@@ -236,39 +240,182 @@ private func byteText(_ bytes: Int64?) -> String {
 
 // MARK: - Panes
 
+/// The profiles on this Mac: who the app is being, and who else it could be.
 private struct MacProfilePane: View {
     @Environment(AppModel.self) private var app
     @State private var photo: PhotosPickerItem?
+    @State private var showsSignIn = false
 
     var body: some View {
-        @Bindable var profile = app.profile
-        MacSettingsGroup(footer: "Shown in the sidebar and on the playlists you make. It stays on this Mac.") {
-            HStack(spacing: 14) {
-                AvatarView(size: 56)
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("Your name", text: $profile.name)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 260)
-                    HStack(spacing: 8) {
-                        PhotosPicker("Choose Photo…", selection: $photo, matching: .images)
-                        if profile.avatar != nil {
-                            Button("Remove Photo") { profile.setAvatar(nil) }
-                        }
-                    }
-                    .controlSize(.small)
+        Group {
+            MacSettingsGroup(title: "Profiles",
+                             footer: "Each profile keeps its own liked songs, history and playlists. Switching is instant and works without a connection.") {
+                ForEach(app.account.roster) { profile in
+                    profileRow(profile)
                 }
-                Spacer()
             }
-            .padding(12)
+            if app.profile.profile.kind == .local {
+                MacSettingsGroup(title: "Your Profile", footer: "Your name and photo are shown on the profile and on the playlists it makes. They stay on this Mac.") {
+                    MacSettingsRow(title: "Name") {
+                        TextField("Your name", text: Binding(
+                            get: { app.profile.name },
+                            set: { app.profile.setName($0) }))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                    }
+                    MacSettingsRow(title: "Photo") {
+                        HStack(spacing: 8) {
+                            PhotosPicker("Choose Photo…", selection: $photo, matching: .images)
+                            if app.profile.photo != nil {
+                                Button("Remove Photo") { app.profile.setPhoto(nil) }
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+            MacSettingsGroup {
+                MacSettingsRow(title: "Add YouTube Account", detail: "Sign in with a Google account to bring its liked songs and playlists with you.") {
+                    Button("Add…") { showsSignIn = true }
+                }
+                MacSettingsRow(title: "Add On-Device Profile", detail: "A profile with no account behind it.") {
+                    Button("Add…") { app.switchProfile(to: app.profiles.addLocal().id) }
+                }
+            }
         }
         .onChange(of: photo) { _, item in
             guard let item else { return }
             Task {
                 let data = try? await item.loadTransferable(type: Data.self)
-                app.profile.setAvatar(data)
+                app.profile.setPhoto(data)
                 photo = nil
             }
         }
+        .sheet(isPresented: $showsSignIn) {
+            YouTubeSignInView { header in
+                Task { await app.account.signIn(cookieHeader: header) }
+            }
+        }
+    }
+
+    /// One profile in the roster: its picture, its name, and whether it is
+    /// the one in use.
+    private func profileRow(_ profile: KodaProfile) -> some View {
+        HStack(spacing: 12) {
+            ProfileAvatar(profile: profile, photo: app.profile.photo(for: profile), size: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(profile.displayName)
+                    .font(.system(size: 13, weight: profile.id == app.profiles.activeID ? .semibold : .regular))
+                    .lineLimit(1)
+                Text(detail(for: profile))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            if profile.id == app.profiles.activeID {
+                Label("In use", systemImage: "checkmark")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tint)
+            } else {
+                Button("Use") { app.switchProfile(to: profile.id) }
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(minHeight: 38)
+    }
+
+    private func detail(for profile: KodaProfile) -> String {
+        if app.account.needsSignIn.contains(profile.id) { return "Needs signing in" }
+        return profile.subtitle
+    }
+}
+
+/// The YouTube Music account of the active profile: who is signed in, what
+/// Koda has read from it, and the way in and out.
+private struct MacYouTubePane: View {
+    @Environment(AppModel.self) private var app
+    @Environment(Library.self) private var library
+    @State private var showsSignIn = false
+    @State private var confirmsSignOut = false
+
+    var body: some View {
+        Group {
+            if app.account.profile.kind == .youtube {
+                signedIn
+            } else {
+                signedOut
+            }
+        }
+        .sheet(isPresented: $showsSignIn) {
+            YouTubeSignInView { header in
+                Task { await app.account.signIn(cookieHeader: header) }
+            }
+        }
+        .confirmationDialog("Sign out of YouTube Music?", isPresented: $confirmsSignOut, titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) { app.account.signOut() }
+        } message: {
+            Text("The session is forgotten on this Mac. Your library on this Mac stays as it is.")
+        }
+    }
+
+    private var signedOut: some View {
+        MacSettingsGroup(footer: "Signing in opens Google's own page in a secure web view. The session is read straight out of it and kept in the Keychain, on this Mac only.") {
+            MacSettingsRow(title: "Not connected",
+                           detail: "Sign in and Koda shows your liked songs, your playlists and a Home made for you.") {
+                Button("Sign In…") { showsSignIn = true }
+            }
+        }
+    }
+
+    private var signedIn: some View {
+        @Bindable var settings = app.settings
+        return Group {
+            MacSettingsGroup(title: "Account") {
+                MacSettingsRow(title: app.account.name.isEmpty ? "YouTube Music" : app.account.name,
+                               detail: "Signed in to YouTube Music") {
+                    ProfileAvatar(profile: app.account.profile, photo: app.profile.photo(for: app.account.profile), size: 30)
+                }
+                if app.account.needsSignIn.contains(app.account.profile.id) || app.account.status == .expired {
+                    MacSettingsRow(title: "Needs signing in",
+                                   detail: app.account.status == .expired
+                                   ? "YouTube has stopped accepting this session."
+                                   : "This profile has no session on this Mac.") {
+                        Button("Sign In Again…") { showsSignIn = true }
+                    }
+                }
+            }
+            MacSettingsGroup(title: "Your YouTube Music Library",
+                             footer: "Koda reads your liked songs and your playlists from YouTube Music. Nothing of your own library is sent there.") {
+                MacSettingsRow(title: "Liked songs", detail: "As of the last sync") {
+                    Text(library.accountLiked.count.formatted()).foregroundStyle(.secondary)
+                }
+                MacSettingsRow(title: "Playlists", detail: "As of the last sync") {
+                    Text(library.accountPlaylists.count.formatted()).foregroundStyle(.secondary)
+                }
+                MacSettingsRow(title: "Last synced", detail: lastSynced) {
+                    Button(app.account.isSyncing ? "Syncing…" : "Sync Now") {
+                        Task { await app.account.sync(force: true) }
+                    }
+                    .disabled(app.account.isSyncing)
+                }
+                MacSettingsToggle(title: "Personalized Home",
+                                  detail: "With an account signed in, Home shows that account's own shelves and recommendations.",
+                                  isOn: settings.personalizedHome)
+            }
+            MacSettingsGroup {
+                MacSettingsRow(title: "Sign out", detail: "The session is forgotten on this Mac.") {
+                    Button("Sign Out…", role: .destructive) { confirmsSignOut = true }
+                }
+            }
+        }
+    }
+
+    private var lastSynced: String {
+        guard let date = app.account.lastSynced else { return "Never" }
+        return date.formatted(.relative(presentation: .named))
     }
 }
 

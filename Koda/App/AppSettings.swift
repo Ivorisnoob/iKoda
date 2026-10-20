@@ -91,6 +91,9 @@ final class AppSettings {
     var skipInterval: SkipInterval { didSet { defaults.set(skipInterval.rawValue, forKey: Keys.skipInterval) } }
     /// The playing song on the listener's Discord profile, through the Discord app on the Mac.
     var sharesOnDiscord: Bool { didSet { defaults.set(sharesOnDiscord, forKey: Keys.discordPresence) } }
+    /// With an account signed in, Home shows that account's own shelves and
+    /// recommendations instead of the anonymous ones.
+    var personalizedHome: Bool { didSet { defaults.set(personalizedHome, forKey: Keys.personalizedHome) } }
 
     private enum Keys {
         static let theme = "koda.theme"
@@ -107,6 +110,7 @@ final class AppSettings {
         static let skipButtons = "koda.player.skipButtons"
         static let skipInterval = "koda.player.skipInterval"
         static let discordPresence = "koda.discord.presence"
+        static let personalizedHome = "koda.account.personalizedHome"
     }
 
     init() {
@@ -127,6 +131,7 @@ final class AppSettings {
         showsSkipButtons = d.object(forKey: Keys.skipButtons) as? Bool ?? true
         skipInterval = (d.object(forKey: Keys.skipInterval) as? Int).flatMap(SkipInterval.init(rawValue:)) ?? .ten
         sharesOnDiscord = d.object(forKey: Keys.discordPresence) as? Bool ?? false
+        personalizedHome = d.object(forKey: Keys.personalizedHome) as? Bool ?? true
     }
 
     /// The services to ask, best first.

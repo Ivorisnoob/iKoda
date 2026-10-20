@@ -13,8 +13,15 @@ public enum MusicError: Error, Sendable, Equatable {
 
 /// WEB_REMIX calls on music.youtube.com.
 struct InnerTube: Sendable {
+    /// The origin every account request signs for.
+    static let origin = "https://music.youtube.com"
+
     let session: URLSession
     let identity: VisitorIdentity
+    /// The signed-in account, or nil signed out. Held as a reference so a
+    /// sign-in and a sign-out change what every future call sends without
+    /// the client being rebuilt.
+    let account: AccountStore?
 
     func music(_ endpoint: String, _ payload: [String: Any]) async throws -> JSON {
         var visitor = await identity.cached
@@ -24,20 +31,33 @@ struct InnerTube: Sendable {
         var body = payload
         body["context"] = ["client": client]
 
-        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/\(endpoint)?prettyPrint=false")!)
+        var request = URLRequest(url: URL(string: "\(Self.origin)/youtubei/v1/\(endpoint)?prettyPrint=false")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 20
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(Clients.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue(Self.origin, forHTTPHeaderField: "Origin")
         request.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(Clients.webRemixVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
         if let visitor { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
+        // Account headers ride every music call that can: signed-in reads are
+        // personalised (home, the liked songs), and a public browse id answers
+        // the same shape either way. Stream resolution stays anonymous on
+        // purpose — the stream clients refuse the account.
+        let authentication = await account?.requestHeaders(for: Self.origin)
+        for (field, value) in authentication ?? [:] {
+            request.setValue(value, forHTTPHeaderField: field)
+        }
+        // The session as it stood when the request went out, so the answer can
+        // be matched to it: if the account has moved to another profile since,
+        // this reply is not ours to apply.
+        let stamp = await account?.generation
 
+        let recorder = CookieRecorder()
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: recorder)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -46,25 +66,91 @@ struct InnerTube: Sendable {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw MusicError.badResponse(status) }
+        if let account, let stamp, let http = response as? HTTPURLResponse {
+            // What the reply said about the session, and the cookies it
+            // rotated, go back into the account — but only when the request
+            // carried the session in the first place, and only if the account
+            // is still the one that was asked.
+            var cookies = recorder.cookies()
+            for (name, value) in YouTubeCookies.setCookieValues(Self.headerValues(in: http, named: "Set-Cookie"),
+                                                                 for: http.url ?? URL(string: Self.origin)!) {
+                cookies[name] = value
+            }
+            await account.note(response: http, body: data, cookies: cookies,
+                               sentSession: authentication != nil, generation: stamp)
+        }
         guard let json = try? JSON(data: data), !json["error"].exists else { throw MusicError.network }
         return json
     }
+
+    /// A response's header values by name, however the server spelled it.
+    static func headerValues(in response: HTTPURLResponse, named name: String) -> [String] {
+        var values: [String] = []
+        for (key, value) in response.allHeaderFields {
+            guard let key = key as? String, key.lowercased() == name.lowercased() else { continue }
+            if let value = value as? String { values.append(value) }
+        }
+        return values
+    }
 }
 
-/// YouTube Music, signed out: browse, search, pages, radio and streams.
+/// Captures the cookies a request's answer sets, including the ones set on the
+/// way through a redirect chain.
+///
+/// Google rotates the session's `*PSIDTS` pair on the 302s inside a redirect
+/// chain, and only the last hop's headers reach the caller, so the hops are
+/// read as they happen. [verified on Koda for Android, August 2026]
+final class CookieRecorder: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        record(response)
+        completionHandler(request)
+    }
+
+    /// The cookies the chain set, by name.
+    func cookies() -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+
+    private func record(_ response: HTTPURLResponse) {
+        let headers = InnerTube.headerValues(in: response, named: "Set-Cookie")
+        guard !headers.isEmpty else { return }
+        let url = response.url ?? URL(string: InnerTube.origin)!
+        let found = YouTubeCookies.setCookieValues(headers, for: url)
+        guard !found.isEmpty else { return }
+        lock.lock()
+        values.merge(found) { _, new in new }
+        lock.unlock()
+    }
+}
+
+/// YouTube Music: browse, search, pages, radio and streams, signed out or
+/// signed in.
 public final class YouTubeMusic: Sendable {
     let api: InnerTube
     let streams: StreamResolver
     private let pages = PageCache()
 
-    public init(defaultsSuite: String? = nil) {
+    public init(account: AccountStore? = nil, defaultsSuite: String? = nil) {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
         config.httpMaximumConnectionsPerHost = 6
         config.urlCache = nil
+        // Koda signs its own requests, cookie by cookie, so URLSession must
+        // not add any of its own: an anonymous cookie would travel with a
+        // signed-in request.
+        config.httpShouldSetCookies = false
+        config.httpCookieStorage = nil
         let session = URLSession(configuration: config)
         let identity = VisitorIdentity(session: session, suite: defaultsSuite)
-        api = InnerTube(session: session, identity: identity)
+        api = InnerTube(session: session, identity: identity, account: account)
         streams = StreamResolver(session: session, identity: identity)
     }
 
@@ -218,6 +304,88 @@ public final class YouTubeMusic: Sendable {
         if let videoId { payload["videoId"] = videoId }
         if let params { payload["params"] = params }
         return Pages.queue(try await api.music("next", payload)).songs
+    }
+
+    // MARK: Account
+
+    /// Who the signed-in account is. Nil signed out — the endpoint answers
+    /// empty — or when the answer carries no account header. Signing in
+    /// happens outside KodaCore, in the app's login sheet.
+    public func accountIdentity() async throws -> YouTubeAccountIdentity? {
+        let root = try await api.music("account/account_menu", [:])
+        return YouTubeAccountIdentity.parse(root)
+    }
+
+    /// The account's own Home: its shelves, and the recommendations in them.
+    ///
+    /// A signed-in Home's first page opens with "Listen again", and Quick
+    /// picks — the one shelf of song rows — is usually on the page after it,
+    /// so the shelves are followed until the recommendations arrive.
+    public func accountHome(maxPages: Int = 3) async throws -> AccountHome {
+        var root = try await api.music("browse", ["browseId": "FEmusic_home"])
+        var shelves: [Shelf] = []
+        var quickPicks: [Song] = []
+        var quickPicksTitle = "Quick picks"
+        var token = AccountPages.sectionContinuation(root)
+        var pages = 0
+        while pages < maxPages {
+            let page = AccountPages.home(root)
+            shelves += page.shelves
+            if quickPicks.isEmpty, !page.quickPicks.isEmpty {
+                quickPicks = page.quickPicks
+                quickPicksTitle = page.quickPicksTitle
+            }
+            pages += 1
+            if !quickPicks.isEmpty { break }
+            guard let next = token else { break }
+            root = try await api.music("browse", ["continuation": next])
+            token = AccountPages.sectionContinuation(root)
+        }
+        return AccountHome(shelves: shelves, quickPicks: quickPicks, quickPicksTitle: quickPicksTitle)
+    }
+
+    /// The songs the account liked on YouTube Music, every page of them.
+    public func accountLikedSongs(maxPages: Int = 50) async throws -> [Song] {
+        var root = try await api.music("browse", ["browseId": "FEmusic_liked_videos"])
+        var songs = AccountPages.likedSongs(root)
+        var token = AccountPages.shelfContinuation(root)
+        var pages = 1
+        while pages < maxPages, let next = token {
+            let page = try await api.music("browse", ["continuation": next])
+            let more = AccountPages.likedSongs(page)
+            songs += more
+            if more.isEmpty { break }
+            token = AccountPages.shelfContinuation(page)
+            pages += 1
+        }
+        return Pages.dedupe(songs)
+    }
+
+    /// The playlists in the account's library, every page of them.
+    public func accountPlaylists(maxPages: Int = 20) async throws -> [PlaylistSummary] {
+        var root = try await api.music("browse", ["browseId": "FEmusic_liked_playlists"])
+        var playlists = AccountPages.playlists(root)
+        var token = AccountPages.gridContinuation(root)
+        var pages = 1
+        while pages < maxPages, let next = token {
+            let page = try await api.music("browse", ["continuation": next])
+            let more = AccountPages.playlists(page)
+            playlists += more
+            if more.isEmpty { break }
+            token = AccountPages.gridContinuation(page)
+            pages += 1
+        }
+        return Pages.dedupe(playlists)
+    }
+
+    /// Everything Koda reads out of the account. A part that cannot be read
+    /// comes back empty rather than spoiling the rest.
+    public func accountSnapshot() async -> AccountSnapshot {
+        async let liked = (try? accountLikedSongs()) ?? []
+        async let playlists = (try? accountPlaylists()) ?? []
+        async let identity = try? accountIdentity()
+        let (songs, lists, who) = await (liked, playlists, identity)
+        return AccountSnapshot(liked: songs, playlists: lists, identity: who)
     }
 
     // MARK: Streams

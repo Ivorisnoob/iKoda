@@ -89,6 +89,7 @@ struct SavedSongsView: View {
         case .downloaded: return downloads.songs
         // Read when the page draws; downloads finishing redraw it.
         case .offline: return downloads.store.completeSongs
+        case .accountLiked: return library.accountLiked
         case .liked: break
         }
         let liked = library.liked
@@ -115,6 +116,7 @@ struct SavedSongsView: View {
         case .recent: ("clock.fill", .orange)
         case .downloaded: ("arrow.down.circle.fill", .blue)
         case .offline: ("airplane.circle.fill", .green)
+        case .accountLiked: ("heart.circle.fill", .red)
         }
     }
 
@@ -157,7 +159,7 @@ struct SavedSongsView: View {
                         return AnyView(Button("Remove from Liked", systemImage: "heart.slash", role: .destructive) { library.toggleLike(song) })
                     case .downloaded:
                         return AnyView(Button("Remove Download", systemImage: "trash", role: .destructive) { downloads.remove([song]) })
-                    case .recent, .offline:
+                    case .recent, .offline, .accountLiked:
                         return AnyView(EmptyView())
                     }
                 })
@@ -179,6 +181,9 @@ struct SavedSongsView: View {
         case .offline:
             ContentUnavailableView("Nothing Ready Offline", systemImage: "airplane",
                                    description: Text(SavedSongsView.offlineNote))
+        case .accountLiked:
+            ContentUnavailableView("Nothing Liked on YouTube", systemImage: "heart.circle",
+                                   description: Text("Sign in to YouTube Music and the songs you liked there appear here."))
         }
     }
 
@@ -207,7 +212,7 @@ struct SavedSongsView: View {
                             Button("Unlike", systemImage: "heart.slash", role: .destructive) { library.toggleLike(song) }
                         case .downloaded:
                             Button("Remove Download", systemImage: "trash", role: .destructive) { downloads.remove([song]) }
-                        case .recent, .offline:
+                        case .recent, .offline, .accountLiked:
                             Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue([song]) }
                                 .tint(.orange)
                         }
@@ -228,6 +233,9 @@ struct SavedSongsView: View {
                 case .offline:
                     ContentUnavailableView("Nothing Ready Offline", systemImage: "airplane",
                                            description: Text(SavedSongsView.offlineNote))
+                case .accountLiked:
+                    ContentUnavailableView("Nothing Liked on YouTube", systemImage: "heart.circle",
+                                           description: Text("Sign in to YouTube Music and the songs you liked there appear here."))
                 }
             }
         }

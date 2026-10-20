@@ -32,7 +32,11 @@ struct KodaApp: App {
         .onChange(of: scenePhase) { _, phase in
             // The queue and position survive the app being closed from the switcher.
             if phase != .active { model.saveState() }
-            if phase == .active { model.lastFM.syncSoon() }
+            if phase == .active {
+                model.lastFM.syncSoon()
+                // The account's own library, read when it has gone stale.
+                Task { await model.account.syncIfNeeded() }
+            }
         }
 
         #if targetEnvironment(macCatalyst)
@@ -68,5 +72,6 @@ extension View {
             .environment(model.library)
             .environment(model.downloads)
             .environment(model.lastFM)
+            .environment(model.account)
     }
 }

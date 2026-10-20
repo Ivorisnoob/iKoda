@@ -59,6 +59,8 @@ struct LibraryView: View {
 
                 yourPlaylists
 
+                accountLibrary
+
                 if !library.playlists.isEmpty {
                     grid("Saved Playlists", items: sorted(library.playlists).map(MusicItem.playlist))
                 }
@@ -127,6 +129,30 @@ struct LibraryView: View {
             }
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, 20, for: .scrollContent)
+        }
+    }
+
+    // MARK: The signed-in account
+
+    /// What the signed-in YouTube Music account holds, kept apart from the
+    /// listener's own library: their likes stay their own.
+    @ViewBuilder
+    private var accountLibrary: some View {
+        if app.account.isSignedIn, !library.accountLiked.isEmpty || !library.accountPlaylists.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "From YouTube Music",
+                              strapline: app.account.name.isEmpty ? nil : app.account.name)
+                    .padding(.horizontal, 20)
+                VStack(spacing: 0) {
+                    LibraryLink(title: "Liked on YouTube", systemImage: "heart.circle.fill", tint: .red,
+                                count: library.accountLiked.count,
+                                route: .songs(title: "Liked on YouTube", source: .accountLiked))
+                }
+                .padding(.horizontal, 20)
+                if !library.accountPlaylists.isEmpty {
+                    grid("Your YouTube Music Playlists", items: library.accountPlaylists.map(MusicItem.playlist))
+                }
+            }
         }
     }
 

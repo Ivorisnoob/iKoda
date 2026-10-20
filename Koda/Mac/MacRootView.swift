@@ -6,6 +6,8 @@ enum MacSection: Hashable {
     case home, browse, search
     case recent, liked, albums, playlists, artists, downloads, offline, stats
     case lastFM
+    /// The signed-in YouTube Music account: its liked songs and playlists.
+    case youtube
     case userPlaylist(UUID)
 }
 
@@ -193,6 +195,9 @@ struct MacRootView: View {
                 sidebarRow("Ready Offline", "airplane", .offline)
                 sidebarRow("Listening Stats", "chart.bar", .stats)
                 sidebarRow("Last.fm", "dot.radiowaves.left.and.right", .lastFM)
+                if model.account.isSignedIn {
+                    sidebarRow("YouTube Music", "play.rectangle.fill", .youtube)
+                }
             }
             Section {
                 ForEach(library.userPlaylists) { playlist in
@@ -262,7 +267,7 @@ struct MacRootView: View {
             HStack(spacing: 10) {
                 AvatarView(size: 28)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(model.profile.displayName).font(.callout.weight(.semibold)).lineLimit(1)
+                    Text(model.profile.name).font(.callout.weight(.semibold)).lineLimit(1)
                     Text("Settings").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -295,6 +300,7 @@ struct MacRootView: View {
         case .artists: MacLibraryGrid(kind: .artists)
         case .stats: StatsView()
         case .lastFM: MacLastFMView()
+        case .youtube: MacYouTubeView()
         case .userPlaylist(let id): UserPlaylistView(id: id).id(id)
         }
     }

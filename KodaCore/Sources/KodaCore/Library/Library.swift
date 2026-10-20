@@ -3,7 +3,8 @@ import Observation
 
 /// What the listener keeps on this phone: songs they liked, albums, playlists
 /// and artists they saved, playlists they made, what they played and searched,
-/// and how long they listened. One JSON file, written after each change.
+/// and how long they listened. One JSON file per profile, written after each
+/// change.
 @MainActor
 @Observable
 public final class Library {
@@ -22,19 +23,68 @@ public final class Library {
     public private(set) var dailyListening: [String: TimeInterval] = [:]
     /// Seconds to shift synced lyrics by, per video id; positive shows lines later.
     public private(set) var lyricsOffsets: [String: TimeInterval] = [:]
+    /// The songs the signed-in YouTube account liked, as of the last sync.
+    /// A mirror of the account, not the listener's own likes: they keep both.
+    public private(set) var accountLiked: [Song] = []
+    /// The playlists in the signed-in account's YouTube Music library.
+    public private(set) var accountPlaylists: [PlaylistSummary] = []
+    /// When the account's library was last read.
+    public private(set) var accountSyncedAt: Date?
+    /// The name of the signed-in account, as YouTube gave it.
+    public private(set) var accountName: String?
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
 
-    private let file: URL?
+    private let directory: URL?
+    /// The profile whose library this is. Every profile keeps its own, so
+    /// switching profiles changes what the library holds.
+    private var profileID: UUID
     private static let recentLimit = 200
     private static let searchLimit = 20
     /// Listening time arrives every few seconds; it is written with the next change or `flush()`.
     private var hasUnsavedListening = false
 
-    public init(directory: URL?) {
-        file = directory?.appending(path: "library.json")
+    public init(directory: URL?, profileID: UUID = Library.localProfileID) {
+        self.directory = directory
+        self.profileID = profileID
         load()
+    }
+
+    /// The profile a library belongs to when none is named: the one on this
+    /// device.
+    public static let localProfileID = UUID(uuidString: "6B1E4A2C-0D3F-4E7A-9C51-8F2D5A0B7E10")!
+
+    /// The profile whose library is loaded.
+    public var owner: UUID { profileID }
+
+    /// Another profile's library: what this one holds changes, and the
+    /// profile that was left keeps everything it had.
+    public func activate(_ id: UUID) {
+        guard id != profileID else { return }
+        save()
+        profileID = id
+        // The profile that was left is written out; what is in memory now
+        // belongs to the profile that was chosen.
+        apply(Snapshot())
+        load()
+    }
+
+    /// A new profile starts with a copy of what another profile had, so that
+    /// signing in from a profile on this device takes nothing away.
+    ///
+    /// The copy is never over an existing library: a profile that has one
+    /// keeps it.
+    public func copyLibrary(from source: UUID, to destination: UUID) {
+        guard let directory else { return }
+        let from = directory.appending(path: "profile-\(source.uuidString).json")
+        let to = directory.appending(path: "profile-\(destination.uuidString).json")
+        guard !FileManager.default.fileExists(atPath: to.path) else { return }
+        // What is in memory belongs to the profile it was made in, so it is
+        // written out before it is copied.
+        if source == profileID { save() }
+        guard FileManager.default.fileExists(atPath: from.path) else { return }
+        try? FileManager.default.copyItem(at: from, to: to)
     }
 
     // MARK: Songs
@@ -220,6 +270,28 @@ public final class Library {
         save()
     }
 
+    // MARK: The signed-in account
+
+    /// Replace the mirror of the signed-in account's library: the songs it
+    /// liked and the playlists in it. Nothing of the listener's own is
+    /// touched, so a sync can never take a local like away.
+    public func applyAccountSync(liked: [Song], playlists: [PlaylistSummary], name: String?, at date: Date = Date()) {
+        accountLiked = liked
+        accountPlaylists = playlists
+        accountName = name
+        accountSyncedAt = date
+        save()
+    }
+
+    /// Forget the signed-in account's library, when the account goes away.
+    public func clearAccountData() {
+        accountLiked = []
+        accountPlaylists = []
+        accountSyncedAt = nil
+        accountName = nil
+        save()
+    }
+
     // MARK: Days
 
     nonisolated static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
@@ -261,6 +333,10 @@ public final class Library {
         var dailyListening: [String: TimeInterval] = [:]
         var lyricsOffsets: [String: TimeInterval] = [:]
         var androidPlaysImportedThrough: Date?
+        var accountLiked: [Song] = []
+        var accountPlaylists: [PlaylistSummary] = []
+        var accountSyncedAt: Date?
+        var accountName: String?
 
         init() {}
 
@@ -278,11 +354,36 @@ public final class Library {
             dailyListening = try c.decodeIfPresent([String: TimeInterval].self, forKey: .dailyListening) ?? [:]
             lyricsOffsets = try c.decodeIfPresent([String: TimeInterval].self, forKey: .lyricsOffsets) ?? [:]
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
+            accountLiked = try c.decodeIfPresent([Song].self, forKey: .accountLiked) ?? []
+            accountPlaylists = try c.decodeIfPresent([PlaylistSummary].self, forKey: .accountPlaylists) ?? []
+            accountSyncedAt = try c.decodeIfPresent(Date.self, forKey: .accountSyncedAt)
+            accountName = try c.decodeIfPresent(String.self, forKey: .accountName)
         }
     }
 
+    private var file: URL? {
+        directory?.appending(path: "profile-\(profileID.uuidString).json")
+    }
+
+    /// The library this install had before it had profiles. It belongs to the
+    /// profile that was active when the roster arrived, and is copied, never
+    /// moved, so nothing is lost if the copy fails.
+    private var legacyFile: URL? {
+        directory?.appending(path: "library.json")
+    }
+
     private func load() {
-        guard let file, let data = try? Data(contentsOf: file),
+        guard let file else { return }
+        if !FileManager.default.fileExists(atPath: file.path),
+           let legacy = legacyFile, FileManager.default.fileExists(atPath: legacy.path) {
+            // The library this install had before it had profiles belongs to
+            // the profile that was active; it is copied once, and the old
+            // file goes, so it is never copied into another profile later.
+            if (try? FileManager.default.copyItem(at: legacy, to: file)) != nil {
+                try? FileManager.default.removeItem(at: legacy)
+            }
+        }
+        guard let data = try? Data(contentsOf: file),
               let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
         apply(snapshot)
     }
@@ -299,6 +400,10 @@ public final class Library {
         dailyListening = snapshot.dailyListening
         lyricsOffsets = snapshot.lyricsOffsets
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
+        accountLiked = snapshot.accountLiked
+        accountPlaylists = snapshot.accountPlaylists
+        accountSyncedAt = snapshot.accountSyncedAt
+        accountName = snapshot.accountName
     }
 
     private func save() {
@@ -321,6 +426,10 @@ public final class Library {
         snapshot.dailyListening = dailyListening
         snapshot.lyricsOffsets = lyricsOffsets
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
+        snapshot.accountLiked = accountLiked
+        snapshot.accountPlaylists = accountPlaylists
+        snapshot.accountSyncedAt = accountSyncedAt
+        snapshot.accountName = accountName
         return snapshot
     }
 

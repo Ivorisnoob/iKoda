@@ -7,7 +7,10 @@ final class HomeModel {
     nonisolated struct Content: Codable, Sendable {
         var quickPicks: [Song] = []
         var quickPicksTitle = "Quick picks"
+        /// The shelves of the signed-in account's own Home.
         var shelves: [Shelf] = []
+        /// The Home came from the signed-in account, not from the anonymous one.
+        var isPersonalized = false
         /// YouTube Music's chart playlists: global, the listener's region, then its genres or languages.
         /// The one row on Home that isn't built from the listener's own listening.
         var charts: [PlaylistSummary] = []
@@ -40,29 +43,29 @@ final class HomeModel {
     private(set) var artistPhotos: [String: Artwork] = [:]
     /// When Home last loaded, so a window coming back to it after a long while can refresh it.
     private(set) var loadedAt: Date?
+    /// The account Home was last built for: signing in or out makes it a different Home.
+    private(set) var accountGeneration = 0
     /// What's shown came from the last launch's snapshot and hasn't been refreshed yet.
     private(set) var isFromSnapshot = false
+    /// The profile the Home on screen belongs to.
+    private var loadedProfileID: UUID?
+    /// Where the last launch's Home is kept: one file per profile, so another
+    /// profile's Home is never shown and never overwritten.
+    private static func snapshotKey(_ profileID: UUID?) -> String {
+        "home-\(profileID?.uuidString ?? "local")"
+    }
 
     /// Home as it was last shown, saved to disk so a cold launch opens on it.
     nonisolated private struct Saved: Codable, Sendable {
+        /// The profile it was: another profile's Home is another Home.
+        var profileID: UUID?
         var content: Content
         var mix: Mix?
         var artistPhotos: [String: Artwork]
         var loadedAt: Date
     }
 
-    /// Read once per launch: `@State` builds a model each time its view is initialised.
-    private static let launchSnapshot = Snapshot.load(Saved.self, "home")
-
-    init() {
-        guard let saved = Self.launchSnapshot else { return }
-        state = .loaded(saved.content)
-        mix = saved.mix
-        mixPending = saved.mix == nil
-        artistPhotos = saved.artistPhotos
-        loadedAt = saved.loadedAt
-        isFromSnapshot = true
-    }
+    init() {}
 
     /// Nothing shown yet, only last launch's Home, or a Home half an hour old: load it again,
     /// in place, over what's on screen.
@@ -70,24 +73,60 @@ final class HomeModel {
         state.value == nil || isFromSnapshot || loadedAt.map { Date().timeIntervalSince($0) > 1800 } == true
     }
 
-    func load(music: YouTubeMusic, library: Library) async {
+    func load(music: YouTubeMusic, library: Library, account: AccountModel?, personalized: Bool) async {
+        let profileID = account?.profile.id
+        if loadedProfileID != profileID {
+            // Another profile: what is on screen is not this one's Home, so
+            // it goes, and this profile's own last launch comes back instead.
+            loadedProfileID = profileID
+            state = .loading
+            mix = nil
+            mixPending = true
+            artistPhotos = [:]
+            loadedAt = nil
+            isFromSnapshot = false
+            if let saved = Snapshot.load(Saved.self, Self.snapshotKey(profileID)), saved.profileID == profileID {
+                state = .loaded(saved.content)
+                mix = saved.mix
+                mixPending = saved.mix == nil
+                artistPhotos = saved.artistPhotos
+                loadedAt = saved.loadedAt
+                isFromSnapshot = true
+            }
+        }
         if state.value == nil { state = .loading }
         if mix == nil { mixPending = true }
         let recent = library.recent
         let taste = Taste(library: library)
         // Home is the listener's own: Your Mix, Quick picks, what they go back to and play. From
         // YouTube it takes only the charts, as one row, and trending songs for someone new.
-        async let explore = music.explore()
+        // A signed-in account has a Home of its own, with its own shelves and its own
+        // recommendations, and that is what Home shows instead.
+        let signedIn = personalized && account?.isSignedIn == true && account?.status != .expired
+        accountGeneration = account?.generation ?? 0
+        let stamp = accountGeneration
         async let charts = try? music.chartPlaylists()
-        async let picks = quickPicks(music: music, recent: recent)
         do {
             var content = Content()
-            let explorePage = try await explore
-            content.trending = trending(explorePage)
             content.charts = await charts ?? []
-            let (title, songs) = await picks
-            content.quickPicksTitle = title
-            content.quickPicks = songs.isEmpty ? content.trending : songs
+            if signedIn, let home = try? await music.accountHome() {
+                content.quickPicksTitle = home.quickPicksTitle
+                content.quickPicks = home.quickPicks
+                content.shelves = home.shelves
+                content.isPersonalized = true
+            }
+            if !content.isPersonalized {
+                async let explore = music.explore()
+                async let picks = quickPicks(music: music, recent: recent)
+                let explorePage = try await explore
+                content.trending = trending(explorePage)
+                let (title, songs) = await picks
+                content.quickPicksTitle = title
+                content.quickPicks = songs.isEmpty ? content.trending : songs
+            }
+            // The listener may have switched profiles while this was in the
+            // air: the Home that was asked for is not the Home that is wanted.
+            guard (account?.generation ?? 0) == stamp else { return }
             state = .loaded(content)
             loadedAt = Date()
             if mix == nil, taste.isEmpty, !content.trending.isEmpty {
@@ -108,7 +147,9 @@ final class HomeModel {
         withAnimation(.smooth) { mixPending = false }
         if let content = state.value, let loadedAt {
             isFromSnapshot = false
-            Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt), "home")
+            Snapshot.save(Saved(profileID: loadedProfileID, content: content, mix: mix,
+                                artistPhotos: artistPhotos, loadedAt: loadedAt),
+                          Self.snapshotKey(loadedProfileID))
         }
     }
 
@@ -221,7 +262,12 @@ struct HomeView: View {
             await load()
         }
         // A snapshot from the last launch shows at once; the fresh Home replaces it in place.
-        .task { if model.needsRefresh { await load() } }
+        // The account is part of the id: signing in or out makes it a different Home.
+        .task(id: app.account.generation) {
+            if model.needsRefresh || model.accountGeneration != app.account.generation {
+                await load()
+            }
+        }
     }
 
     @ViewBuilder
@@ -241,6 +287,13 @@ struct HomeView: View {
         if !content.quickPicks.isEmpty {
             SongColumnsShelf(title: content.quickPicksTitle, strapline: library.recent.isEmpty ? "Trending now" : "Start with these", songs: content.quickPicks) { index in
                 player.play(content.quickPicks, startAt: index)
+            }
+        }
+        // The signed-in account's own shelves: "Listen again", "Albums for you"
+        // and the rest, as YouTube Music draws them for that account.
+        if content.isPersonalized {
+            ForEach(content.shelves.prefix(6)) { shelf in
+                ItemShelf(shelf: shelf) { player.startRadio(from: $0) }
             }
         }
         if !library.recent.isEmpty {
@@ -283,7 +336,7 @@ struct HomeView: View {
     }
 
     private func load() async {
-        await model.load(music: app.music, library: library)
+        await model.load(music: app.music, library: library, account: app.account, personalized: app.settings.personalizedHome)
     }
 
     private var greeting: String {

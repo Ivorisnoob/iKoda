@@ -11,10 +11,16 @@ final class AppModel {
     let library: Library
     let lyrics = LyricsClient()
     let sleepTimer: SleepTimer
+    /// The listener's profile: the active one in the roster, and its picture.
     let profile: Profile
+    /// The roster of profiles: the one on this device and the accounts.
+    let profiles: ProfileManager
     let settings = AppSettings()
     let downloads: Downloads
     let lastFM: LastFM
+    /// The signed-in YouTube Music account: the session in the Keychain, who
+    /// it is, and the account's library mirrored into Koda's.
+    let account: AccountModel
     /// The playing song on Discord; the Mac only, where the Discord app takes it from Koda directly.
     let discord: DiscordPresence?
 
@@ -45,11 +51,18 @@ final class AppModel {
     init() {
         let directory = URL.applicationSupportDirectory.appending(path: "Koda")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        music = YouTubeMusic()
+        // The roster comes first: the session belongs to a profile, and the
+        // library belongs to one too.
+        let profiles = ProfileManager(directory: directory)
+        let session = AccountStore(directory: directory)
+        session.activate(profileID: profiles.activeID)
+        music = YouTubeMusic(account: session)
         player = Player(music: music, storageDirectory: directory)
-        library = Library(directory: directory)
+        library = Library(directory: directory, profileID: profiles.activeID)
         sleepTimer = SleepTimer(player: player)
-        profile = Profile(directory: directory)
+        profile = Profile(manager: profiles, directory: directory)
+        self.profiles = profiles
+        account = AccountModel(store: session, music: music, library: library, profiles: profiles)
         let settings = settings
         // Songs can be gigabytes; they come back from YouTube, so they stay out of iCloud backups.
         var audioDirectory = directory.appending(path: "Audio")
@@ -110,6 +123,13 @@ final class AppModel {
         guard player.current != nil else { return }
         requestedPanel = panel
         isNowPlayingPresented = true
+    }
+
+    /// Make another profile the active one: the session, the library and the
+    /// pages built for the old profile all move together.
+    func switchProfile(to id: UUID) {
+        account.activate(id)
+        profile.reload()
     }
 
     /// Switch tabs from the menu bar, closing Now Playing if it covers them.

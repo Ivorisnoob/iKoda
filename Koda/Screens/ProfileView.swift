@@ -78,6 +78,8 @@ struct ProfileView: View {
     @State private var editingName = false
     @State private var draftName = ""
     @State private var showsSettings = false
+    @State private var showsAccount = false
+    @State private var showsSwitcher = false
 
     var body: some View {
         let summary = ListeningSummary(library: library, days: 7)
@@ -85,6 +87,8 @@ struct ProfileView: View {
             ScrollView {
                 VStack(spacing: 28) {
                     header(summary)
+                    switchProfileRow
+                    if app.account.profile.kind == .youtube { accountRow }
                     tiles(summary)
                     WeekChart(days: summary.days)
                         .padding(.horizontal, 20)
@@ -115,11 +119,13 @@ struct ProfileView: View {
                 }
             }
             .sheet(isPresented: $showsSettings) { SettingsView().appEnvironment(app) }
+            .sheet(isPresented: $showsAccount) { AccountSettingsView().appEnvironment(app) }
+            .sheet(isPresented: $showsSwitcher) { ProfileSwitcherView().appEnvironment(app) }
             .alert("Your Name", isPresented: $editingName) {
                 TextField("Name", text: $draftName)
                     .textContentType(.givenName)
                 Button("Cancel", role: .cancel) {}
-                Button("Save") { app.profile.name = draftName.trimmingCharacters(in: .whitespacesAndNewlines) }
+                Button("Save") { app.profile.setName(draftName.trimmingCharacters(in: .whitespacesAndNewlines)) }
             } message: {
                 Text("Shown on your profile and the playlists you make. It stays on this iPhone.")
             }
@@ -127,7 +133,7 @@ struct ProfileView: View {
                 guard let item else { return }
                 Task {
                     let data = try? await item.loadTransferable(type: Data.self)
-                    app.profile.setAvatar(data)
+                    app.profile.setPhoto(data)
                     photo = nil
                 }
             }
@@ -137,37 +143,49 @@ struct ProfileView: View {
     // MARK: Header
 
     private func header(_ summary: ListeningSummary) -> some View {
-        VStack(spacing: 12) {
-            PhotosPicker(selection: $photo, matching: .images) {
-                AvatarView(size: 112)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "camera.fill")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 32, height: 32)
-                            .glassEffect(.regular.interactive(), in: .circle)
+        // A profile on this device has a name and a photo of its own; an
+        // account's are YouTube's, and there is nothing to edit.
+        let isLocal = app.profile.profile.kind == .local
+        return VStack(spacing: 12) {
+            if isLocal {
+                PhotosPicker(selection: $photo, matching: .images) {
+                    AvatarView(size: 112)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "camera.fill")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .frame(width: 32, height: 32)
+                                .glassEffect(.regular.interactive(), in: .circle)
+                        }
+                        .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Change Photo")
+                .contextMenu {
+                    if app.profile.photo != nil {
+                        Button("Remove Photo", systemImage: "trash", role: .destructive) { app.profile.setPhoto(nil) }
                     }
+                }
+            } else {
+                AvatarView(size: 112)
                     .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Change Photo")
-            .contextMenu {
-                if app.profile.avatar != nil {
-                    Button("Remove Photo", systemImage: "trash", role: .destructive) { app.profile.setAvatar(nil) }
-                }
-            }
 
-            Button {
-                draftName = app.profile.name
-                editingName = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(app.profile.displayName).font(.title.bold())
-                    Image(systemName: "pencil").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            if isLocal {
+                Button {
+                    draftName = app.profile.name
+                    editingName = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(app.profile.name).font(.title.bold())
+                        Image(systemName: "pencil").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint("Edit your name")
+            } else {
+                Text(app.profile.name).font(.title.bold())
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Edit your name")
 
             if let first = summary.firstPlayed {
                 Text("Listening since \(first.formatted(.dateTime.month(.wide).year()))")
@@ -193,8 +211,64 @@ struct ProfileView: View {
         .padding(.horizontal, 20)
     }
 
-    // MARK: Top lists
+    // MARK: The signed-in account
 
+    /// The profile the app is being right now, and the way to another one.
+    private var switchProfileRow: some View {
+        Button { showsSwitcher = true } label: {
+            HStack(spacing: 12) {
+                ProfileAvatar(profile: app.profile.profile, photo: app.profile.photo, size: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(app.profile.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(app.account.roster.count > 1 ? "Switch profile" : "Profiles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .glassEffect(.regular, in: .rect(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+    }
+
+    /// The YouTube Music account on this device, with the way into its
+    /// settings. The listener's own profile above stays their own.
+    private var accountRow: some View {
+        Button { showsAccount = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color.red.gradient, in: .rect(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(app.account.name.isEmpty ? "YouTube Music" : app.account.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(app.account.status == .expired ? "Needs signing in again" : "Signed in to YouTube Music")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .glassEffect(.regular, in: .rect(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: Top lists
     @ViewBuilder
     private func topSongs(_ summary: ListeningSummary) -> some View {
         if !summary.topSongs.isEmpty {

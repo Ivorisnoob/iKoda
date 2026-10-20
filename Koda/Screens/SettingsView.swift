@@ -74,6 +74,23 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        AccountSettingsView()
+                    } label: {
+                        LabeledContent {
+                            Text(app.account.status.title)
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            SettingLabel("YouTube Music", systemImage: "play.rectangle.fill", tint: .red)
+                        }
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Sign in and Koda shows your liked songs, your playlists and a Home made for you.")
+                }
+
+                Section {
                     if Platform.isMac {
                         Button {
                             app.isProfilePresented = false

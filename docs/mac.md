@@ -16,6 +16,8 @@ Everything below the UI is shared: `KodaCore`, `AppModel`, the models of each pa
 - **Each section keeps its own trail of pages** (`paths[MacSection]`), and Home's model belongs to the window, so switching sections never reloads anything. Clicking the section you're in returns to its first page.
 - **Fetched pages are cached for ten minutes** in `KodaCore`'s `PageCache` (albums, artists, playlists, moods, explore, charts). Pull to refresh and ⌘R clear it.
 - **Settings is its own window** (`WindowGroup(id: "settings", for: String.self)`, so asking again brings the one window forward), laid out like System Settings.
+- **The roster of profiles lives in Settings → Profile**, as a list of pictures and names with a "Use" button, the way System Settings lists things. The sidebar's foot opens that window. The account's own library has a page of its own (`MacYouTubeView`, a sidebar row when an account is signed in), so the liked songs and playlists are a click away rather than buried in a settings pane.
+- **The sign-in sheet is a `WKWebView`** in a sheet of its own: Google's own page, with the session read out of the cookie store as it is written. The Mac build signs the same way the iPhone does, because the session is the same kind of thing on both.
 - **Add to Playlist is a submenu** of the listener's playlists on the Mac (`AddToPlaylistMenu`); New Playlist… asks for a name in a small sheet.
 - **Volume is Koda's own** (`Player.volume`): a Mac app can't set the system volume. It multiplies with normalization and is remembered.
 - **Artist headers use the artist's square photo**, blurred into a background and sharp as a round portrait. YouTube's banner is a wide image with the portrait pillarboxed inside, which shows bars across a wide window.

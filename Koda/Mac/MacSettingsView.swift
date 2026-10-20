@@ -296,6 +296,7 @@ private struct MacProfilePane: View {
                 Task { await app.account.signIn(cookieHeader: header) }
             }
         }
+        .task { app.profile.preparePhotos(for: app.account.roster) }
     }
 
     /// One profile in the roster: its picture, its name, and whether it is

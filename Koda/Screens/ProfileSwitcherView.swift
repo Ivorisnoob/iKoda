@@ -4,10 +4,11 @@ import SwiftUI
 /// The roster of profiles: who the app is being right now, and who else it
 /// could be.
 ///
-/// A sheet rather than a menu: a row here carries a picture, a name and
-/// sometimes a "needs signing in" state, which a dropdown cannot hold
-/// legibly. Switching is instant and offline — the sessions are already on
-/// the device — so there is nothing to wait for and nothing to confirm.
+/// A page rather than a sheet: it is pushed into the caller's stack, so it
+/// never has to be presented over another sheet, which is where the app
+/// stopped answering. Switching is instant and offline — the sessions are
+/// already on the device — so there is nothing to wait for and nothing to
+/// confirm.
 struct ProfileSwitcherView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -17,35 +18,27 @@ struct ProfileSwitcherView: View {
     @State private var removing: KodaProfile?
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach(app.account.roster) { profile in
-                        row(profile)
-                    }
-                } header: {
-                    Text("Profiles")
-                } footer: {
-                    Text("Each profile keeps its own liked songs, history, stats and playlists. Switching is instant and works without a connection.")
+        List {
+            Section {
+                ForEach(app.account.roster) { profile in
+                    row(profile)
                 }
-
-                Section {
-                    Button { showsSignIn = true } label: {
-                        Label("Add YouTube Account", systemImage: "play.rectangle.fill")
-                    }
-                    Button { addProfileOnThisDevice() } label: {
-                        Label("Add On-Device Profile", systemImage: "iphone")
-                    }
-                }
+            } header: {
+                Text("Profiles")
+            } footer: {
+                Text("Each profile keeps its own liked songs, history, stats and playlists. Switching is instant and works without a connection.")
             }
-            .navigationTitle("Profiles")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+            Section {
+                Button { showsSignIn = true } label: {
+                    Label("Add YouTube Account", systemImage: "play.rectangle.fill")
+                }
+                Button { addProfileOnThisDevice() } label: {
+                    Label("Add On-Device Profile", systemImage: "iphone")
                 }
             }
         }
+        .navigationTitle("Profiles")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showsSignIn) {
             YouTubeSignInView { header in
                 Task { await app.account.signIn(cookieHeader: header) }
@@ -66,6 +59,7 @@ struct ProfileSwitcherView: View {
         } message: { profile in
             Text("\(profile.displayName) is removed from this device. What it played and liked stays on the device, out of reach.")
         }
+        .task { app.profile.preparePhotos(for: app.account.roster) }
     }
 
     // MARK: A profile

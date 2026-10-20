@@ -7,7 +7,6 @@ struct AccountSettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @State private var showsSignIn = false
-    @State private var showsSwitcher = false
     @State private var confirmsSignOut = false
 
     var body: some View {
@@ -20,22 +19,49 @@ struct AccountSettingsView: View {
             }
 
             Section {
-                Button {
-                    showsSwitcher = true
-                } label: {
-                    LabeledContent {
-                        Text(app.account.roster.count > 1 ? "Switch Profile" : "Profiles")
+                // The roster is listed here rather than in a sheet of its
+                // own: a sheet presented over the settings sheet is where
+                // the app stopped answering.
+                ForEach(app.account.roster) { profile in
+                    Button {
+                        app.switchProfile(to: profile.id)
                     } label: {
-                        Label("Profiles", systemImage: "person.2.fill")
+                        HStack(spacing: 12) {
+                            ProfileAvatar(profile: profile, photo: app.profile.photo(for: profile), size: 32)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(profile.displayName)
+                                    .font(.body.weight(profile.id == app.profiles.activeID ? .semibold : .regular))
+                                    .lineLimit(1)
+                                Text(detail(for: profile))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if profile.id == app.profiles.activeID {
+                                Image(systemName: "checkmark")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                 }
                 Button {
                     showsSignIn = true
                 } label: {
                     Label("Add YouTube Account", systemImage: "play.rectangle.fill")
                 }
+                Button {
+                    let profile = app.profiles.addLocal()
+                    app.switchProfile(to: profile.id)
+                } label: {
+                    Label("Add On-Device Profile", systemImage: "iphone")
+                }
+            } header: {
+                Text("Profiles")
             } footer: {
-                Text("Each profile keeps its own liked songs, history and playlists.")
+                Text("Each profile keeps its own liked songs, history, stats and playlists. Switching is instant and works without a connection.")
             }
 
             if let error = app.account.error {
@@ -67,14 +93,12 @@ struct AccountSettingsView: View {
                 Task { await app.account.signIn(cookieHeader: header) }
             }
         }
-        .sheet(isPresented: $showsSwitcher) {
-            ProfileSwitcherView().appEnvironment(app)
-        }
         .confirmationDialog("Sign out of YouTube Music?", isPresented: $confirmsSignOut, titleVisibility: .visible) {
             Button("Sign Out", role: .destructive) { app.account.signOut() }
         } message: {
             Text("The session is forgotten on this device. Your library on this phone stays as it is.")
         }
+        .task { app.profile.preparePhotos(for: app.account.roster) }
     }
 
     // MARK: Signed out
@@ -166,5 +190,11 @@ struct AccountSettingsView: View {
     private var lastSynced: String {
         guard let date = app.account.lastSynced else { return "Never" }
         return date.formatted(.relative(presentation: .named))
+    }
+
+    /// What a profile's row says under its name.
+    private func detail(for profile: KodaProfile) -> String {
+        if app.account.needsSignIn.contains(profile.id) { return "Needs signing in" }
+        return profile.subtitle
     }
 }

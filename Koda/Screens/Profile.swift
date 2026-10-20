@@ -14,17 +14,18 @@ final class Profile {
     private let directory: URL
     /// The photos the listener chose, by profile.
     ///
-    /// Deliberately **not** observable: a view that draws a picture asks for
-    /// it while its body is running, and writing to an observed property
-    /// there would redraw that view for ever — the app would spin and stop
+    /// Deliberately **not** part of the observation, and deliberately a
+    /// static: a view that draws a profile's picture asks for it while its
+    /// body is running, and writing to something the observation watches
+    /// would redraw that view for ever — the app would spin and stop
     /// answering. The picture changes only when the roster does, and that is
     /// what the views watch.
-    private let pictures = PictureCache()
+    private static let pictures = PictureStore()
 
     init(manager: ProfileManager, directory: URL) {
         self.manager = manager
         self.directory = directory
-        pictures.set(loadPhoto(manager.active), for: manager.active.id)
+        Self.pictures.set(loadPhoto(manager.active), for: manager.active.id)
     }
 
     /// The active profile.
@@ -34,19 +35,29 @@ final class Profile {
     /// The initials for a placeholder avatar.
     var initials: String { profile.initials }
     /// The photo the active profile wears, if it has one.
-    var photo: UIImage? { pictures.image(for: profile.id) }
+    var photo: UIImage? { Self.pictures.image(for: profile.id) }
 
     /// Read the pictures again, after a switch or a change.
     func reload() {
-        pictures.set(loadPhoto(profile), for: profile.id)
+        Self.pictures.set(loadPhoto(profile), for: profile.id)
     }
 
     /// The photo a profile wears, if it has one.
+    ///
+    /// Reading it changes nothing the observation watches, so a view may ask
+    /// for it while its body is running.
     func photo(for profile: KodaProfile) -> UIImage? {
-        if let image = pictures.image(for: profile.id) { return image }
-        let image = loadPhoto(profile)
-        pictures.set(image, for: profile.id)
-        return image
+        if let image = Self.pictures.image(for: profile.id) { return image }
+        return loadPhoto(profile)
+    }
+
+    /// Read the pictures of a whole roster at once, away from any view's
+    /// body: a row that draws a picture should not have to read a file
+    /// every time it is drawn.
+    func preparePhotos(for profiles: [KodaProfile]) {
+        for profile in profiles where Self.pictures.image(for: profile.id) == nil {
+            Self.pictures.set(loadPhoto(profile), for: profile.id)
+        }
     }
 
     /// Rename the active profile.
@@ -64,7 +75,7 @@ final class Profile {
     /// Store a photo, shrunk to a square 512 pixels wide.
     func setPhoto(_ data: Data?) {
         guard let data, let image = UIImage(data: data) else {
-            pictures.set(nil, for: profile.id)
+            Self.pictures.set(nil, for: profile.id)
             manager.setPhoto(profile.id, photo: nil)
             try? FileManager.default.removeItem(at: photoURL(profile.id))
             return
@@ -79,7 +90,7 @@ final class Profile {
             image.draw(in: CGRect(x: -crop.minX * scale, y: -crop.minY * scale,
                                   width: image.size.width * scale, height: image.size.height * scale))
         }
-        pictures.set(squared, for: profile.id)
+        Self.pictures.set(squared, for: profile.id)
         try? squared.jpegData(compressionQuality: 0.85)?.write(to: photoURL(profile.id), options: .atomic)
         manager.setPhoto(profile.id, photo: photoURL(profile.id).lastPathComponent)
     }
@@ -104,7 +115,7 @@ final class Profile {
 /// A cache of pictures, deliberately kept out of the observation: reading one
 /// must not change what the app knows, or a view that draws a picture would
 /// redraw itself for ever.
-private final class PictureCache: @unchecked Sendable {
+private final class PictureStore: @unchecked Sendable {
     private var images: [UUID: UIImage] = [:]
 
     func image(for id: UUID) -> UIImage? { images[id] }

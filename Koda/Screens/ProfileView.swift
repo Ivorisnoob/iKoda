@@ -79,7 +79,6 @@ struct ProfileView: View {
     @State private var draftName = ""
     @State private var showsSettings = false
     @State private var showsAccount = false
-    @State private var showsSwitcher = false
 
     var body: some View {
         let summary = ListeningSummary(library: library, days: 7)
@@ -120,7 +119,6 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showsSettings) { SettingsView().appEnvironment(app) }
             .sheet(isPresented: $showsAccount) { AccountSettingsView().appEnvironment(app) }
-            .sheet(isPresented: $showsSwitcher) { ProfileSwitcherView().appEnvironment(app) }
             .alert("Your Name", isPresented: $editingName) {
                 TextField("Name", text: $draftName)
                     .textContentType(.givenName)
@@ -215,7 +213,9 @@ struct ProfileView: View {
 
     /// The profile the app is being right now, and the way to another one.
     private var switchProfileRow: some View {
-        Button { showsSwitcher = true } label: {
+        NavigationLink {
+            ProfileSwitcherView()
+        } label: {
             HStack(spacing: 12) {
                 ProfileAvatar(profile: app.profile.profile, photo: app.profile.photo, size: 36)
                 VStack(alignment: .leading, spacing: 1) {
@@ -232,7 +232,7 @@ struct ProfileView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(14)
-            .glassEffect(.regular, in: .rect(cornerRadius: 20, style: .continuous))
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)

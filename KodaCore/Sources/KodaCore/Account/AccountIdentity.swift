@@ -24,7 +24,7 @@ public struct YouTubeAccountIdentity: Hashable, Codable, Sendable {
     /// `accountName` and the picture in the `avatar` thumbnails, and
     /// `datasyncId` free-riding in `responseContext`.
     static func parse(_ root: JSON) -> YouTubeAccountIdentity? {
-        let popup = root["actions"].array.first?["openPopupAction"]["popup"]["multiPageMenuRenderer"]
+        let popup = root["actions"].array.first?["openPopupAction"]["popup"]["multiPageMenuRenderer"] ?? .null
         let header = popup["header"]["activeAccountHeaderRenderer"]
         let name = header["accountName"].text
         guard !name.isEmpty else { return nil }

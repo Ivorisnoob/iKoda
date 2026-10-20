@@ -60,7 +60,7 @@ enum AccountPages {
     /// `sectionListRenderer`, each continuation on `sectionListContinuation`.
     /// [verified October 2026 on Koda for Android: four pages signed in]
     static func sectionContinuation(_ root: JSON) -> String? {
-        let first = root["contents"]["singleColumnBrowseResultsRenderer"]["tabs"].array.first?["tabRenderer"]["content"]["sectionListRenderer"]
+        let first = root["contents"]["singleColumnBrowseResultsRenderer"]["tabs"].array.first?["tabRenderer"]["content"]["sectionListRenderer"] ?? .null
         let next = root["continuationContents"]["sectionListContinuation"]
         for renderer in [first, next] where renderer.exists {
             if let token = renderer["continuations"].array.first?["nextContinuationData"]["continuation"].nonEmpty { return token }
@@ -116,7 +116,9 @@ enum AccountPages {
             for renderer in [entry["gridRenderer"], entry["musicShelfRenderer"], entry["musicCarouselShelfRenderer"]] where renderer.exists {
                 if let token = renderer["continuations"].array.first?["nextContinuationData"]["continuation"].nonEmpty { return token }
                 let items = renderer["items"].array + renderer["contents"].array
-                if let token = items.objects("continuationItemRenderer").first?["continuationEndpoint"]["continuationCommand"]["token"].nonEmpty { return token }
+                for item in items {
+                    if let token = item["continuationItemRenderer"]["continuationEndpoint"]["continuationCommand"]["token"].nonEmpty { return token }
+                }
             }
         }
         return nil

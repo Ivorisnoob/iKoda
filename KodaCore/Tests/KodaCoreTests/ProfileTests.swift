@@ -111,4 +111,21 @@ import Testing
         library.activate(account)
         #expect(library.liked.map(\.id) == ["a"], "signing in takes nothing away")
     }
+
+    @Test func theRosterTravelsWithTheBackup() throws {
+        let directory = try tempDirectory()
+        let defaults = try #require(UserDefaults(suiteName: "ivors.Koda.tests.\(UUID().uuidString)"))
+        let manager = ProfileManager(directory: directory, defaults: defaults)
+        manager.add(KodaProfile(kind: .youtube, name: "Ivor"))
+        let library = Library(directory: directory, profileID: manager.activeID)
+
+        let data = try #require(library.backupData(roster: manager.rosterData()))
+        let roster = try #require(Library.roster(in: data))
+
+        let elsewhere = ProfileManager(directory: try tempDirectory(),
+                                      defaults: try #require(UserDefaults(suiteName: "ivors.Koda.tests.\(UUID().uuidString)")))
+        elsewhere.restoreRoster(from: roster)
+        #expect(elsewhere.profiles.count == 2, "the profiles come back with the library")
+        #expect(elsewhere.profiles.contains { $0.name == "Ivor" })
+    }
 }

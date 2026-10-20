@@ -253,6 +253,27 @@ public final class ProfileManager {
 
     // MARK: Storage
 
+    /// The roster as it is kept on disk, for a backup to carry.
+    public func rosterData() -> Data? {
+        guard let file else { return nil }
+        return try? Data(contentsOf: file)
+    }
+
+    /// Take a roster from a backup. The profiles come back; the sessions do
+    /// not, so an account is signed into again on this device.
+    public func restoreRoster(from data: Data) {
+        guard let restored = try? JSONDecoder().decode(Roster.self, from: data),
+              !restored.profiles.isEmpty else { return }
+        profiles = restored.profiles
+        // The profile that was active stays the active one if it is still
+        // here; otherwise the first one is.
+        if !profiles.contains(where: { $0.id == activeID }) {
+            activeID = restored.profiles[0].id
+        }
+        generation += 1
+        save()
+    }
+
     private func save() {
         guard let file else { return }
         let roster = Roster(profiles: profiles, active: activeID)

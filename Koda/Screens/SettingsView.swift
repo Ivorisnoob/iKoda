@@ -481,6 +481,7 @@ struct LibraryBackupDocument: FileDocument {
 }
 
 struct BackupSettingsView: View {
+    @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @State private var exportDocument: LibraryBackupDocument?
     @State private var importing = false
@@ -492,12 +493,14 @@ struct BackupSettingsView: View {
         Form {
             Section {
                 Button {
-                    if let data = library.backupData() { exportDocument = LibraryBackupDocument(data: data) }
+                    if let data = library.backupData(roster: app.profiles.rosterData()) {
+                        exportDocument = LibraryBackupDocument(data: data)
+                    }
                 } label: {
                     Label("Back Up Library", systemImage: "square.and.arrow.up")
                 }
             } footer: {
-                Text("Saves liked songs, playlists you made, saved albums, playlists and artists, history, stats and lyric timings to one file you can keep in Files or iCloud Drive.")
+                Text("Saves liked songs, playlists you made, saved albums, playlists and artists, history, stats and lyric timings to one file you can keep in Files or iCloud Drive. Your profiles go with it; your sign-in never does.")
             }
             Section {
                 Button {
@@ -543,6 +546,11 @@ struct BackupSettingsView: View {
                 guard let data = pendingRestore else { return }
                 do {
                     try library.restore(from: data)
+                    // The profiles come back with the library; the accounts
+                    // have to be signed into again.
+                    if let roster = Library.roster(in: data) {
+                        app.profiles.restoreRoster(from: roster)
+                    }
                     outcome = "Your library is restored."
                 } catch {
                     outcome = error.localizedDescription

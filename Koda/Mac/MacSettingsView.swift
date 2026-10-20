@@ -716,6 +716,7 @@ private struct MacStoragePane: View {
 }
 
 private struct MacBackupPane: View {
+    @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @State private var exportDocument: LibraryBackupDocument?
     @State private var importing = false
@@ -724,10 +725,12 @@ private struct MacBackupPane: View {
     @State private var outcome: String?
 
     var body: some View {
-        MacSettingsGroup(footer: "A backup holds liked songs, your playlists, saved albums, playlists and artists, history, stats and lyric timings. Last.fm sign-in isn't included.") {
+        MacSettingsGroup(footer: "A backup holds liked songs, your playlists, saved albums, playlists and artists, history, stats and lyric timings. Your profiles go with it; Last.fm sign-in doesn't.") {
             MacSettingsRow(title: "Back up library", detail: "Save everything to one file.") {
                 Button("Back Up…") {
-                    if let data = library.backupData() { exportDocument = LibraryBackupDocument(data: data) }
+                    if let data = library.backupData(roster: app.profiles.rosterData()) {
+                        exportDocument = LibraryBackupDocument(data: data)
+                    }
                 }
             }
             MacSettingsRow(title: "Restore from backup", detail: "Replaces everything in your library with what the backup holds.") {
@@ -759,6 +762,11 @@ private struct MacBackupPane: View {
                 guard let data = pendingRestore else { return }
                 do {
                     try library.restore(from: data)
+                    // The profiles come back with the library; the accounts
+                    // have to be signed into again.
+                    if let roster = Library.roster(in: data) {
+                        app.profiles.restoreRoster(from: roster)
+                    }
                     outcome = "Your library is restored."
                 } catch {
                     outcome = error.localizedDescription

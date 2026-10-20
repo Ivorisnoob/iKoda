@@ -448,14 +448,32 @@ public final class Library {
         var version: Int
         var exported: Date
         var library: Snapshot
+        /// The roster of profiles, carried along so a restore brings the
+        /// profiles back with the library. Absent in a backup made before
+        /// there were profiles.
+        var roster: Data?
     }
 
     /// Everything in the library as one JSON file, for keeping or moving to another phone.
-    public func backupData(at date: Date = Date()) -> Data? {
+    ///
+    /// The roster of profiles travels with it, so the profiles come back with
+    /// the library they belong to. The sessions never do: an account is signed
+    /// into again on the device that takes the backup.
+    public func backupData(at date: Date = Date(), roster: Data? = nil) -> Data? {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try? encoder.encode(Backup(format: Self.backupFormat, version: 1, exported: date, library: snapshot()))
+        return try? encoder.encode(Backup(format: Self.backupFormat, version: 1, exported: date,
+                                          library: snapshot(), roster: roster))
+    }
+
+    /// The roster a backup carries, if it has one.
+    public static func roster(in data: Data) -> Data? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let backup = try? decoder.decode(Backup.self, from: data),
+              backup.format == backupFormat else { return nil }
+        return backup.roster
     }
 
     /// Replace the library with a backup. Nothing changes unless the whole file reads as one.

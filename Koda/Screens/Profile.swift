@@ -13,11 +13,18 @@ final class Profile {
     let manager: ProfileManager
     private let directory: URL
     /// The photos the listener chose, by profile.
-    private var photos: [UUID: UIImage] = [:]
+    ///
+    /// Deliberately **not** observable: a view that draws a picture asks for
+    /// it while its body is running, and writing to an observed property
+    /// there would redraw that view for ever — the app would spin and stop
+    /// answering. The picture changes only when the roster does, and that is
+    /// what the views watch.
+    private let pictures = PictureCache()
 
     init(manager: ProfileManager, directory: URL) {
         self.manager = manager
         self.directory = directory
+        pictures.set(loadPhoto(manager.active), for: manager.active.id)
     }
 
     /// The active profile.
@@ -27,18 +34,18 @@ final class Profile {
     /// The initials for a placeholder avatar.
     var initials: String { profile.initials }
     /// The photo the active profile wears, if it has one.
-    var photo: UIImage? { photos[profile.id] }
+    var photo: UIImage? { pictures.image(for: profile.id) }
 
     /// Read the pictures again, after a switch or a change.
     func reload() {
-        photos[profile.id] = loadPhoto(profile)
+        pictures.set(loadPhoto(profile), for: profile.id)
     }
 
     /// The photo a profile wears, if it has one.
     func photo(for profile: KodaProfile) -> UIImage? {
-        if let image = photos[profile.id] { return image }
+        if let image = pictures.image(for: profile.id) { return image }
         let image = loadPhoto(profile)
-        photos[profile.id] = image
+        pictures.set(image, for: profile.id)
         return image
     }
 
@@ -57,7 +64,7 @@ final class Profile {
     /// Store a photo, shrunk to a square 512 pixels wide.
     func setPhoto(_ data: Data?) {
         guard let data, let image = UIImage(data: data) else {
-            photos[profile.id] = nil
+            pictures.set(nil, for: profile.id)
             manager.setPhoto(profile.id, photo: nil)
             try? FileManager.default.removeItem(at: photoURL(profile.id))
             return
@@ -72,7 +79,7 @@ final class Profile {
             image.draw(in: CGRect(x: -crop.minX * scale, y: -crop.minY * scale,
                                   width: image.size.width * scale, height: image.size.height * scale))
         }
-        photos[profile.id] = squared
+        pictures.set(squared, for: profile.id)
         try? squared.jpegData(compressionQuality: 0.85)?.write(to: photoURL(profile.id), options: .atomic)
         manager.setPhoto(profile.id, photo: photoURL(profile.id).lastPathComponent)
     }
@@ -92,6 +99,16 @@ final class Profile {
         }
         return nil
     }
+}
+
+/// A cache of pictures, deliberately kept out of the observation: reading one
+/// must not change what the app knows, or a view that draws a picture would
+/// redraw itself for ever.
+private final class PictureCache: @unchecked Sendable {
+    private var images: [UUID: UIImage] = [:]
+
+    func image(for id: UUID) -> UIImage? { images[id] }
+    func set(_ image: UIImage?, for id: UUID) { images[id] = image }
 }
 
 /// The listener's picture: the photo they chose, the drawn avatar they picked,

@@ -9,49 +9,55 @@ enum AccountPages {
 
     /// One account's Home: its shelves and the recommendations in them.
     ///
-    /// Quick picks is the shelf of song rows, and it is told apart by its
-    /// rows rather than by its title: it is the only shelf of list rows on
-    /// Home, and its title is localised.
+    /// The recommendations are told by their rows and not by their title: they
+    /// are the one shelf of songs on Home, whether YouTube draws that shelf
+    /// as a list or as a carousel of rows. [verified on Koda for Android,
+    /// October 2026]
     static func home(_ root: JSON) -> AccountHome {
         var shelves: [Shelf] = []
         var quickPicks: [Song] = []
         var quickPicksTitle = "Quick picks"
 
         for entry in sections(of: root) {
-            let carousel = entry["musicCarouselShelfRenderer"]
-            if carousel.exists {
-                let header = carousel["header"]["musicCarouselShelfBasicHeaderRenderer"]
-                let items = carousel["contents"].array.compactMap(Rows.item(entry:))
-                guard !items.isEmpty else { continue }
-                shelves.append(Shelf(title: header["title"].text,
-                                     strapline: header["strapline"].text.nonEmptyString,
-                                     items: Pages.dedupe(items)))
-                continue
-            }
-
-            let shelf = entry["musicShelfRenderer"]
-            if shelf.exists {
-                let title = shelf["title"].text
-                let items = shelf["contents"].array.compactMap { Rows.item(listRow: $0["musicResponsiveListItemRenderer"]) }
-                guard !items.isEmpty else { continue }
-                if quickPicks.isEmpty {
-                    let songs = items.compactMap { item -> Song? in
-                        if case .song(let song) = item { return song }
-                        return nil
-                    }
-                    if !songs.isEmpty {
-                        // The one shelf of song rows is Quick picks, and Home
-                        // shows it on its own.
-                        quickPicks = songs
-                        if !title.isEmpty { quickPicksTitle = title }
-                        continue
-                    }
+            let shelf = shelf(in: entry)
+            guard let shelf else { continue }
+            if quickPicks.isEmpty {
+                let songs = shelf.items.compactMap { item -> Song? in
+                    if case .song(let song) = item { return song }
+                    return nil
                 }
-                shelves.append(Shelf(title: title, items: Pages.dedupe(items)))
+                if !songs.isEmpty {
+                    // The recommendations are a shelf of their own, not a row
+                    // of cards among the others.
+                    quickPicks = songs
+                    if !shelf.title.isEmpty { quickPicksTitle = shelf.title }
+                    continue
+                }
             }
+            shelves.append(shelf)
         }
 
         return AccountHome(shelves: shelves, quickPicks: quickPicks, quickPicksTitle: quickPicksTitle)
+    }
+
+    /// The shelf one section of a page holds, whichever way it is drawn.
+    private static func shelf(in entry: JSON) -> Shelf? {
+        let carousel = entry["musicCarouselShelfRenderer"]
+        if carousel.exists {
+            let header = carousel["header"]["musicCarouselShelfBasicHeaderRenderer"]
+            let items = carousel["contents"].array.compactMap(Rows.item(entry:))
+            guard !items.isEmpty else { return nil }
+            return Shelf(title: header["title"].text,
+                         strapline: header["strapline"].text.nonEmptyString,
+                         items: Pages.dedupe(items))
+        }
+        let shelf = entry["musicShelfRenderer"]
+        if shelf.exists {
+            let items = shelf["contents"].array.compactMap { Rows.item(listRow: $0["musicResponsiveListItemRenderer"]) }
+            guard !items.isEmpty else { return nil }
+            return Shelf(title: shelf["title"].text, items: Pages.dedupe(items))
+        }
+        return nil
     }
 
     /// The token for the next block of Home's shelves.

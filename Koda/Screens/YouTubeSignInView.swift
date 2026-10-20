@@ -35,6 +35,10 @@ struct YouTubeSignInView: View {
                     isSignedIn = true
                     onSession(header)
                 }
+                // The page fills what is left: a web view has no size of its
+                // own, and a sheet sized to its text is a sheet with nothing
+                // in it.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle("Sign in to YouTube Music")
             .navigationBarTitleDisplayMode(.inline)
@@ -102,14 +106,11 @@ private struct SignInWebView: UIViewRepresentable {
             let dataStore = web.configuration.websiteDataStore
             self.dataStore = dataStore
             dataStore.httpCookieStore.add(self)
-            let url = Self.loginURL
-            // The jar is emptied first: Google's page signs in whoever the jar
-            // already holds, so a second account would silently be the first
-            // one again. The stored sessions are untouched by this.
-            dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
-                                 modifiedSince: .distantPast) { [weak self] in
-                Task { @MainActor in self?.web?.load(URLRequest(url: url)) }
-            }
+            // The jar is one of its own, thrown away with the view, so it
+            // never holds who signed in last time: nothing has to be wiped
+            // before the page is asked for, and the page is never left
+            // waiting for a wipe to finish.
+            web.load(URLRequest(url: Self.loginURL))
         }
 
         func stop() {
@@ -118,12 +119,16 @@ private struct SignInWebView: UIViewRepresentable {
 
         /// A cookie was written: the session may be here now.
         nonisolated func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+            // WebKit calls this on the main thread; the step is taken there
+            // rather than carried across, so nothing has to be sendable.
+            guard Thread.isMainThread else { return }
             MainActor.assumeIsolated { self.read(cookieStore) }
         }
 
         /// The page finished loading: the last of the sign-in steps may have
         /// written the session.
         nonisolated func webView(_ web: WKWebView, didFinish navigation: WKNavigation!) {
+            guard Thread.isMainThread else { return }
             MainActor.assumeIsolated { self.read(web.configuration.websiteDataStore.httpCookieStore) }
         }
 

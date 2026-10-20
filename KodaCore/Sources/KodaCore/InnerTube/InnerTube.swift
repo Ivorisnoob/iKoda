@@ -1,4 +1,8 @@
 import Foundation
+import os
+
+/// What the account's own pages say, and when they cannot be read.
+private let accountLog = Logger(subsystem: "Koda", category: "Account")
 
 public enum MusicError: Error, Sendable, Equatable {
     /// No connection, a timeout, or a body that could not be read.
@@ -338,9 +342,15 @@ public final class YouTubeMusic: Sendable {
             pages += 1
             if !quickPicks.isEmpty { break }
             guard let next = token else { break }
-            root = try await api.music("browse", ["continuation": next])
+            do {
+                root = try await api.music("browse", ["continuation": next])
+            } catch {
+                accountLog.error("The account's Home could not be continued: \(String(describing: error))")
+                break
+            }
             token = AccountPages.sectionContinuation(root)
         }
+        accountLog.debug("The account's Home: \(shelves.count) shelves, \(quickPicks.count) recommendations, \(pages) pages")
         return AccountHome(shelves: shelves, quickPicks: quickPicks, quickPicksTitle: quickPicksTitle)
     }
 
@@ -385,6 +395,9 @@ public final class YouTubeMusic: Sendable {
         async let playlists = (try? accountPlaylists()) ?? []
         async let identity = try? accountIdentity()
         let (songs, lists, who) = await (liked, playlists, identity)
+        if songs.isEmpty && lists.isEmpty {
+            accountLog.error("The account's library could not be read at all.")
+        }
         return AccountSnapshot(liked: songs, playlists: lists, identity: who)
     }
 

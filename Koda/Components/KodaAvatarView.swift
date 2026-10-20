@@ -17,7 +17,7 @@ struct KodaAvatarView: View {
 
     var body: some View {
         Canvas { context, canvas in
-            let rect = CGRect(origin: .zero, size: canvas.size)
+            let rect = CGRect(origin: .zero, size: canvas)
             let colours = KodaAvatarColours.colour(avatar.color)
             let fill = Color(red: red(colours.fill), green: green(colours.fill), blue: blue(colours.fill))
             let ink = Color(red: red(colours.ink), green: green(colours.ink), blue: blue(colours.ink))
@@ -79,7 +79,7 @@ struct KodaAvatarView: View {
             path.addArc(center: CGPoint(x: centre.x, y: centre.y - unit(0.012)),
                         radius: unit(0.05), startAngle: .degrees(20), endAngle: .degrees(160),
                         clockwise: false)
-            context.stroke(path, with: .color(ink), style: line())
+            context.stroke(path, with: .color(ink), style: line(0.035))
         }
         switch ((avatar.eyes % KodaAvatar.eyeCount) + KodaAvatar.eyeCount) % KodaAvatar.eyeCount {
         case 0:
@@ -104,7 +104,7 @@ struct KodaAvatarView: View {
                 var path = Path()
                 path.move(to: CGPoint(x: centre.x - unit(0.045), y: centre.y))
                 path.addLine(to: CGPoint(x: centre.x + unit(0.045), y: centre.y))
-                context.stroke(path, with: .color(ink), style: line())
+                context.stroke(path, with: .color(ink), style: line(0.035))
             }
         default:
             // Tall ovals.
@@ -131,7 +131,7 @@ struct KodaAvatarView: View {
                 path.closeSubpath()
                 context.fill(path, with: .color(ink))
             } else {
-                context.stroke(path, with: .color(ink), style: line())
+                context.stroke(path, with: .color(ink), style: line(0.035))
             }
         }
         switch ((avatar.mouth % KodaAvatar.mouthCount) + KodaAvatar.mouthCount) % KodaAvatar.mouthCount {
@@ -148,7 +148,7 @@ struct KodaAvatarView: View {
             var path = Path()
             path.move(to: at(0.45, mouthY + 0.01))
             path.addLine(to: at(0.55, mouthY + 0.01))
-            context.stroke(path, with: .color(ink), style: line())
+            context.stroke(path, with: .color(ink), style: line(0.035))
         case 4:
             let centre = at(0.5, mouthY + 0.01)
             let circle = Path(ellipseIn: CGRect(x: centre.x - unit(0.035), y: centre.y - unit(0.035),
@@ -252,7 +252,7 @@ struct KodaAvatarView: View {
 
 /// The outline an avatar is cut to, by its stored index. It wraps, so an
 /// unknown index still draws.
-struct KodaAvatarOutline: Shape {
+nonisolated struct KodaAvatarOutline: Shape {
     let kind: Int
 
     func path(in rect: CGRect) -> Path {
@@ -353,3 +353,4 @@ struct KodaAvatarOutline: Shape {
         return path
     }
 }
+

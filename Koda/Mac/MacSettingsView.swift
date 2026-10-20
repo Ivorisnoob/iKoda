@@ -403,7 +403,7 @@ private struct MacYouTubePane: View {
                 }
                 MacSettingsToggle(title: "Personalized Home",
                                   detail: "With an account signed in, Home shows that account's own shelves and recommendations.",
-                                  isOn: settings.personalizedHome)
+                                  isOn: $settings.personalizedHome)
             }
             MacSettingsGroup {
                 MacSettingsRow(title: "Sign out", detail: "The session is forgotten on this Mac.") {

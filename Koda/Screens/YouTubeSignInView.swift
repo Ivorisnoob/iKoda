@@ -102,7 +102,7 @@ private struct SignInWebView: UIViewRepresentable {
             let dataStore = web.configuration.websiteDataStore
             self.dataStore = dataStore
             dataStore.httpCookieStore.add(self)
-            guard let url = Self.loginURL else { return }
+            let url = Self.loginURL
             // The jar is emptied first: Google's page signs in whoever the jar
             // already holds, so a second account would silently be the first
             // one again. The stored sessions are untouched by this.

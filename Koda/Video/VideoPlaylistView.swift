@@ -48,10 +48,10 @@ struct VideoPlaylistView: View {
                                 }
                                 .padding(.horizontal, 20)
                             }
-                            if model.playlist?.value?.continuation != nil {
+                            if model.playlist.value?.continuation != nil {
                                 HStack { Spacer(); ProgressView(); Spacer() }
                                     .padding()
-                                    .task(id: model.playlist?.value?.continuation) { await model.loadMorePlaylist() }
+                                    .task(id: model.playlist.value?.continuation) { await model.loadMorePlaylist() }
                             }
                         }
                     }

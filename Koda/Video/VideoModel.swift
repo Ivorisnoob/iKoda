@@ -16,9 +16,9 @@ final class VideoModel {
     var filter: VideoSearchFilter = .all
     private(set) var searchResults: LoadState<VideoSearchResults>?
     private(set) var isLoadingMoreSearch = false
-    private(set) var playlist: LoadState<VideoPlaylistPage>?
+    private(set) var playlist: LoadState<VideoPlaylistPage> = .loading
     private(set) var isLoadingMorePlaylist = false
-    private(set) var watch: LoadState<VideoWatchPage>?
+    private(set) var watch: LoadState<VideoWatchPage> = .loading
     init(videos: YouTubeVideos) {
         self.videos = videos
     }

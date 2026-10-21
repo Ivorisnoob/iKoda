@@ -49,7 +49,7 @@ struct VideoWatchView: View {
                                 }
                                 .font(.subheadline.weight(.medium))
                                 .buttonStyle(.plain)
-                                .foregroundStyle(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -106,7 +106,7 @@ struct VideoWatchView: View {
                 playback.play(video)
             }
             await model.loadWatch(video.id)
-            if let page = model.watch.value, playback.current?.id == video.id {
+            if let page = model.watch.value, playback.current?.id == video.id, playback.upNext.isEmpty {
                 playback.upNext = page.upNext
             }
         }

@@ -129,7 +129,7 @@ import Testing
         #expect(page?.items.isEmpty == true)
     }
 
-    @Test func videoRendererBadgesAndShorts() {
+    @Test func videoRendererBadgesAndShorts() throws {
         let liveJSON = JSON([
             "videoId": "live1234567",
             "title": ["simpleText": "Live Stream Video"],

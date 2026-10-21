@@ -106,12 +106,12 @@ final class VideoModel {
     }
 
     func loadMorePlaylist() async {
-        guard !isLoadingMorePlaylist, let current = playlist?.value, let token = current.continuation else { return }
+        guard !isLoadingMorePlaylist, let current = playlist.value, let token = current.continuation else { return }
         isLoadingMorePlaylist = true
         defer { isLoadingMorePlaylist = false }
         do {
             let (items, continuation) = try await videos.playlistMore(token)
-            guard let page = playlist?.value else { return }
+            guard let page = playlist.value else { return }
             var merged = page
             merged.items += items
             merged.continuation = continuation

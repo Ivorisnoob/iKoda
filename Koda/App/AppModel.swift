@@ -184,6 +184,13 @@ final class AppModel {
         switch link {
         case .song(let videoId):
             Task { await playLinkedSong(videoId) }
+        case .video(let videoId):
+            // A video carries no title until its page loads; the watch page shows
+            // the title the page returns, not this empty placeholder.
+            let item = VideoItem(id: videoId, title: "", channel: "")
+            selectedTab = .videos
+            if Platform.isMac { requestedMacSection = .videos }
+            open(.video(item))
         case .album(let browseId):
             open(.album(AlbumSummary(id: browseId, title: "", artistLine: "")))
         case .playlist(let id):

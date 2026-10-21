@@ -14,10 +14,21 @@ struct VideoHomeView: View {
                     } description: {
                         Text(app.account.isSignedIn ? "No videos found." : "Sign in to see your video feed.")
                     } actions: {
-                        NavigationLink(value: Route.videoSearch) {
-                            Text("Search Videos")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(["Music videos", "Podcasts", "Gaming", "News", "Cooking"], id: \.self) { query in
+                                    Button(query) {
+                                        model.query = query
+                                        model.submitted = query
+                                        Task { await model.runSearch() }
+                                        app.open(.videoSearch)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .buttonBorderShape(.capsule)
+                                }
+                            }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .frame(maxWidth: .infinity)
                     }
                     .frame(minHeight: 300)
                 } else {

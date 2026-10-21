@@ -78,7 +78,7 @@ struct VideoWatchView: View {
             }
             .padding(.bottom, 24)
         }
-        .navigationTitle(video.title)
+        .navigationTitle(model.watch.value?.video.title ?? (video.title.isEmpty ? "Video" : video.title))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

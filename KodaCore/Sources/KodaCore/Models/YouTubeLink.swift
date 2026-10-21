@@ -7,6 +7,7 @@ import Foundation
 /// (`koda://watch?v=…`, `koda://playlist?list=…`, `koda://browse/MPREb_…`).
 public enum YouTubeLink: Equatable, Sendable {
     case song(videoId: String)
+    case video(videoId: String)
     case album(browseId: String)
     case playlist(id: String)
     case artist(channelId: String)
@@ -19,18 +20,23 @@ public enum YouTubeLink: Equatable, Sendable {
                                uniquingKeysWith: { first, _ in first })
         var path = parts.path.split(separator: "/").map(String.init)
 
+        // koda://watch?v=… puts the first word in the host.
+        let keepsSongSemantics: Bool
         switch scheme {
         case "koda":
-            // koda://watch?v=… puts the first word in the host.
             if !host.isEmpty { path.insert(host, at: 0) }
+            keepsSongSemantics = true
         case "http", "https":
             if host == "youtu.be" {
                 guard let id = path.first, Self.isVideoId(id) else { return nil }
-                self = .song(videoId: id)
+                self = .video(videoId: id)
                 return
             }
             let known = ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"]
             guard known.contains(host) else { return nil }
+            // Only music.youtube.com (and koda://) keep the song meaning; a plain
+            // youtube.com link is a video, even for watch/shorts/live.
+            keepsSongSemantics = (host == "music.youtube.com")
         default:
             return nil
         }
@@ -38,7 +44,7 @@ public enum YouTubeLink: Equatable, Sendable {
         switch path.first {
         case "watch":
             if let v = query["v"], Self.isVideoId(v) {
-                self = .song(videoId: v)
+                self = keepsSongSemantics ? .song(videoId: v) : .video(videoId: v)
             } else if let list = query["list"], let link = Self.playlistLink(list) {
                 self = link
             } else {
@@ -46,7 +52,7 @@ public enum YouTubeLink: Equatable, Sendable {
             }
         case "shorts", "live":
             guard path.count > 1, Self.isVideoId(path[1]) else { return nil }
-            self = .song(videoId: path[1])
+            self = keepsSongSemantics ? .song(videoId: path[1]) : .video(videoId: path[1])
         case "playlist":
             guard let list = query["list"], let link = Self.playlistLink(list) else { return nil }
             self = link

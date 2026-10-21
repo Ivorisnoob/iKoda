@@ -172,6 +172,13 @@ struct VideoSearchView: View {
     }
 
     private func submit(_ text: String, model: VideoModel) {
+        // A pasted YouTube link opens what it points at instead of searching for the URL.
+        if let link = YouTubeLink(text: text) {
+            model.query = ""
+            model.clearSearch()
+            app.openLink(link)
+            return
+        }
         Task { await model.search(text) }
     }
 

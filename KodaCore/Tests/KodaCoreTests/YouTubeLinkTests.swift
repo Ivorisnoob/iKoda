@@ -7,10 +7,20 @@ import Testing
 
     @Test func songs() {
         #expect(link("https://music.youtube.com/watch?v=dQw4w9WgXcQ&si=abc") == .song(videoId: "dQw4w9WgXcQ"))
-        #expect(link("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ") == .song(videoId: "dQw4w9WgXcQ"))
-        #expect(link("https://youtu.be/dQw4w9WgXcQ?t=42") == .song(videoId: "dQw4w9WgXcQ"))
-        #expect(link("https://m.youtube.com/shorts/dQw4w9WgXcQ") == .song(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://music.youtube.com/shorts/dQw4w9WgXcQ") == .song(videoId: "dQw4w9WgXcQ"))
         #expect(link("koda://watch?v=dQw4w9WgXcQ") == .song(videoId: "dQw4w9WgXcQ"))
+    }
+
+    @Test func videos() {
+        #expect(link("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://youtube.com/watch?v=dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://m.youtube.com/watch?v=dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://www.youtube.com/shorts/dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://www.youtube.com/live/dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://m.youtube.com/shorts/dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://youtu.be/dQw4w9WgXcQ?t=42") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(link("https://youtu.be/dQw4w9WgXcQ") == .video(videoId: "dQw4w9WgXcQ"))
     }
 
     @Test func collections() {
@@ -29,7 +39,8 @@ import Testing
     }
 
     @Test func findsALinkInText() {
-        #expect(YouTubeLink(text: "listen to this https://youtu.be/dQw4w9WgXcQ !!") == .song(videoId: "dQw4w9WgXcQ"))
+        #expect(YouTubeLink(text: "listen to this https://youtu.be/dQw4w9WgXcQ !!") == .video(videoId: "dQw4w9WgXcQ"))
+        #expect(YouTubeLink(text: "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ now") == .video(videoId: "dQw4w9WgXcQ"))
         #expect(YouTubeLink(text: "the weeknd") == nil)
     }
 }

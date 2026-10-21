@@ -440,6 +440,7 @@ extension YouTubeLink {
     var openTitle: String {
         switch self {
         case .song: "Play Song from Link"
+        case .video: "Open Video from Link"
         case .album: "Open Album from Link"
         case .playlist: "Open Playlist from Link"
         case .artist: "Open Artist from Link"

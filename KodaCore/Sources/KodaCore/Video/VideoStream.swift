@@ -154,13 +154,20 @@ actor VideoStreamResolver {
         return nil
     }
 
+    /// When googlevideo stops honouring the URL.
+    ///
+    /// A media URL carries the moment in its query; an HLS manifest carries it
+    /// in its path, right after `expire/`. [verified October 2026]
     private static func expireDate(from url: URL) -> Date? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-        return components.queryItems?
-            .first(where: { $0.name == "expire" })?
-            .value
-            .flatMap(Double.init)
-            .map { Date(timeIntervalSince1970: $0) }
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let value = components.queryItems?.first(where: { $0.name == "expire" })?.value,
+           let seconds = Double(value) {
+            return Date(timeIntervalSince1970: seconds)
+        }
+        guard let marker = url.path.range(of: "/expire/") else { return nil }
+        let digits = url.path[marker.upperBound...].prefix(while: { $0.isNumber })
+        guard let seconds = Double(digits) else { return nil }
+        return Date(timeIntervalSince1970: seconds)
     }
 
     private static func nonce(_ length: Int) -> String {

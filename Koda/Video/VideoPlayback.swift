@@ -139,6 +139,7 @@ final class VideoPlayback {
 
         player.replaceCurrentItem(with: avItem)
         onStart?()
+        activateAudioSession()
         player.play()
         isPlaying = true
         current = item
@@ -174,5 +175,15 @@ final class VideoPlayback {
         let next = upNext.removeFirst()
         current = next
         Task { await loadAndPlay(next) }
+    }
+
+    /// A video is sound the listener asked for: it plays with the ringer switch
+    /// off, like the music does.
+    private func activateAudioSession() {
+        #if os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+        try? session.setActive(true)
+        #endif
     }
 }

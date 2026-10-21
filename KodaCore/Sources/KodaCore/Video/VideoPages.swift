@@ -360,9 +360,29 @@ enum VideoPages {
 
     // MARK: - Continuation token extraction
 
+    /// The token that asks for the next page.
+    ///
+    /// YouTube keeps it in three shapes: the old `continuationItemRenderer` with
+    /// its endpoint, the newer `continuationItemViewModel`, and a command that
+    /// carries the token one level down inside itself. All three are read here,
+    /// because the same answer arrives in a different shape depending on the
+    /// page.
     static func continuationToken(_ node: JSON) -> String? {
-        node.first("continuationCommand")["token"].nonEmpty
-            ?? node.first("continuationEndpoint")["continuationCommand"]["token"].nonEmpty
-            ?? node.first("nextContinuationData")["continuation"].nonEmpty
+        for command in node.objects("continuationCommand") {
+            if let token = token(in: command) { return token }
+        }
+        for endpoint in node.objects("continuationEndpoint") {
+            if let token = token(in: endpoint["continuationCommand"]) { return token }
+        }
+        for data in node.objects("nextContinuationData") {
+            if let token = data["continuation"].nonEmpty { return token }
+        }
+        return nil
+    }
+
+    /// A command's own token, or the one nested inside it.
+    private static func token(in command: JSON) -> String? {
+        command["token"].nonEmpty
+            ?? command.first("continuationCommand")["token"].nonEmpty
     }
 }

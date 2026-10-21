@@ -69,6 +69,8 @@ extension View {
     func appEnvironment(_ model: AppModel) -> some View {
         environment(model)
             .environment(model.player)
+            .environment(model.videoPlayback)
+            .environment(model.videoModel)
             .environment(model.library)
             .environment(model.downloads)
             .environment(model.lastFM)

@@ -14,6 +14,14 @@ enum Clients {
     static let webVersion = "2.20260903.01.00"
     static let webRemixVersion = "1.20260901.12.00"
 
+    /// The standard YouTube web client on www.youtube.com.
+    enum Web {
+        static let name = "WEB"
+        static let version = webVersion
+        static let id = "1"
+        static let origin = "https://www.youtube.com"
+    }
+
     /// The stream client: one `/player` call under Koda's own visitorData,
     /// plain URLs on every format, whole files served in ranges.
     /// [verified October 2026: AAC itags 139/140 with URLs, no cipher]

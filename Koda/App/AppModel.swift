@@ -7,7 +7,10 @@ import SwiftUI
 @Observable
 final class AppModel {
     let music: YouTubeMusic
+    let videos: YouTubeVideos
     let player: Player
+    let videoPlayback: VideoPlayback
+    let videoModel: VideoModel
     let library: Library
     let lyrics = LyricsClient()
     let sleepTimer: SleepTimer
@@ -57,7 +60,12 @@ final class AppModel {
         let session = AccountStore(directory: directory)
         session.activate(profileID: profiles.activeID)
         music = YouTubeMusic(account: session)
+        videos = YouTubeVideos(account: session)
         player = Player(music: music, storageDirectory: directory)
+        videoPlayback = VideoPlayback(videos: videos)
+        // A video and a song must not play at once: the picture wins and the music steps aside.
+        videoPlayback.onStart = { [player] in player.pause() }
+        videoModel = VideoModel(videos: videos)
         library = Library(directory: directory, profileID: profiles.activeID)
         sleepTimer = SleepTimer(player: player)
         profile = Profile(manager: profiles, directory: directory)
@@ -210,5 +218,5 @@ final class AppModel {
 }
 
 enum AppTab: Hashable {
-    case home, library, search
+    case home, library, search, videos
 }

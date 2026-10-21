@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A place in the Mac's sidebar.
 enum MacSection: Hashable {
-    case home, browse, search
+    case home, browse, search, videos
     case recent, liked, albums, playlists, artists, downloads, offline, stats
     case lastFM
     /// The signed-in YouTube Music account: its liked songs and playlists.
@@ -108,6 +108,7 @@ struct MacRootView: View {
             case .search:
                 if section != .search { section = .browse }
                 searchFocused = true
+            case .videos: section = .videos
             }
         }
         .onChange(of: model.requestedMacSection) { _, requested in
@@ -181,6 +182,7 @@ struct MacRootView: View {
             Section {
                 sidebarRow("Home", "house", .home)
                 sidebarRow("Browse", "square.grid.2x2", .browse)
+                sidebarRow("Videos", "play.rectangle.fill", .videos)
                 if search.submitted != nil {
                     sidebarRow("Search Results", "magnifyingglass", .search)
                 }
@@ -290,6 +292,7 @@ struct MacRootView: View {
         switch section ?? .home {
         case .home: MacHomeView(model: home)
         case .browse: MacBrowseView(search: search) { submit($0) }
+        case .videos: VideoHomeView()
         case .search: MacSearchResultsView(model: search)
         case .recent: SavedSongsView(title: "Recently Played", source: .recent)
         case .liked: SavedSongsView(title: "Liked Songs", source: .liked)

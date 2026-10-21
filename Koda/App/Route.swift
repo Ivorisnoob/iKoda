@@ -18,7 +18,9 @@ enum Route: Hashable {
     case songList(title: String, subtitle: String?, songs: [Song])
     /// The player, as a page of its own on the Mac, zooming out of the player bar's cover.
     case nowPlaying
-
+    case video(VideoItem)
+    case videoPlaylist(VideoPlaylistSummary)
+    case videoSearch
     enum SongSource: Hashable {
         case liked, recent, downloaded
         /// Every song held whole on the device: downloads and songs kept from listening.
@@ -52,6 +54,9 @@ extension View {
             case .stats: StatsView()
             case .songList(let title, let subtitle, let songs): SongListView(title: title, subtitle: subtitle, songs: songs)
             case .nowPlaying: NowPlayingPage()
+            case .video(let video): VideoWatchView(video: video)
+            case .videoPlaylist(let playlist): VideoPlaylistView(summary: playlist)
+            case .videoSearch: VideoSearchView()
             }
         }
     }

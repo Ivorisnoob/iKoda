@@ -172,4 +172,6 @@ Probed from the Windows PC; the scripts and the raw answers are in `.scratchpad/
 | Where do the search rows live? | `contents.twoColumnSearchResultsRenderer.primaryContents.sectionListRenderer.contents[].itemSectionRenderer.contents[].videoRenderer`. |
 | Where do the up-next rows live? | `contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results[].lockupViewModel` with `contentType = LOCKUP_CONTENT_TYPE_VIDEO`. |
 | Where do the watch page's title and owner live? | `…results.results.contents[1].videoPrimaryInfoRenderer` and `…contents[2].videoSecondaryInfoRenderer`. |
-| Which browse ids answer? | `FEwhat_to_watch` does. `FEtrending`, `FEexplore` and `FEpopular` are refused (HTTP 400) — the feed id list still has to be pinned down. |
+| Which browse ids answer? | `FEwhat_to_watch` does, but only with an account: signed out it answers with a sign-in nudge and no rows. `FEtrending`, `FEexplore`, `FEpopular` and `FEtopics` are refused (HTTP 400). YouTube has no public trending feed any more, so the app falls back to a search when the feed is empty. |
+| Does googlevideo check the User-Agent on the HLS path? | No. The manifest, its media playlists and its segments answer 200 with any User-Agent, including none at all. So the player needs no header trick. |
+| What does a signed-out feed answer? | `browse` with `FEwhat_to_watch` answers `richGridRenderer` with one `richSectionRenderer` holding a `feedNudgeRenderer` and no rows. |

@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var homePath: [Route] = []
     @State private var libraryPath: [Route] = []
     @State private var searchPath: [Route] = []
+    @State private var videoPath: [Route] = []
     @Namespace private var playerTransition
     /// Now Playing's presentation, owned here rather than bound to the model: when the cover's
     /// binding comes from an @Observable model, the zoom out of the tab bar accessory finds no
@@ -38,6 +39,11 @@ struct RootView: View {
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack(path: $searchPath) {
                     SearchView().routeDestinations()
+                }
+            }
+            Tab("Videos", systemImage: "play.rectangle.fill", value: AppTab.videos) {
+                NavigationStack(path: $videoPath) {
+                    VideoHomeView().routeDestinations()
                 }
             }
         }
@@ -75,6 +81,7 @@ struct RootView: View {
             case .home: homePath.append(route)
             case .library: libraryPath.append(route)
             case .search: searchPath.append(route)
+            case .videos: videoPath.append(route)
             }
         }
     }

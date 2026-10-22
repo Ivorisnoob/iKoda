@@ -113,7 +113,6 @@ public final class LastFM {
     private var operation: Task<Void, Never>?
     private var retryAfter = Date.distantPast
     private var clock = LastFMListeningClock()
-    private var announced: UUID?
 
     public init(directory: URL, keychainService: String = "ivors.Koda.lastfm") {
         stateFile = directory.appending(path: "lastfm.json")
@@ -244,9 +243,9 @@ public final class LastFM {
             clock.reset()
             return
         }
+        // Called once per play: a song coming round again on repeat one is a new play, announced
+        // and scrobbled again, though it is the same occurrence in the queue.
         clock.start(occurrence, at: Date())
-        guard announced != occurrence else { return }
-        announced = occurrence
         let play = LastFMPlay(artist: artist, track: track, album: album, duration: duration, startedAt: Date())
         Task { [self] in try? await nowPlaying(play) }
     }
@@ -426,7 +425,6 @@ public final class LastFM {
         operation = nil
         isBusy = false
         clock.reset()
-        announced = nil
     }
 
     // MARK: Storage

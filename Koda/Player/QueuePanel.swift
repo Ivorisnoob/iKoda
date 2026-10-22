@@ -3,9 +3,25 @@ import SwiftUI
 
 /// Shuffle, repeat and autoplay over the list of what plays next.
 struct QueuePanel: View {
+    @Environment(AppModel.self) private var model
     @Environment(Player.self) private var player
-    /// What Clear removed, offered back for a few seconds.
-    @State private var cleared: [Song]?
+    @Environment(Library.self) private var library
+    /// What the last Clear or Remove took out, offered back for a few seconds.
+    @State private var undo: Undo?
+    @State private var removals = 0
+
+    private enum Undo: Equatable {
+        case cleared([Song])
+        /// One song, and where it stood among the upcoming ones.
+        case removed(Song, at: Int)
+
+        var label: String {
+            switch self {
+            case .cleared: "Undo"
+            case .removed: "Undo Remove"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -17,8 +33,8 @@ struct QueuePanel: View {
                     .font(.headline)
                     .foregroundStyle(.white)
                 Spacer()
-                if let cleared {
-                    Button("Undo") { undoClear(cleared) }
+                if let undo {
+                    Button(undo.label) { perform(undo) }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .transition(.opacity)
@@ -29,7 +45,7 @@ struct QueuePanel: View {
                         .transition(.opacity)
                 }
             }
-            .animation(.smooth(duration: 0.2), value: cleared == nil)
+            .animation(.smooth(duration: 0.2), value: undo)
             List {
                 Section {
                     ForEach(player.upcoming) { item in
@@ -40,10 +56,20 @@ struct QueuePanel: View {
                             .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                             .listRowBackground(Color.clear)
                             .listRowSeparatorTint(.white.opacity(0.15))
-                            .swipeActions {
-                                Button("Remove", systemImage: "trash", role: .destructive) { player.remove(item.id) }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button("Remove", systemImage: "minus.circle", role: .destructive) { remove(item) }
                             }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { moveToTop(item) }
+                                    .tint(.indigo)
+                            }
+                            .contextMenu { menu(for: item) }
+                            .accessibilityAction(named: "Remove from Queue") { remove(item) }
+                            .accessibilityAction(named: "Play Next") { moveToTop(item) }
                     }
+                    // Outside edit mode a row is picked up with a long press and dragged. Edit
+                    // mode would show grab handles, but it also switches every swipe action off,
+                    // which left songs impossible to remove.
                     .onMove { source, destination in player.moveUpcoming(fromOffsets: source, toOffset: destination) }
                 }
             }
@@ -53,30 +79,69 @@ struct QueuePanel: View {
             .id(player.isShuffled)
             .scrollEdgeEffectStyle(.soft, for: .all)
             .scrollContentBackground(.hidden)
-            .environment(\.editMode, .constant(.active))
+            .sensoryFeedback(.impact(weight: .light), trigger: removals)
             .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.04),
                                          .init(color: .black, location: 0.94), .init(color: .clear, location: 1)],
                                  startPoint: .top, endPoint: .bottom))
         }
-        .task(id: cleared == nil) {
-            guard cleared != nil else { return }
+        .task(id: undo) {
+            guard undo != nil else { return }
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
-            cleared = nil
+            undo = nil
         }
     }
 
+    @ViewBuilder
+    private func menu(for item: QueueItem) -> some View {
+        Section {
+            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { moveToTop(item) }
+            Button("Remove from Queue", systemImage: "minus.circle", role: .destructive) { remove(item) }
+        }
+        Section {
+            let liked = library.isLiked(item.song)
+            Button(liked ? "Remove from Liked" : "Like", systemImage: liked ? "heart.slash" : "heart") { library.toggleLike(item.song) }
+            AddToPlaylistMenu(songs: [item.song])
+            if let album = item.song.album {
+                Button("Go to Album", systemImage: "square.stack") {
+                    model.open(.album(AlbumSummary(id: album.id, title: album.title, artistLine: item.song.artistLine,
+                                                   artists: item.song.artists, artwork: item.song.artwork)))
+                }
+            }
+            GoToArtistItems(song: item.song) { model.open(.artist($0)) }
+        }
+    }
+
+    private func remove(_ item: QueueItem) {
+        guard let index = player.upcoming.firstIndex(where: { $0.id == item.id }) else { return }
+        withAnimation { player.remove(item.id) }
+        undo = .removed(item.song, at: index)
+        removals += 1
+    }
+
+    private func moveToTop(_ item: QueueItem) {
+        guard let index = player.upcoming.firstIndex(where: { $0.id == item.id }), index > 0 else { return }
+        withAnimation { player.moveUpcoming(fromOffsets: [index], toOffset: 0) }
+    }
+
     private func clear() {
-        cleared = player.upcoming.map(\.song)
+        undo = .cleared(player.upcoming.map(\.song))
         withAnimation { player.clearUpcoming() }
     }
 
-    /// Autoplay may have filled the queue again since; what was cleared comes back in its place.
-    private func undoClear(_ songs: [Song]) {
-        cleared = nil
+    private func perform(_ undo: Undo) {
+        self.undo = nil
         withAnimation {
-            player.clearUpcoming()
-            player.addToQueue(songs)
+            switch undo {
+            case .cleared(let songs):
+                // Autoplay may have filled the queue again since; what was cleared comes back in its place.
+                player.clearUpcoming()
+                player.addToQueue(songs)
+            case .removed(let song, let index):
+                // Back where it was: inserted first, then moved down; a move to offset n lands it at n - 1.
+                player.playNext([song])
+                if index > 0 { player.moveUpcoming(fromOffsets: [0], toOffset: min(index, player.upcoming.count - 1) + 1) }
+            }
         }
     }
 

@@ -106,6 +106,25 @@ struct LivePlayerTests {
         player.stop()
     }
 
+    @Test func repeatOneCrossfadesIntoItsOwnStartAndCountsAPlay() async throws {
+        let (player, songs) = try await makePlayer()
+        player.crossfades = true
+        player.crossfadeDuration = 4
+        player.setRepeat(.one)
+        var starts = 0
+        player.onItemStarted = { _ in starts += 1 }
+        player.play(songs)
+        try await waitFor("the song on standby") { player.phase == .ready && player.loadedItemCount == 2 && player.timeAnchor.rate > 0 }
+        #expect(starts == 1)
+        player.seek(to: player.duration - 7)
+        try await waitFor("the fade back to the start", timeout: 15) { player.isFadingOut }
+        #expect(player.position() < 3, "the same song starts again from its beginning")
+        try await waitFor("the repeat to count as a play") { starts == 2 }
+        #expect(player.current?.id == songs[0].id)
+        #expect(player.queue.currentIndex == 0)
+        player.stop()
+    }
+
     @Test func shuffleMidSongKeepsPlayingAndRepreloads() async throws {
         let (player, songs) = try await makePlayer()
         player.play(songs)

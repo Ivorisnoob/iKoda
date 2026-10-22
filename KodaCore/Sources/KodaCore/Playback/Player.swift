@@ -600,9 +600,10 @@ public final class Player {
     }
 
     /// The song `id` is about to end: fade it out over what's left while the next song fades
-    /// in on the standby player. Only when that is the song the queue will play anyway.
+    /// in on the standby player. Only when that is the song the queue will play anyway, which
+    /// under repeat one is the same song again, waiting from its start.
     private func crossfade(from id: UUID) {
-        guard crossfades, wantsToPlay, !stopsAtEndOfSong, queue.repeatMode != .one,
+        guard crossfades, wantsToPlay, !stopsAtEndOfSong,
               let item = avPlayer.currentItem, occurrences[ObjectIdentifier(item)] == id, queue.current?.id == id,
               let standby, standby.id == queue.peekNext(automatic: true)?.id else { return }
         let left = item.forwardPlaybackEndTime.seconds - item.currentTime().seconds
@@ -813,7 +814,11 @@ public final class Player {
         guard let item, let id = occurrences[item] else { return }
         // Its first time reading can still be the previous item's, so a preloaded song starts its clock at zero.
         let startsFresh = preloaded.remove(item) != nil
-        trace("currentItemChanged fresh=\(startsFresh) queueMatches=\(queue.current?.id == id) t=\(avPlayer.currentTime().seconds)")
+        // A preloaded copy of the song already current is repeat one coming round again:
+        // a new play for history, stats and Last.fm, though the queue stays where it is.
+        let loops = startsFresh && queue.current?.id == id
+        if loops { startedReported = nil }
+        trace("currentItemChanged fresh=\(startsFresh) loops=\(loops) queueMatches=\(queue.current?.id == id) t=\(avPlayer.currentTime().seconds)")
         let previous = lastAVItem
         lastAVItem = avPlayer.currentItem
         watchStatus(of: avPlayer.currentItem, id: id)
@@ -996,11 +1001,20 @@ public final class Player {
         let seconds = avPlayer.currentTime().seconds
         trace("sample t=\(seconds) phase=\(phase) status=\(avPlayer.timeControlStatus.rawValue)")
         guard seconds.isFinite, phase == .ready else {
-            timeAnchor.rate = 0
+            if timeAnchor.rate != 0 {
+                timeAnchor = TimeAnchor(position: position(), date: Date(), rate: 0)
+                updateNowPlaying()
+            }
             return
         }
         let rate = avPlayer.timeControlStatus == .playing ? Double(avPlayer.rate) : 0
-        timeAnchor = TimeAnchor(position: seconds, date: Date(), rate: rate)
+        let fresh = TimeAnchor(position: seconds, date: Date(), rate: rate)
+        let drifted = fresh.rate != timeAnchor.rate || abs(position(at: fresh.date) - fresh.position) > 1
+        timeAnchor = fresh
+        // The Lock Screen runs its own clock from the last published sample. A periodic sample
+        // that corrects the rate or the position has to reach it too, or it stays frozen (a
+        // rate 0 caught as repeat one came round) while the app's own bar has moved on.
+        if drifted { updateNowPlaying() }
     }
 
     // MARK: - Audio session

@@ -47,7 +47,7 @@ struct VideoHomeView: View {
     private func feedList(_ model: VideoFeedModel) -> some View {
         switch model.state {
         case .loading:
-            ForEach(Video.placeholders) { VideoCard(video: $0).padding(.horizontal, 16) }
+            ForEach(Video.placeholders) { VideoCard(video: $0).padding(.horizontal, VideoMetrics.side) }
                 .loadingPlaceholder()
         case .failed(let message):
             ContentUnavailableView {
@@ -69,7 +69,7 @@ struct VideoHomeView: View {
                         VideoCard(video: video, width: 420)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, VideoMetrics.side)
                 }
                 if model.canLoadMore {
                     ProgressView()
@@ -90,10 +90,7 @@ struct VideoHomeView: View {
                     .keyboardShortcut("r", modifiers: .command)
             }
             if feed.kind == .home, !library.watched.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    MacSectionTitle(title: "Recently Watched")
-                    RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)), cardWidth: 250)
-                }
+                RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
             }
             VideoGrid(model: feed)
         }
@@ -145,45 +142,56 @@ struct VideoGrid: View {
 struct VideoCardGrid: View {
     let videos: [Video]
     var showsChannel = true
+    /// A context menu item that takes the video off this list (Watched).
+    var remove: ((Video) -> Void)?
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 20, alignment: .top)], spacing: 26) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 20, alignment: .top)], spacing: 28) {
             ForEach(videos) { video in
                 NavigationLink(value: Route.video(video)) {
                     VideoCard(video: video, width: 360, showsChannel: showsChannel)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    ShareLink(item: video.watchURL) { Label("Share", systemImage: "square.and.arrow.up") }
+                    if let remove {
+                        Button("Remove from Watched", systemImage: "trash", role: .destructive) { remove(video) }
+                    }
+                }
             }
         }
+        .padding(.horizontal, VideoMetrics.side)
     }
 }
 
-/// What was watched lately, to go back to.
+/// Video pages' side margin: the iPhone's shelves' 20 points, the Mac's page gutter.
+enum VideoMetrics {
+    static var side: CGFloat { Platform.isMac ? MacMetrics.gutter : 20 }
+}
+
+extension Video {
+    var watchURL: URL { URL(string: "https://www.youtube.com/watch?v=\(id)")! }
+}
+
+/// What was watched lately, to go back to: the app's own shelf on each platform.
 struct RecentlyWatchedShelf: View {
     let videos: [Video]
-    var cardWidth: CGFloat = 220
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !Platform.isMac {
-                Text("Recently Watched")
-                    .font(.title3.bold())
-                    .padding(.horizontal, 16)
+        if Platform.isMac {
+            MacShelf(title: "Recently Watched", seeAll: .watched) { cards(width: 260) }
+        } else {
+            ShelfView(title: "Recently Watched", seeAll: .watched) { cards(width: 220) }
+        }
+    }
+
+    private func cards(width: CGFloat) -> some View {
+        ForEach(videos) { video in
+            NavigationLink(value: Route.video(video)) {
+                VideoCard(video: video, width: width, showsChannel: false)
+                    .frame(width: width)
             }
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 14) {
-                    ForEach(videos) { video in
-                        NavigationLink(value: Route.video(video)) {
-                            VideoCard(video: video, width: cardWidth, showsChannel: false)
-                                .frame(width: cardWidth)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, Platform.isMac ? 0 : 16)
-            }
-            .scrollIndicators(.hidden)
-            .scrollClipDisabled()
+            .buttonStyle(.plain)
         }
     }
 }
@@ -223,10 +231,9 @@ struct VideoSearchResultsView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, Platform.isMac ? 0 : 16)
                 }
+                .contentMargins(.horizontal, VideoMetrics.side, for: .scrollContent)
                 .scrollIndicators(.hidden)
-                .scrollClipDisabled()
             }
             if Platform.isMac {
                 VideoCardGrid(videos: results.videos.videos)
@@ -234,7 +241,7 @@ struct VideoSearchResultsView: View {
                 ForEach(results.videos.videos) { video in
                     NavigationLink(value: Route.video(video)) { VideoCard(video: video, width: 420) }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, VideoMetrics.side)
                 }
             }
             if results.videos.continuation != nil {

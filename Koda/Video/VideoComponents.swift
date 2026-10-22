@@ -94,6 +94,8 @@ struct VideoCard: View {
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(2, reservesSpace: true)
                         .multilineTextAlignment(.leading)
+                        // A grid cell otherwise held the title to one line and an ellipsis.
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(showsChannel ? video.byline : [video.views, video.published].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)

@@ -6,6 +6,8 @@ import SwiftUI
 struct KodaApp: App {
     @State private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    /// Answers which way the iPhone may turn: upright, except a full-screen video.
+    @UIApplicationDelegateAdaptor(KodaAppDelegate.self) private var appDelegate
 
     init() {
         let model = AppModel()

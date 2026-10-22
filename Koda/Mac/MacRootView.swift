@@ -59,7 +59,8 @@ struct MacRootView: View {
         }
         .environment(\.nowPlayingZoom, playerZoom)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if player.current != nil {
+            // The songs' bar belongs to music mode; in video mode the video is what plays.
+            if player.current != nil, model.settings.mode == .music {
                 // Under Now Playing the bar only repeats it, so it steps out of sight; it stays in
                 // place, as the cover the player zooms back into.
                 MacPlayerBar(open: { panel in
@@ -72,7 +73,7 @@ struct MacRootView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.smooth(duration: 0.35), value: player.current == nil)
+        .animation(.smooth(duration: 0.35), value: player.current == nil || model.settings.mode == .video)
         .animation(.smooth(duration: 0.25), value: showsNowPlaying)
     }
 
@@ -294,7 +295,10 @@ struct MacRootView: View {
 
     private var sidebarFoot: some View {
         VStack(spacing: 8) {
-            MacSidebarGlance(openQueue: { model.showNowPlaying(.queue) }, openStats: { section = .stats })
+            // Up Next and today's listening are the songs'; video mode leaves them out.
+            if model.settings.mode == .music {
+                MacSidebarGlance(openQueue: { model.showNowPlaying(.queue) }, openStats: { section = .stats })
+            }
             profileButton
         }
     }
@@ -393,7 +397,7 @@ struct MacRootView: View {
         case .watched: VideoLibraryView()
         case .videoSearch:
             MacPage {
-                MacPageTitle(title: videoSearch.submitted ?? "Search") { EmptyView() }
+                MacPageTitle(title: videoSearch.submitted ?? "Search", subtitle: "YouTube")
                 VideoSearchResultsView(model: videoSearch)
             }
             .navigationTitle("Search Results")

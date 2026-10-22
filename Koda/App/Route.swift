@@ -20,6 +20,8 @@ enum Route: Hashable {
     case video(Video)
     /// A YouTube channel's page.
     case channel(id: String, name: String)
+    /// The videos watched, most recent first.
+    case watched
     /// Songs the app put together, such as Your Mix.
     case songList(title: String, subtitle: String?, songs: [Song])
     /// The player, as a page of its own on the Mac, zooming out of the player bar's cover.
@@ -57,6 +59,7 @@ extension View {
             case .history: HistoryView()
             case .video(let video): VideoWatchView(video: video)
             case .channel(let id, let name): ChannelView(channelId: id, name: name)
+            case .watched: VideoLibraryView()
             case .songList(let title, let subtitle, let songs): SongListView(title: title, subtitle: subtitle, songs: songs)
             case .nowPlaying: NowPlayingPage()
             }

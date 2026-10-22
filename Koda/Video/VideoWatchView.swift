@@ -1,12 +1,18 @@
 import AVFoundation
 import KodaCore
 import SwiftUI
+import UIKit
 
-/// A video playing, with its details, its channel and Up Next. On the iPhone the player stays at
-/// the top while the rest scrolls under it; on a wide Mac window Up Next is a column of its own.
+/// A video playing, with its details, its channel and Up Next.
+///
+/// iPhone: no bar; the video sits right under the status bar with its back button on it (the
+/// edge swipe still goes back), the tab bar steps away, and the details and Up Next scroll under
+/// the video. Turning the phone sideways takes a landscape video full screen.
+/// Mac: the window's toolbar as usual; a wide window puts Up Next in a column of its own.
 struct VideoWatchView: View {
     let video: Video
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
     @State private var watch: WatchModel
     @State private var width: CGFloat = 0
 
@@ -20,10 +26,14 @@ struct VideoWatchView: View {
     private var shown: Video { (watch.state.value?.video ?? video).merged(over: video) }
 
     var body: some View {
+        @Bindable var playback = playback
         Group {
             if Platform.isMac { macBody } else { phoneBody }
         }
         .navigationTitle(Platform.isMac ? shown.title : "")
+        .fullScreenCover(isPresented: $playback.isFullScreen) {
+            FullScreenVideoView(playback: playback, video: shown)
+        }
         .task {
             playback.play(video)
             await watch.load(music: app.music)
@@ -31,28 +41,39 @@ struct VideoWatchView: View {
         }
         .onDisappear {
             // Another video's page took over, or the video went to picture in picture: leave it be.
-            if playback.current?.id == video.id, !playback.isInPictureInPicture { playback.pause() }
+            if playback.current?.id == video.id, !playback.isInPictureInPicture, !playback.isFullScreen { playback.pause() }
         }
     }
 
     // MARK: iPhone
 
-    /// The player under the status bar on black, as a video app's is, with the back button
-    /// floating over it; the tab bar steps away while watching so the page is the video's.
     private var phoneBody: some View {
         VStack(spacing: 0) {
-            player
-                .background(Color.black.ignoresSafeArea(.container, edges: .top))
+            VideoPlayerView(playback: playback, video: shown, onBack: { dismiss() })
+                .aspectRatio(16 / 9, contentMode: .fit)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     details
                     upNext
                 }
-                .padding(16)
+                .padding(.horizontal, VideoMetrics.side)
+                .padding(.vertical, 16)
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
+        .background { InteractivePopEnabler().frame(width: 0, height: 0) }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in turned() }
+        .onAppear { UIDevice.current.beginGeneratingDeviceOrientationNotifications() }
+        .onDisappear { UIDevice.current.endGeneratingDeviceOrientationNotifications() }
+    }
+
+    /// Sideways with a landscape video on, as in the TV app: full screen.
+    private func turned() {
+        guard playback.current?.id == video.id, playback.player.currentItem != nil, !playback.isFullScreen else { return }
+        let size = playback.presentationSize
+        guard size.width > size.height, UIDevice.current.orientation.isLandscape else { return }
+        playback.isFullScreen = true
     }
 
     // MARK: Mac
@@ -61,75 +82,50 @@ struct VideoWatchView: View {
         let wide = width >= 1020
         return Group {
             if wide {
-                HStack(alignment: .top, spacing: 24) {
+                HStack(alignment: .top, spacing: 28) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
-                            player.clipShape(.rect(cornerRadius: 14, style: .continuous))
+                            macPlayer
                             details
                         }
-                        .padding(24)
+                        .padding(.vertical, 20)
+                        .padding(.leading, MacMetrics.gutter)
                         .frame(minWidth: 0, maxWidth: .infinity)
                     }
                     ScrollView {
-                        upNext.padding(.vertical, 24).padding(.trailing, 24)
+                        upNext.padding(.vertical, 20).padding(.trailing, MacMetrics.gutter)
                     }
                     .frame(width: 380)
                 }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        player.clipShape(.rect(cornerRadius: 14, style: .continuous))
+                        macPlayer
                         details
                         upNext
                     }
-                    .padding(24)
+                    .padding(.vertical, 20)
+                    .padding(.horizontal, MacMetrics.gutter)
                     .frame(minWidth: 0, maxWidth: .infinity)
                 }
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(item: video.watchURL, subject: Text(shown.title)) { Label("Share", systemImage: "square.and.arrow.up") }
+            }
+        }
+    }
+
+    private var macPlayer: some View {
+        VideoPlayerView(playback: playback, video: shown)
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .clipShape(.rect(cornerRadius: 14, style: .continuous))
     }
 
     // MARK: Parts
-
-    /// The player while this page's video is the one on; its frame before that, or after another took over.
-    private var player: some View {
-        Color.black
-            .aspectRatio(16 / 9, contentMode: .fit)
-            .overlay {
-                if playback.current?.id == video.id, playback.player.currentItem != nil {
-                    VideoPlayerView(playback: playback)
-                } else {
-                    VideoThumbnail(video: video, cornerRadius: 0, width: 800)
-                        .overlay {
-                            if playback.current?.id == video.id, playback.isLoading {
-                                ProgressView().controlSize(.large).tint(.white)
-                            } else if playback.current?.id != video.id {
-                                Button("Play", systemImage: "play.fill") { playback.play(shown) }
-                                    .labelStyle(.iconOnly)
-                                    .font(.title)
-                                    .buttonStyle(.glass)
-                                    .buttonBorderShape(.circle)
-                                    .controlSize(.extraLarge)
-                            }
-                        }
-                }
-            }
-            .overlay {
-                if playback.current?.id == video.id, let error = playback.error {
-                    ContentUnavailableView {
-                        Label("Can't Play This Video", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(error)
-                    } actions: {
-                        Button("Try Again") { playback.retry() }.buttonStyle(.glass)
-                    }
-                    .foregroundStyle(.white)
-                    .background(.black)
-                }
-            }
-    }
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -138,7 +134,12 @@ struct VideoWatchView: View {
                 .textSelection(.enabled)
             if let page = watch.state.value {
                 ChannelLine(channel: shown.channel, subscribers: page.subscribers, isSubscribed: $watch.isSubscribed)
-                VideoControlsRow(playback: playback, shareURL: shareURL, title: shown.title)
+                if !Platform.isMac {
+                    ShareLink(item: video.watchURL, subject: Text(shown.title)) {
+                        Label("Share", systemImage: "square.and.arrow.up").font(.subheadline.weight(.medium))
+                    }
+                    .buttonStyle(.glass)
+                }
                 VideoDescription(page: page)
             } else if case .failed(let message) = watch.state {
                 Text(message).font(.subheadline).foregroundStyle(.secondary)
@@ -171,8 +172,6 @@ struct VideoWatchView: View {
             }
         }
     }
-
-    private var shareURL: URL { URL(string: "https://www.youtube.com/watch?v=\(video.id)")! }
 }
 
 /// The channel under a video: its picture, name and subscribers, opening its page, and Subscribe

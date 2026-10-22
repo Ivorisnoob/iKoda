@@ -39,31 +39,40 @@ struct ChannelView: View {
         .task { if model.state.value == nil { await model.load(music: app.music) } }
     }
 
+    @ViewBuilder
     private func content(_ page: ChannelPage) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Platform.isMac ? 24 : 20) {
-                header(page)
-                Text("Videos").font(.title3.bold())
-                if Platform.isMac {
-                    VideoCardGrid(videos: page.videos.videos, showsChannel: false)
-                } else {
-                    LazyVStack(spacing: 24) {
-                        ForEach(page.videos.videos) { video in
-                            NavigationLink(value: Route.video(video)) { VideoCard(video: video, width: 420, showsChannel: false) }
-                                .buttonStyle(.plain)
-                        }
-                    }
-                }
-                if page.videos.continuation != nil {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .task { await model.loadMore(music: app.music) }
-                }
+        if Platform.isMac {
+            MacPage(spacing: 28) {
+                header(page).padding(.horizontal, MacMetrics.gutter)
+                MacSectionTitle(title: "Videos").padding(.horizontal, MacMetrics.gutter)
+                VideoCardGrid(videos: page.videos.videos, showsChannel: false)
+                more(page)
             }
-            .padding(Platform.isMac ? 24 : 16)
-            .frame(minWidth: 0, maxWidth: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    header(page)
+                    Text("Videos").font(.title3.bold())
+                    ForEach(page.videos.videos) { video in
+                        NavigationLink(value: Route.video(video)) { VideoCard(video: video, width: 420, showsChannel: false) }
+                            .buttonStyle(.plain)
+                    }
+                    more(page)
+                }
+                .padding(.horizontal, VideoMetrics.side)
+                .padding(.vertical, 12)
+            }
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func more(_ page: ChannelPage) -> some View {
+        if page.videos.continuation != nil {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .task { await model.loadMore(music: app.music) }
+        }
     }
 
     private func header(_ page: ChannelPage) -> some View {

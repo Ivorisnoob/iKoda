@@ -110,6 +110,7 @@ final class VideoPlayback {
                 qualities = stream.qualities
                 player.replaceCurrentItem(with: item)
                 player.defaultRate = speed
+                Self.activateVideoSession()
                 player.play()
                 onWatch?(video)
                 await loadCaptions(of: item)
@@ -133,6 +134,7 @@ final class VideoPlayback {
             pauseMusic?()
             // At the end, play starts it over.
             if duration > 0, time >= duration - 0.5 { seek(to: 0) }
+            Self.activateVideoSession()
             player.playImmediately(atRate: speed)
         } else {
             player.pause()
@@ -222,6 +224,15 @@ final class VideoPlayback {
     }
 
     // MARK: Helpers
+
+    /// The songs' session is long-form audio, which iOS won't put a picture in picture over; a
+    /// video plays as a movie. The songs' player sets its own policy back each time it starts.
+    private static func activateVideoSession() {
+        let session = AVAudioSession.sharedInstance()
+        guard session.routeSharingPolicy != .default || session.mode != .moviePlayback else { return }
+        try? session.setCategory(.playback, mode: .moviePlayback, policy: .default)
+        try? session.setActive(true)
+    }
 
     private static func message(_ error: MusicError) -> String {
         switch error {

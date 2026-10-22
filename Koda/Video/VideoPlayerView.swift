@@ -394,6 +394,8 @@ private struct RoutePicker: UIViewRepresentable {
 struct FullScreenVideoView: View {
     let playback: VideoPlayback
     let video: Video
+    /// On the Mac: this took the window into macOS full screen, so leaving takes it back out.
+    @State private var tookWindowFullScreen = false
 
     var body: some View {
         VideoPlayerView(playback: playback, video: playback.current ?? video, isFullScreen: true)
@@ -406,16 +408,53 @@ struct FullScreenVideoView: View {
                 Orientation.allow(.allButUpsideDown, prefer: size.height > size.width ? .portrait : .landscapeRight)
                 // Its own claim on turning: the page under a cover counts as gone and lets go of its.
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+                // On the Mac full screen means the screen, not the window: the cover fills the
+                // window and the window goes full screen, as QuickTime's and TV's videos do.
+                if Platform.isMac, !MacWindow.isFullScreen {
+                    tookWindowFullScreen = true
+                    MacWindow.toggleFullScreen()
+                }
             }
             .onDisappear {
                 Orientation.allow(.portrait, prefer: .portrait)
                 UIDevice.current.endGeneratingDeviceOrientationNotifications()
+                if tookWindowFullScreen, MacWindow.isFullScreen { MacWindow.toggleFullScreen() }
+                tookWindowFullScreen = false
+            }
+            // Leaving macOS full screen (Esc, the green button) leaves the video's too.
+            .onReceive(NotificationCenter.default.publisher(for: MacWindow.didExitFullScreen)) { _ in
+                tookWindowFullScreen = false
+                playback.isFullScreen = false
             }
             // Upright again with a landscape video: back to the page, the way it came.
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 let size = playback.presentationSize
                 if UIDevice.current.orientation == .portrait, size.width > size.height { playback.isFullScreen = false }
             }
+    }
+}
+
+/// The Mac app's window, reached through AppKit's own full-screen action: Catalyst gives UIKit no
+/// way to take a window into macOS full screen. `toggleFullScreen:` is what the green button and
+/// View → Enter Full Screen send.
+@MainActor
+enum MacWindow {
+    static let didExitFullScreen = Notification.Name("NSWindowDidExitFullScreenNotification")
+
+    private static var keyWindow: NSObject? {
+        guard let appClass = NSClassFromString("NSApplication") as? NSObject.Type,
+              let app = appClass.value(forKey: "sharedApplication") as? NSObject else { return nil }
+        return (app.value(forKey: "keyWindow") ?? app.value(forKey: "mainWindow")) as? NSObject
+    }
+
+    static var isFullScreen: Bool {
+        // NSWindow.StyleMask.fullScreen
+        guard let mask = keyWindow?.value(forKey: "styleMask") as? UInt else { return false }
+        return mask & (1 << 14) != 0
+    }
+
+    static func toggleFullScreen() {
+        keyWindow?.perform(NSSelectorFromString("toggleFullScreen:"), with: nil)
     }
 }
 

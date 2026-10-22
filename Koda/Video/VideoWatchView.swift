@@ -37,9 +37,12 @@ struct VideoWatchView: View {
 
     // MARK: iPhone
 
+    /// The player under the status bar on black, as a video app's is, with the back button
+    /// floating over it; the tab bar steps away while watching so the page is the video's.
     private var phoneBody: some View {
         VStack(spacing: 0) {
             player
+                .background(Color.black.ignoresSafeArea(.container, edges: .top))
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     details
@@ -49,7 +52,7 @@ struct VideoWatchView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { share } }
+        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: Mac
@@ -86,7 +89,6 @@ struct VideoWatchView: View {
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .toolbar { ToolbarItem(placement: .primaryAction) { share } }
     }
 
     // MARK: Parts
@@ -136,6 +138,7 @@ struct VideoWatchView: View {
                 .textSelection(.enabled)
             if let page = watch.state.value {
                 ChannelLine(channel: shown.channel, subscribers: page.subscribers, isSubscribed: $watch.isSubscribed)
+                VideoControlsRow(playback: playback, shareURL: shareURL, title: shown.title)
                 VideoDescription(page: page)
             } else if case .failed(let message) = watch.state {
                 Text(message).font(.subheadline).foregroundStyle(.secondary)
@@ -169,11 +172,7 @@ struct VideoWatchView: View {
         }
     }
 
-    private var share: some View {
-        ShareLink(item: URL(string: "https://www.youtube.com/watch?v=\(video.id)")!, subject: Text(shown.title)) {
-            Label("Share", systemImage: "square.and.arrow.up")
-        }
-    }
+    private var shareURL: URL { URL(string: "https://www.youtube.com/watch?v=\(video.id)")! }
 }
 
 /// The channel under a video: its picture, name and subscribers, opening its page, and Subscribe

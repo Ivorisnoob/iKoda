@@ -105,6 +105,8 @@ final class AppModel {
         videos.onWatch = { [library] video in
             if settings.savesListeningHistory { library.recordWatch(video) }
         }
+        videos.restoreQuality(settings.videoQuality)
+        videos.onQualityChange = { lines in settings.videoQuality = lines }
         videos.pauseMusic = { [player] in
             if player.wantsToPlay { player.togglePlayPause() }
         }
@@ -144,6 +146,7 @@ final class AppModel {
             return ImagePipeline.nowPlayingArtwork(image)
         }
         connectAccounts()
+        if settings.mode == .video { selectedTab = .videos }
         // Someone upgrading already has a library; the welcome is for a new install.
         if !settings.hasSeenOnboarding {
             if library.liked.isEmpty, library.recent.isEmpty, roster.profiles.count == 1, !roster.active.isSignedIn {
@@ -198,6 +201,7 @@ final class AppModel {
     /// Switch tabs from the menu bar, closing Now Playing if it covers them.
     func go(to tab: AppTab) {
         isNowPlayingPresented = false
+        settings.mode = tab.mode
         selectedTab = tab
     }
 
@@ -272,6 +276,16 @@ final class AppModel {
     }
 }
 
+/// The iPhone's tabs: Home, Library and Search in music mode; Videos, Subscriptions, the
+/// watched list and Search in video mode.
 enum AppTab: Hashable {
-    case home, library, videos, search
+    case home, library, search
+    case videos, subscriptions, watched, videoSearch
+
+    var mode: AppSettings.Mode {
+        switch self {
+        case .home, .library, .search: .music
+        case .videos, .subscriptions, .watched, .videoSearch: .video
+        }
+    }
 }

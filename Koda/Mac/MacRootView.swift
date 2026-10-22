@@ -8,10 +8,10 @@ enum MacSection: Hashable {
     case lastFM
     case userPlaylist(UUID)
     /// YouTube: the Home feed, the subscriptions feed, and search results.
-    case videos, subscriptions, videoSearch
+    case videos, subscriptions, watched, videoSearch
 
-    /// The toolbar's search finds videos while one of these is open.
-    var isVideo: Bool { self == .videos || self == .subscriptions || self == .videoSearch }
+    /// Video mode's places: the toolbar's search finds videos while one is open.
+    var isVideo: Bool { self == .videos || self == .subscriptions || self == .watched || self == .videoSearch }
 }
 
 /// Koda on the Mac: a sidebar of everything there is to go to, the page on the right, and the
@@ -116,6 +116,10 @@ struct MacRootView: View {
             case .home: section = .home
             case .library: section = .recent
             case .videos: section = .videos
+            case .subscriptions: section = .subscriptions
+            case .watched: section = .watched
+            case .videoSearch: section = .videos
+                searchFocused = true
             case .search:
                 if section != .search { section = .browse }
                 searchFocused = true
@@ -201,20 +205,51 @@ struct MacRootView: View {
 
     private var sidebar: some View {
         List {
+            if model.settings.mode == .music { musicSidebar } else { videoSidebar }
+        }
+        .listStyle(.sidebar)
+        .environment(\.defaultMinListRowHeight, 28)
+        // Music or Video at the head of the sidebar; what's under it follows.
+        .safeAreaBar(edge: .top) {
+            ModeToggle()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
+        }
+        // A launch in video mode opens on its Home.
+        .onAppear { if model.settings.mode == .video, !(section ?? .home).isVideo { section = .videos } }
+        .onChange(of: model.settings.mode) { _, mode in
+            closeNowPlaying()
+            if (section ?? .home).isVideo != (mode == .video) { section = mode == .music ? .home : .videos }
+        }
+        // A bar, not an inset: the system draws its scroll edge effect under it, so rows fade
+        // out beneath the glance instead of showing through its translucent card.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            sidebarFoot
+        }
+    }
+
+    @ViewBuilder
+    private var videoSidebar: some View {
+        Section {
+            sidebarRow("Home", "play.rectangle", .videos)
+            if model.roster.active.isSignedIn {
+                sidebarRow("Subscriptions", "person.2.crop.square.stack", .subscriptions)
+            }
+            sidebarRow("Watched", "clock.arrow.circlepath", .watched)
+            if videoSearch.submitted != nil {
+                sidebarRow("Search Results", "magnifyingglass", .videoSearch)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var musicSidebar: some View {
             Section {
                 sidebarRow("Home", "house", .home)
                 sidebarRow("Browse", "square.grid.2x2", .browse)
                 if search.submitted != nil {
                     sidebarRow("Search Results", "magnifyingglass", .search)
-                }
-            }
-            Section("Videos") {
-                sidebarRow("Home", "play.rectangle", .videos)
-                if model.roster.active.isSignedIn {
-                    sidebarRow("Subscriptions", "person.2.crop.square.stack", .subscriptions)
-                }
-                if videoSearch.submitted != nil {
-                    sidebarRow("Search Results", "magnifyingglass", .videoSearch)
                 }
             }
             Section("Library") {
@@ -255,16 +290,12 @@ struct MacRootView: View {
             } header: {
                 Text("Your Playlists")
             }
-        }
-        .listStyle(.sidebar)
-        .environment(\.defaultMinListRowHeight, 28)
-        // A bar, not an inset: the system draws its scroll edge effect under it, so rows fade
-        // out beneath the glance instead of showing through its translucent card.
-        .safeAreaBar(edge: .bottom, spacing: 0) {
-            VStack(spacing: 8) {
-                MacSidebarGlance(openQueue: { model.showNowPlaying(.queue) }, openStats: { section = .stats })
-                profileButton
-            }
+    }
+
+    private var sidebarFoot: some View {
+        VStack(spacing: 8) {
+            MacSidebarGlance(openQueue: { model.showNowPlaying(.queue) }, openStats: { section = .stats })
+            profileButton
         }
     }
 
@@ -359,6 +390,7 @@ struct MacRootView: View {
         case .userPlaylist(let id): UserPlaylistView(id: id).id(id)
         case .videos: VideoHomeView(kind: .home).id(model.roster.activeID)
         case .subscriptions: VideoHomeView(kind: .subscriptions).id(model.roster.activeID)
+        case .watched: VideoLibraryView()
         case .videoSearch:
             MacPage {
                 MacPageTitle(title: videoSearch.submitted ?? "Search") { EmptyView() }

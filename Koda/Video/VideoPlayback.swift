@@ -15,7 +15,21 @@ final class VideoPlayback {
     private(set) var error: String?
     /// The video is floating in picture in picture: leaving its page doesn't pause it.
     var isInPictureInPicture = false
+    /// The heights this video comes in, tallest first.
+    private(set) var qualities: [Int] = []
+    /// The tallest picture allowed, in lines; 0 follows the connection. Kept between videos.
+    private(set) var quality = 0
+    /// Kept between videos, as YouTube keeps it.
+    private(set) var speed: Float = 1
+    /// The video's caption languages, from its stream; empty when it has none.
+    private(set) var captions: [AVMediaSelectionOption] = []
+    private(set) var caption: AVMediaSelectionOption?
+    @ObservationIgnored private var legible: AVMediaSelectionGroup?
+    /// Where the quality choice is kept (AppSettings).
+    @ObservationIgnored var onQualityChange: ((Int) -> Void)?
     let player = AVPlayer()
+
+    static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 
     private let music: YouTubeMusic
     @ObservationIgnored private var loading: Task<Void, Never>?
@@ -40,6 +54,10 @@ final class VideoPlayback {
         current = video
         error = nil
         isLoading = true
+        qualities = []
+        captions = []
+        caption = nil
+        legible = nil
         pauseMusic?()
         loading = Task {
             defer { if current?.id == video.id { isLoading = false } }
@@ -48,9 +66,13 @@ final class VideoPlayback {
                 guard !Task.isCancelled, current?.id == video.id else { return }
                 let item = AVPlayerItem(url: stream.url)
                 item.externalMetadata = Self.metadata(for: video)
+                item.preferredMaximumResolution = Self.limit(for: quality)
+                qualities = stream.qualities
                 player.replaceCurrentItem(with: item)
+                player.defaultRate = speed
                 player.play()
                 onWatch?(video)
+                await loadCaptions(of: item)
             } catch is CancellationError {
             } catch {
                 guard current?.id == video.id else { return }
@@ -68,6 +90,45 @@ final class VideoPlayback {
 
     func pause() {
         player.pause()
+    }
+
+    func setQuality(_ lines: Int) {
+        quality = lines
+        player.currentItem?.preferredMaximumResolution = Self.limit(for: lines)
+        onQualityChange?(lines)
+    }
+
+    /// The saved choice, applied from the next video on.
+    func restoreQuality(_ lines: Int) {
+        quality = lines
+    }
+
+    func setSpeed(_ rate: Float) {
+        speed = rate
+        player.defaultRate = rate
+        if player.rate != 0 { player.rate = rate }
+    }
+
+    /// Captions in `option`'s language, or none.
+    func setCaption(_ option: AVMediaSelectionOption?) {
+        guard let item = player.currentItem, let legible else { return }
+        item.select(option, in: legible)
+        caption = option
+    }
+
+    private func loadCaptions(of item: AVPlayerItem) async {
+        guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible), player.currentItem === item else { return }
+        legible = group
+        captions = group.options.filter { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) }
+        caption = item.currentMediaSelection.selectedMediaOption(in: group)
+    }
+
+    /// The largest frame a quality allows. Square, so it caps a portrait video's width the way it
+    /// caps a landscape one's height: 720 allows 1280×720 and 720×1280, not 1920×1080.
+    private static func limit(for lines: Int) -> CGSize {
+        guard lines > 0 else { return .zero }
+        let side = (CGFloat(lines) * 16 / 9).rounded(.up)
+        return CGSize(width: side, height: side)
     }
 
     func retry() {

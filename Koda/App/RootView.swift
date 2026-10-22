@@ -8,6 +8,9 @@ struct RootView: View {
     @State private var libraryPath: [Route] = []
     @State private var searchPath: [Route] = []
     @State private var videosPath: [Route] = []
+    @State private var subscriptionsPath: [Route] = []
+    @State private var watchedPath: [Route] = []
+    @State private var videoSearchPath: [Route] = []
     @Namespace private var playerTransition
     /// Now Playing's presentation, owned here rather than bound to the model: when the cover's
     /// binding comes from an @Observable model, the zoom out of the tab bar accessory finds no
@@ -26,28 +29,52 @@ struct RootView: View {
     private var phone: some View {
         @Bindable var model = model
         return TabView(selection: $model.selectedTab) {
-            Tab("Home", systemImage: "house.fill", value: AppTab.home) {
-                NavigationStack(path: $homePath) {
-                    // A fresh Home for each profile: its own mix, picks and snapshot.
-                    HomeView().id(model.roster.activeID).routeDestinations()
+            if model.settings.mode == .music {
+                Tab("Home", systemImage: "house.fill", value: AppTab.home) {
+                    NavigationStack(path: $homePath) {
+                        // A fresh Home for each profile: its own mix, picks and snapshot.
+                        HomeView().id(model.roster.activeID).routeDestinations()
+                    }
+                }
+                Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
+                    NavigationStack(path: $libraryPath) {
+                        LibraryView().routeDestinations()
+                    }
+                }
+                Tab(value: AppTab.search, role: .search) {
+                    NavigationStack(path: $searchPath) {
+                        SearchView().routeDestinations()
+                    }
+                }
+            } else {
+                Tab("Home", systemImage: "play.rectangle.fill", value: AppTab.videos) {
+                    NavigationStack(path: $videosPath) {
+                        // Each profile's own feed and watched list.
+                        VideoHomeView(kind: .home).id(model.roster.activeID).routeDestinations()
+                    }
+                }
+                if model.roster.active.isSignedIn {
+                    Tab("Subscriptions", systemImage: "person.2.crop.square.stack.fill", value: AppTab.subscriptions) {
+                        NavigationStack(path: $subscriptionsPath) {
+                            VideoHomeView(kind: .subscriptions).id(model.roster.activeID).routeDestinations()
+                        }
+                    }
+                }
+                Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.watched) {
+                    NavigationStack(path: $watchedPath) {
+                        VideoLibraryView().routeDestinations()
+                    }
+                }
+                Tab(value: AppTab.videoSearch, role: .search) {
+                    NavigationStack(path: $videoSearchPath) {
+                        VideoSearchView().routeDestinations()
+                    }
                 }
             }
-            Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
-                NavigationStack(path: $libraryPath) {
-                    LibraryView().routeDestinations()
-                }
-            }
-            Tab("Videos", systemImage: "play.rectangle.fill", value: AppTab.videos) {
-                NavigationStack(path: $videosPath) {
-                    // Each profile's own feed and watched list.
-                    VideoHomeView().id(model.roster.activeID).routeDestinations()
-                }
-            }
-            Tab(value: AppTab.search, role: .search) {
-                NavigationStack(path: $searchPath) {
-                    SearchView().routeDestinations()
-                }
-            }
+        }
+        // Each mode opens on its own Home.
+        .onChange(of: model.settings.mode) { _, mode in
+            if model.selectedTab.mode != mode { model.selectedTab = mode == .music ? .home : .videos }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         // iOS 27 made the automatic edge effect hard: an opaque band under the bars. A soft one
@@ -78,6 +105,9 @@ struct RootView: View {
             libraryPath = []
             searchPath = []
             videosPath = []
+            subscriptionsPath = []
+            watchedPath = []
+            videoSearchPath = []
         }
         .onOpenURL { url in
             if !model.open(url) { model.linkError = "Koda can open YouTube Music songs, albums, playlists and artists." }
@@ -94,6 +124,9 @@ struct RootView: View {
             case .home: homePath.append(route)
             case .library: libraryPath.append(route)
             case .videos: videosPath.append(route)
+            case .subscriptions: subscriptionsPath.append(route)
+            case .watched: watchedPath.append(route)
+            case .videoSearch: videoSearchPath.append(route)
             case .search: searchPath.append(route)
             }
         }

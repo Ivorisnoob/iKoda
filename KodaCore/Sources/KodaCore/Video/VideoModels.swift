@@ -133,6 +133,20 @@ public struct VideoStream: Sendable, Equatable {
     public var url: URL
     public var isLive: Bool
     public var expiresAt: Date?
+    /// The picture heights the manifest offers, tallest first (2160, 1440, 1080…): the Quality menu.
+    public var qualities: [Int] = []
+
+    /// The heights in an HLS master playlist's `RESOLUTION=WxH` attributes, each once, tallest first.
+    static func qualities(inMaster text: String) -> [Int] {
+        guard let regex = try? NSRegularExpression(pattern: #"RESOLUTION=(\d+)x(\d+)"#) else { return [] }
+        let heights = regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> Int? in
+            guard let w = Range(match.range(at: 1), in: text).flatMap({ Int(text[$0]) }),
+                  let h = Range(match.range(at: 2), in: text).flatMap({ Int(text[$0]) }) else { return nil }
+            // A portrait video's lines are its width.
+            return min(w, h)
+        }
+        return Array(Set(heights)).sorted(by: >)
+    }
 
     func isFresh(at now: Date = Date()) -> Bool {
         guard let expiresAt else { return true }

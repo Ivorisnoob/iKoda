@@ -68,6 +68,14 @@ final class AppSettings {
         var forwardSymbol: String { "goforward.\(rawValue)" }
     }
 
+    /// Songs or videos: which the app is showing. Each has its own tabs (iPhone) and sidebar (Mac).
+    enum Mode: String, CaseIterable, Identifiable {
+        case music, video
+        var id: Self { self }
+        var title: String { self == .music ? "Music" : "Video" }
+        var systemImage: String { self == .music ? "music.note" : "play.rectangle.fill" }
+    }
+
     private let defaults = UserDefaults.standard
 
     var theme: Theme { didSet { defaults.set(theme.rawValue, forKey: Keys.theme) } }
@@ -91,6 +99,9 @@ final class AppSettings {
     var skipInterval: SkipInterval { didSet { defaults.set(skipInterval.rawValue, forKey: Keys.skipInterval) } }
     /// The playing song on the listener's Discord profile, through the Discord app on the Mac.
     var sharesOnDiscord: Bool { didSet { defaults.set(sharesOnDiscord, forKey: Keys.discordPresence) } }
+    var mode: Mode { didSet { defaults.set(mode.rawValue, forKey: Keys.mode) } }
+    /// The tallest picture a video plays at, in lines (720, 1080…); 0 lets it follow the connection.
+    var videoQuality: Int { didSet { defaults.set(videoQuality, forKey: Keys.videoQuality) } }
     /// The welcome and taste setup have been offered on this device, finished or skipped.
     var hasSeenOnboarding: Bool { didSet { defaults.set(hasSeenOnboarding, forKey: Keys.onboarding) } }
 
@@ -110,6 +121,8 @@ final class AppSettings {
         static let skipInterval = "koda.player.skipInterval"
         static let discordPresence = "koda.discord.presence"
         static let onboarding = "koda.onboarding.seen"
+        static let mode = "koda.mode"
+        static let videoQuality = "koda.video.quality"
     }
 
     init() {
@@ -131,6 +144,8 @@ final class AppSettings {
         skipInterval = (d.object(forKey: Keys.skipInterval) as? Int).flatMap(SkipInterval.init(rawValue:)) ?? .ten
         sharesOnDiscord = d.object(forKey: Keys.discordPresence) as? Bool ?? false
         hasSeenOnboarding = d.bool(forKey: Keys.onboarding)
+        mode = d.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .music
+        videoQuality = d.integer(forKey: Keys.videoQuality)
     }
 
     /// The services to ask, best first.

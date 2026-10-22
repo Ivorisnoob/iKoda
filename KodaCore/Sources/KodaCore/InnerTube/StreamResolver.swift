@@ -63,7 +63,11 @@ actor StreamResolver {
             guard let fresh = await identity.replace(token), fresh != token else { throw MusicError.botCheck }
             stream = try await videoAttempt(videoId, token: fresh)
         }
-        guard let stream else { throw MusicError.botCheck }
+        guard var stream else { throw MusicError.botCheck }
+        // The manifest is a few KB; reading it names the qualities on offer.
+        if let (data, response) = try? await session.data(from: stream.url), (response as? HTTPURLResponse)?.statusCode == 200 {
+            stream.qualities = VideoStream.qualities(inMaster: String(decoding: data, as: UTF8.self))
+        }
         videoCache[videoId] = stream
         if videoCache.count > 100 { videoCache = videoCache.filter { $0.value.isFresh() } }
         return stream

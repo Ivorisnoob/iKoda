@@ -1,16 +1,12 @@
 import KodaCore
 import SwiftUI
 
-/// Videos: the profile's Home feed (or its subscriptions), what was watched lately, and search.
-/// The iPhone shows full-width cards with search in the tab's own field; the Mac shows a grid,
-/// searched from the window's toolbar (MacRootView).
+/// Video mode's Home (the profile's feed, and what was watched lately) or Subscriptions. The
+/// iPhone shows full-width cards; the Mac a grid. Search is a tab (iPhone) or the toolbar (Mac).
 struct VideoHomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @State private var feed: VideoFeedModel
-    @State private var search = VideoSearchModel()
-    @State private var subscriptions = VideoFeedModel(kind: .subscriptions)
-    @State private var showsSubscriptions = false
 
     init(kind: VideoFeedModel.Kind = .home) {
         _feed = State(initialValue: VideoFeedModel(kind: kind))
@@ -21,40 +17,26 @@ struct VideoHomeView: View {
     }
 
     private var signedIn: Bool { app.roster.active.isSignedIn && !app.roster.active.isExpired }
-    private var shown: VideoFeedModel { showsSubscriptions && signedIn ? subscriptions : feed }
 
     // MARK: iPhone
 
     private var phoneBody: some View {
-        @Bindable var search = search
-        return ScrollView {
-            if search.submitted != nil {
-                VideoSearchResultsView(model: search)
-            } else {
-                LazyVStack(alignment: .leading, spacing: 26) {
-                    if signedIn {
-                        Picker("Feed", selection: $showsSubscriptions) {
-                            Text("Home").tag(false)
-                            Text("Subscriptions").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        .padding(.horizontal, 16)
-                    }
-                    if !showsSubscriptions, !library.watched.isEmpty {
-                        RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
-                    }
-                    feedList(shown)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 26) {
+                if feed.kind == .home, !library.watched.isEmpty {
+                    RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
                 }
-                .padding(.vertical, 8)
+                feedList(feed)
             }
+            .padding(.vertical, 8)
         }
-        .navigationTitle("Videos")
-        .searchable(text: $search.query, prompt: "Search YouTube")
-        .onSubmit(of: .search) { Task { await search.search(search.query, music: app.music) } }
-        .onChange(of: search.query) { _, text in if text.isEmpty { search.clear() } }
-        .refreshable { await load(shown) }
-        .task(id: showsSubscriptions) { if shown.state.value == nil { await load(shown) } }
+        .navigationTitle(feed.kind == .subscriptions ? "Subscriptions" : "Videos")
+        .refreshable { await load(feed) }
+        .task { if feed.state.value == nil { await load(feed) } }
         .toolbar {
+            if feed.kind == .home {
+                ToolbarItem(placement: .topBarLeading) { ModeToggle() }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 ProfileToolbarButton { app.isProfilePresented = true }
             }

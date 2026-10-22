@@ -97,6 +97,21 @@ import Testing
         #expect(first.duration != nil)
     }
 
+    @Test func qualitiesComeFromTheManifestTallestFirst() {
+        let master = """
+        #EXTM3U
+        #EXT-X-STREAM-INF:BANDWIDTH=310801,CODECS="avc1.4D4015,mp4a.40.5",RESOLUTION=426x240,FRAME-RATE=30
+        a.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=4553846,CODECS="avc1.4D4020,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=60
+        b.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=395368,CODECS="avc1.4D4015,mp4a.40.2",RESOLUTION=426x240,FRAME-RATE=30
+        c.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=1080x1920
+        d.m3u8
+        """
+        #expect(VideoStream.qualities(inMaster: master) == [1080, 720, 240])
+    }
+
     @Test func thumbnailsAreSixteenByNine() {
         let video = Video(id: "abc", title: "T")
         #expect(video.thumbnailURL.absoluteString == "https://i.ytimg.com/vi/abc/hq720.jpg")

@@ -246,6 +246,7 @@ struct HomeView: View {
         }
         .navigationTitle(greeting)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { ModeToggle() }
             ToolbarItem(placement: .topBarTrailing) {
                 ProfileToolbarButton { app.isProfilePresented = true }
             }

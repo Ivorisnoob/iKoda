@@ -16,7 +16,7 @@ public enum MusicError: Error, Sendable, Equatable {
     case rateLimited
 }
 
-/// WEB_REMIX calls on music.youtube.com.
+/// InnerTube calls: WEB_REMIX on music.youtube.com, and WEB on www.youtube.com for video.
 struct InnerTube: Sendable {
     let session: URLSession
     let identity: VisitorIdentity
@@ -28,28 +28,49 @@ struct InnerTube: Sendable {
         case ifSignedIn, required
     }
 
+    /// The web client a call speaks as, and the site it goes to.
+    struct Site: Sendable {
+        let origin: String
+        let clientName: String
+        let clientId: String
+        let version: String
+
+        static let music = Site(origin: SAPISIDHash.musicOrigin, clientName: "WEB_REMIX", clientId: "67", version: Clients.webRemixVersion)
+        static let web = Site(origin: "https://www.youtube.com", clientName: "WEB", clientId: "1", version: Clients.webVersion)
+    }
+
     func music(_ endpoint: String, _ payload: [String: Any], signing: Signing = .ifSignedIn) async throws -> JSON {
+        try await call(.music, endpoint, payload, signing: signing)
+    }
+
+    /// A WEB call on www.youtube.com: video feeds, search, watch pages and channels. Signed in, it
+    /// carries the account (and is signed for www.youtube.com), so Home is the account's own.
+    func web(_ endpoint: String, _ payload: [String: Any], signing: Signing = .ifSignedIn) async throws -> JSON {
+        try await call(.web, endpoint, payload, signing: signing)
+    }
+
+    private func call(_ site: Site, _ endpoint: String, _ payload: [String: Any], signing: Signing) async throws -> JSON {
         let ticket = await accounts.ticket()
         if signing == .required, ticket?.cookies.sapisid == nil { throw MusicError.signedOut }
         var visitor = await identity.cached
         if visitor == nil { visitor = await identity.current() }
-        var client: [String: Any] = ["clientName": "WEB_REMIX", "clientVersion": Clients.webRemixVersion, "hl": "en", "gl": "US"]
+        var client: [String: Any] = ["clientName": site.clientName, "clientVersion": site.version, "hl": "en", "gl": "US"]
         if let visitor { client["visitorData"] = visitor }
         var body = payload
         body["context"] = ["client": client]
 
-        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/\(endpoint)?prettyPrint=false")!)
+        var request = URLRequest(url: URL(string: "\(site.origin)/youtubei/v1/\(endpoint)?prettyPrint=false")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 20
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(Clients.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
-        request.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")
-        request.setValue(Clients.webRemixVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
+        request.setValue(site.origin, forHTTPHeaderField: "Origin")
+        request.setValue(site.clientId, forHTTPHeaderField: "X-YouTube-Client-Name")
+        request.setValue(site.version, forHTTPHeaderField: "X-YouTube-Client-Version")
         if let visitor { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
         if let ticket {
-            for (field, value) in SAPISIDHash.headers(for: ticket.cookies) { request.setValue(value, forHTTPHeaderField: field) }
+            for (field, value) in SAPISIDHash.headers(for: ticket.cookies, origin: site.origin) { request.setValue(value, forHTTPHeaderField: field) }
         }
 
         let (data, response): (Data, URLResponse)

@@ -1,0 +1,146 @@
+import KodaCore
+import SwiftUI
+import UIKit
+
+/// A video's 16:9 frame: YouTube's 1280-wide image, or the 320-wide one every video has when
+/// that's missing. Laid out by a shape so the image never sets its own size.
+struct VideoThumbnail: View {
+    let video: Video
+    var cornerRadius: CGFloat = 12
+    /// The width it's drawn at, for the pixels to load.
+    var width: CGFloat = 400
+    @Environment(\.displayScale) private var scale
+    @State private var image: UIImage?
+
+    var body: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                }
+            }
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(alignment: .bottomTrailing) { badge }
+            .task(id: video.id) {
+                guard !video.id.hasPrefix("placeholder") else { return }
+                let pixels = Int((width * scale).rounded(.up))
+                // The sharp frame only where it's drawn big enough to need it.
+                let urls = pixels > 400 ? [video.thumbnailURL, video.fallbackThumbnailURL] : [video.fallbackThumbnailURL, video.thumbnailURL]
+                for url in urls {
+                    if let hit = ImagePipeline.shared.cached(url, pixels: pixels) {
+                        image = hit
+                        return
+                    }
+                    if let loaded = await ImagePipeline.shared.image(url, pixels: pixels) {
+                        withAnimation(.easeOut(duration: 0.2)) { image = loaded }
+                        return
+                    }
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if video.isLive {
+            Label("Live", systemImage: "dot.radiowaves.left.and.right")
+                .labelStyle(.titleAndIcon)
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.red, in: .capsule)
+                .foregroundStyle(.white)
+                .padding(6)
+        } else if let duration = video.duration {
+            Text(Duration.seconds(duration).formatted(duration >= 3600 ? .time(pattern: .hourMinuteSecond) : .time(pattern: .minuteSecond)))
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.75), in: .rect(cornerRadius: 5, style: .continuous))
+                .foregroundStyle(.white)
+                .padding(6)
+        }
+    }
+}
+
+/// A channel's round picture.
+struct ChannelAvatar: View {
+    let avatar: Artwork?
+    var size: CGFloat = 36
+
+    var body: some View {
+        ArtworkView(artwork: avatar, size: size, circle: true)
+            .frame(width: size, height: size)
+    }
+}
+
+/// A video in a feed or grid: the frame, then the channel's picture beside the title and byline.
+struct VideoCard: View {
+    let video: Video
+    var width: CGFloat = 400
+    var showsChannel = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VideoThumbnail(video: video, width: width)
+            HStack(alignment: .top, spacing: 10) {
+                if showsChannel {
+                    ChannelAvatar(avatar: video.channel?.avatar, size: 34)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(video.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.leading)
+                    Text(showsChannel ? video.byline : [video.views, video.published].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(video.title), \(video.byline)")
+    }
+}
+
+/// A video in a list beside other things: a small frame and the details to its right (Up Next).
+struct VideoRow: View {
+    let video: Video
+    var thumbnailWidth: CGFloat = 156
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VideoThumbnail(video: video, cornerRadius: 9, width: thumbnailWidth)
+                .frame(width: thumbnailWidth)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(video.title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let channel = video.channel?.name {
+                    Text(channel).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                let stats = [video.views, video.published].compactMap { $0 }.joined(separator: " · ")
+                if !stats.isEmpty {
+                    Text(stats).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension Video {
+    /// The stand-ins a feed draws, redacted, while it loads.
+    static let placeholders = (0..<8).map {
+        Video(id: "placeholder-\($0)", title: "A video title that runs to two lines", channel: ChannelRef(id: nil, name: "Channel name"),
+              views: "1.2M views", published: "2 days ago")
+    }
+}

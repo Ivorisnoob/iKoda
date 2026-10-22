@@ -21,6 +21,31 @@ struct LiveTests {
         await #expect(throws: MusicError.signedOut) { try await music.setLiked(videoId: "J7p4bzqLvCw", liked: true) }
     }
 
+    /// The video side end to end, signed out: search, a watch page, its channel, a page more of
+    /// the channel's videos, and an HLS stream that answers.
+    @Test func videoSearchWatchChannelAndStream() async throws {
+        let results = try await music.searchVideos("blender open movie")
+        let video = try #require(results.videos.videos.first)
+        #expect(video.id.count == 11)
+        let page = try await music.watchPage(video.id)
+        #expect(!page.video.title.isEmpty)
+        #expect(!page.related.videos.isEmpty)
+        let channelId = try #require(page.video.channel?.id)
+        let channel = try await music.channel(channelId)
+        #expect(!channel.channel.name.isEmpty)
+        #expect(!channel.videos.videos.isEmpty)
+        if let token = channel.videos.continuation {
+            #expect(!(try await music.moreVideos(token, from: .browse)).videos.isEmpty)
+        }
+        if let token = page.related.continuation {
+            #expect(!(try await music.moreVideos(token, from: .next)).videos.isEmpty)
+        }
+        let stream = try await music.videoStream(video.id)
+        let (data, response) = try await URLSession.shared.data(from: stream.url)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        #expect(String(decoding: data, as: UTF8.self).contains("#EXT-X-STREAM-INF"))
+    }
+
     @Test func searchAlbumRadioAndStream() async throws {
         let results = try await music.search("blinding lights", filter: .songs)
         let song = try #require(results.songs.first)

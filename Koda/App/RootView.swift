@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var homePath: [Route] = []
     @State private var libraryPath: [Route] = []
     @State private var searchPath: [Route] = []
+    @State private var videosPath: [Route] = []
     @Namespace private var playerTransition
     /// Now Playing's presentation, owned here rather than bound to the model: when the cover's
     /// binding comes from an @Observable model, the zoom out of the tab bar accessory finds no
@@ -34,6 +35,12 @@ struct RootView: View {
             Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
                 NavigationStack(path: $libraryPath) {
                     LibraryView().routeDestinations()
+                }
+            }
+            Tab("Videos", systemImage: "play.rectangle.fill", value: AppTab.videos) {
+                NavigationStack(path: $videosPath) {
+                    // Each profile's own feed and watched list.
+                    VideoHomeView().id(model.roster.activeID).routeDestinations()
                 }
             }
             Tab(value: AppTab.search, role: .search) {
@@ -70,6 +77,7 @@ struct RootView: View {
             homePath = []
             libraryPath = []
             searchPath = []
+            videosPath = []
         }
         .onOpenURL { url in
             if !model.open(url) { model.linkError = "Koda can open YouTube Music songs, albums, playlists and artists." }
@@ -85,6 +93,7 @@ struct RootView: View {
             switch model.selectedTab {
             case .home: homePath.append(route)
             case .library: libraryPath.append(route)
+            case .videos: videosPath.append(route)
             case .search: searchPath.append(route)
             }
         }

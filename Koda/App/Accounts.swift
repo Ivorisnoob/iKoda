@@ -250,6 +250,25 @@ extension AppModel {
         }
     }
 
+    // MARK: Subscriptions
+
+    /// Subscribe to a channel, or unsubscribe, as the active account; false if it didn't go.
+    func setSubscribed(_ channelId: String, _ on: Bool) async -> Bool {
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired else { return false }
+        let id = profile.id
+        return (try? await withAccountWork { [self] () async throws -> Bool in
+            guard await music.accounts.active?.profileID == id else { return false }
+            do {
+                try await music.setSubscribed(channelId: channelId, subscribed: on)
+                return true
+            } catch MusicError.signedOut {
+                roster.update(id) { $0.isExpired = true }
+                return false
+            }
+        }) ?? false
+    }
+
     // MARK: YouTube history
 
     /// A play heard for 15 seconds goes to the account's YouTube history, if the profile wants

@@ -7,6 +7,11 @@ enum MacSection: Hashable {
     case recent, history, liked, albums, playlists, artists, downloads, offline, stats
     case lastFM
     case userPlaylist(UUID)
+    /// YouTube: the Home feed, the subscriptions feed, and search results.
+    case videos, subscriptions, videoSearch
+
+    /// The toolbar's search finds videos while one of these is open.
+    var isVideo: Bool { self == .videos || self == .subscriptions || self == .videoSearch }
 }
 
 /// Koda on the Mac: a sidebar of everything there is to go to, the page on the right, and the
@@ -20,6 +25,7 @@ struct MacRootView: View {
     /// Each section's own trail of pages, so going back to a section returns to where you were.
     @State private var paths: [MacSection: [Route]] = [:]
     @State private var search = SearchModel()
+    @State private var videoSearch = VideoSearchModel()
     @FocusState private var searchFocused: Bool
     /// The namespace the player bar's cover is the zoom source in.
     @Namespace private var playerZoom
@@ -74,10 +80,11 @@ struct MacRootView: View {
         @Bindable var search = search
         return content
         // In the window's toolbar, top right, where the Mac's apps keep search.
-        .searchable(text: $search.query, placement: .toolbar, prompt: "Songs, artists, albums or a link")
+        .searchable(text: $search.query, placement: .toolbar,
+                    prompt: (section ?? .home).isVideo ? "Search YouTube" : "Songs, artists, albums or a link")
         .searchFocused($searchFocused)
         .searchSuggestions {
-            if search.query != search.submitted {
+            if !(section ?? .home).isVideo, search.query != search.submitted {
                 if let link = YouTubeLink(text: search.query) {
                     Label(link.openTitle, systemImage: "link").searchCompletion(search.query)
                 }
@@ -86,11 +93,17 @@ struct MacRootView: View {
                 }
             }
         }
-        .onSubmit(of: .search) { submit(search.query) }
+        .onSubmit(of: .search) {
+            if (section ?? .home).isVideo { submitVideoSearch(search.query) } else { submit(search.query) }
+        }
         .onChange(of: search.query) { _, text in
             if text.isEmpty {
                 search.clear()
                 if section == .search { section = .browse }
+                if section == .videoSearch {
+                    videoSearch.clear()
+                    section = .videos
+                }
             }
         }
         .task(id: search.query) { await search.suggest(music: model.music) }
@@ -102,6 +115,7 @@ struct MacRootView: View {
             switch tab {
             case .home: section = .home
             case .library: section = .recent
+            case .videos: section = .videos
             case .search:
                 if section != .search { section = .browse }
                 searchFocused = true
@@ -192,6 +206,15 @@ struct MacRootView: View {
                 sidebarRow("Browse", "square.grid.2x2", .browse)
                 if search.submitted != nil {
                     sidebarRow("Search Results", "magnifyingglass", .search)
+                }
+            }
+            Section("Videos") {
+                sidebarRow("Home", "play.rectangle", .videos)
+                if model.roster.active.isSignedIn {
+                    sidebarRow("Subscriptions", "person.2.crop.square.stack", .subscriptions)
+                }
+                if videoSearch.submitted != nil {
+                    sidebarRow("Search Results", "magnifyingglass", .videoSearch)
                 }
             }
             Section("Library") {
@@ -334,6 +357,14 @@ struct MacRootView: View {
         case .history: HistoryView()
         case .lastFM: MacLastFMView()
         case .userPlaylist(let id): UserPlaylistView(id: id).id(id)
+        case .videos: VideoHomeView(kind: .home).id(model.roster.activeID)
+        case .subscriptions: VideoHomeView(kind: .subscriptions).id(model.roster.activeID)
+        case .videoSearch:
+            MacPage {
+                MacPageTitle(title: videoSearch.submitted ?? "Search") { EmptyView() }
+                VideoSearchResultsView(model: videoSearch)
+            }
+            .navigationTitle("Search Results")
         }
     }
 
@@ -355,6 +386,15 @@ struct MacRootView: View {
     private var path: Binding<[Route]> {
         let current = section ?? .home
         return Binding(get: { paths[current] ?? [] }, set: { paths[current] = $0 })
+    }
+
+    /// The toolbar's search, while Videos is open: YouTube's results in a page of their own.
+    private func submitVideoSearch(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        paths[.videoSearch] = []
+        closeNowPlaying()
+        section = .videoSearch
+        Task { await videoSearch.search(text, music: model.music) }
     }
 
     private func submit(_ text: String) {

@@ -32,6 +32,9 @@ public final class Library {
     public private(set) var notInterested = NotInterested()
     /// The artists, genres and songs picked in taste setup.
     public private(set) var taste = TasteProfile()
+    /// Videos watched, most recent first, one entry each: Continue Watching, and what a
+    /// signed-out video Home is built from.
+    public private(set) var watched: [Video] = []
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
@@ -46,6 +49,7 @@ public final class Library {
     private var historyFile: URL? { directory?.appending(path: "history.json") }
     private static let recentLimit = 200
     private static let searchLimit = 20
+    static let watchedLimit = 200
     static let historyLimit = 3000
     /// Listening time arrives every few seconds; it is written with the next change or `flush()`.
     @ObservationIgnored private var hasUnsavedListening = false
@@ -123,6 +127,7 @@ public final class Library {
     public func clearHistory() {
         recent = []
         history = []
+        watched = []
         save()
         saveHistory()
     }
@@ -176,6 +181,20 @@ public final class Library {
 
     public func unhide(artist: ArtistRef) {
         notInterested.artists.removeAll { NotInterested.same($0, artist) }
+        save()
+    }
+
+    // MARK: Videos
+
+    public func recordWatch(_ video: Video) {
+        watched.removeAll { $0.id == video.id }
+        watched.insert(video, at: 0)
+        if watched.count > Self.watchedLimit { watched.removeLast(watched.count - Self.watchedLimit) }
+        save()
+    }
+
+    public func removeWatched(_ id: String) {
+        watched.removeAll { $0.id == id }
         save()
     }
 
@@ -411,6 +430,7 @@ public final class Library {
         var lyricsOffsets: [String: TimeInterval] = [:]
         var notInterested = NotInterested()
         var taste = TasteProfile()
+        var watched: [Video] = []
         var androidPlaysImportedThrough: Date?
 
         init() {}
@@ -430,6 +450,7 @@ public final class Library {
             lyricsOffsets = try c.decodeIfPresent([String: TimeInterval].self, forKey: .lyricsOffsets) ?? [:]
             notInterested = try c.decodeIfPresent(NotInterested.self, forKey: .notInterested) ?? NotInterested()
             taste = try c.decodeIfPresent(TasteProfile.self, forKey: .taste) ?? TasteProfile()
+            watched = try c.decodeIfPresent([Video].self, forKey: .watched) ?? []
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
         }
     }
@@ -458,6 +479,7 @@ public final class Library {
         lyricsOffsets = snapshot.lyricsOffsets
         notInterested = snapshot.notInterested
         taste = snapshot.taste
+        watched = snapshot.watched
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
     }
 
@@ -530,6 +552,7 @@ public final class Library {
         snapshot.lyricsOffsets = lyricsOffsets
         snapshot.notInterested = notInterested
         snapshot.taste = taste
+        snapshot.watched = watched
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
         return snapshot
     }

@@ -19,6 +19,8 @@ final class AppModel {
     let settings = AppSettings()
     let downloads: Downloads
     let lastFM: LastFM
+    /// The video player, beside the songs' (Koda/Video).
+    let videos: VideoPlayback
     /// The playing song on Discord; the Mac only, where the Discord app takes it from Koda directly.
     let discord: DiscordPresence?
 
@@ -77,6 +79,7 @@ final class AppModel {
         self.keychain = keychain
         music = YouTubeMusic(accounts: AccountSessions(store: keychain))
         player = Player(music: music, storageDirectory: directory)
+        videos = VideoPlayback(music: music)
         // Before profiles the name lived in the defaults and the library at the top of the folder;
         // the roster moves both into the first profile.
         roster = ProfileRoster(root: directory, legacyName: UserDefaults.standard.string(forKey: "koda.profile.name"))
@@ -94,8 +97,16 @@ final class AppModel {
         let audio = AudioStore(directory: audioDirectory, cacheLimit: settings.cacheLimit.rawValue)
         player.audioStore = audio
         downloads = Downloads(store: audio, music: music)
-        player.onSongStarted = { [library] song in
+        player.onSongStarted = { [library, videos] song in
+            // A song and a video never play over each other.
+            videos.pause()
             if settings.savesListeningHistory { library.recordPlay(song) }
+        }
+        videos.onWatch = { [library] video in
+            if settings.savesListeningHistory { library.recordWatch(video) }
+        }
+        videos.pauseMusic = { [player] in
+            if player.wantsToPlay { player.togglePlayPause() }
         }
         player.onListened = { [library] song, seconds in
             if settings.savesListeningHistory { library.addListening(seconds, to: song) }
@@ -262,5 +273,5 @@ final class AppModel {
 }
 
 enum AppTab: Hashable {
-    case home, library, search
+    case home, library, videos, search
 }

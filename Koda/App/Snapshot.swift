@@ -14,6 +14,10 @@ nonisolated enum Snapshot {
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
+    static func remove(_ name: String) {
+        try? FileManager.default.removeItem(at: directory.appending(path: name + ".json"))
+    }
+
     /// Writes `value` under `name`, off the main thread.
     static func save<T: Encodable & Sendable>(_ value: T, _ name: String) {
         let url = directory.appending(path: name + ".json")

@@ -94,8 +94,7 @@ struct LibraryView: View {
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showsProfile = true } label: { AvatarView(size: 32) }
-                    .accessibilityLabel("Profile and Settings")
+                ProfileToolbarButton { showsProfile = true }
             }
         }
         .sheet(isPresented: $showsProfile) { ProfileView().appEnvironment(app) }

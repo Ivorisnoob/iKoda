@@ -197,7 +197,7 @@ struct UserPlaylistView: View {
     }
 
     private func detail(_ playlist: UserPlaylist) -> String {
-        var parts = ["Made by \(app.profile.displayName)"]
+        var parts = ["Made by \(app.roster.active.displayName)"]
         parts.append(playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs")
         let minutes = Int(playlist.duration / 60)
         if minutes > 0 { parts.append(minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min") }

@@ -11,7 +11,7 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .profile: "Profile"
+        case .profile: "Profiles"
         case .playback: "Playback"
         case .lyrics: "Lyrics"
         case .appearance: "Appearance"
@@ -60,6 +60,7 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
 /// control on the right, in rounded groups.
 struct MacSettingsView: View {
     static let windowID = "settings"
+    @Environment(AppModel.self) private var app
     @State private var pane: MacSettingsPane = .playback
 
     var body: some View {
@@ -94,6 +95,12 @@ struct MacSettingsView: View {
             .navigationTitle(pane.title)
         }
         .frame(minWidth: 720, minHeight: 500)
+        // Edit Profile… in the sidebar's menu opens Settings on this pane.
+        .onChange(of: app.requestedSettingsPane, initial: true) { _, requested in
+            guard let requested else { return }
+            pane = requested
+            app.requestedSettingsPane = nil
+        }
     }
 
     @ViewBuilder
@@ -236,39 +243,150 @@ private func byteText(_ bytes: Int64?) -> String {
 
 // MARK: - Panes
 
+/// Every profile, a click to switch, and the selected one's name, picture and account.
 private struct MacProfilePane: View {
     @Environment(AppModel.self) private var app
+    @State private var selected: UUID?
     @State private var photo: PhotosPickerItem?
+    @State private var adding = false
+    @State private var signingIn: UUID?
+    @State private var confirmDelete = false
+    @State private var confirmSignOut = false
+
+    private var profile: KodaProfile { selected.flatMap(app.roster.profile) ?? app.roster.active }
 
     var body: some View {
-        @Bindable var profile = app.profile
-        MacSettingsGroup(footer: "Shown in the sidebar and on the playlists you make. It stays on this Mac.") {
+        MacSettingsGroup(title: "Profiles", footer: "Each profile has its own likes, playlists, history, stats and Home.") {
+            ForEach(app.roster.profiles) { item in
+                MacProfileRow(profile: item, isSelected: item.id == profile.id) { selected = item.id }
+            }
+            MacSettingsRow(title: "") {
+                Button("Add Profile…", systemImage: "plus") { adding = true }
+            }
+        }
+        editor(profile)
+            .id(profile.id)
+            .sheet(isPresented: $adding) { AddProfileView().appEnvironment(app) }
+            .sheet(item: Binding(get: { signingIn.map(SignInTarget.init) }, set: { signingIn = $0?.id })) { target in
+                NavigationStack { YouTubeSignInView(into: target.id) { signingIn = nil } }
+                    .frame(minWidth: 520, minHeight: 640)
+                    .appEnvironment(app)
+            }
+            .onChange(of: photo) { _, item in
+                guard let item else { return }
+                let id = profile.id
+                Task {
+                    let data = try? await item.loadTransferable(type: Data.self)
+                    app.profilePhotos.setPhoto(data, for: id)
+                    photo = nil
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func editor(_ profile: KodaProfile) -> some View {
+        let id = profile.id
+        MacSettingsGroup(title: profile.displayName) {
             HStack(spacing: 14) {
-                AvatarView(size: 56)
+                ProfileAvatar(profile: profile, size: 64)
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("Your name", text: $profile.name)
+                    TextField("Name", text: Binding(get: { profile.name }, set: { name in app.roster.update(id) { $0.name = name } }))
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
-                    HStack(spacing: 8) {
-                        PhotosPicker("Choose Photo…", selection: $photo, matching: .images)
-                        if profile.avatar != nil {
-                            Button("Remove Photo") { profile.setAvatar(nil) }
-                        }
-                    }
-                    .controlSize(.small)
+                    Text(profile.subtitle).font(.system(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
                 }
                 Spacer()
             }
             .padding(12)
-        }
-        .onChange(of: photo) { _, item in
-            guard let item else { return }
-            Task {
-                let data = try? await item.loadTransferable(type: Data.self)
-                app.profile.setAvatar(data)
-                photo = nil
+            MacSettingsRow(title: "Picture") {
+                Picker("Picture", selection: Binding(get: { profile.picture }, set: { picture in app.roster.update(id) { $0.picture = picture } })) {
+                    Text("Koda Face").tag(KodaProfile.Picture.drawn)
+                    Text("Photo").tag(KodaProfile.Picture.photo)
+                    if profile.accountPhoto != nil { Text("Google").tag(KodaProfile.Picture.account) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            switch profile.picture {
+            case .drawn:
+                AvatarEditor(avatar: Binding(get: { profile.avatar }, set: { avatar in app.roster.update(id) { $0.avatar = avatar } }), swatch: 40)
+                    .padding(12)
+            case .photo:
+                MacSettingsRow(title: "Photo") {
+                    PhotosPicker(app.profilePhotos.photo(for: profile) == nil ? "Choose Photo…" : "Choose Another…", selection: $photo, matching: .images)
+                }
+            case .account:
+                EmptyView()
             }
         }
+        MacSettingsGroup(title: "YouTube Music", footer: profile.isSignedIn
+                         ? "Home and the library follow this account. Signing out keeps the profile and everything in it on this Mac."
+                         : "Sign in to bring your YouTube Music likes, playlists and Home to this profile. Everything already here stays.") {
+            if profile.isSignedIn {
+                MacSettingsRow(title: profile.handle ?? profile.displayName, detail: profile.isExpired ? "Signed out by YouTube. Sign in again to keep in step." : "Signed in") {
+                    HStack {
+                        if profile.isExpired { Button("Sign In Again…") { signingIn = id } }
+                        Button("Sign Out…") { confirmSignOut = true }
+                    }
+                }
+            } else {
+                MacSettingsRow(title: "Not signed in") {
+                    Button("Sign In…") { signingIn = id }
+                }
+            }
+        }
+        .confirmationDialog("Sign out of YouTube Music?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) { app.signOut(id) }
+        } message: {
+            Text("“\(profile.displayName)” stays on this Mac with its likes, playlists and history.")
+        }
+        if app.roster.profiles.count > 1 {
+            MacSettingsGroup(footer: "Deletes this profile's liked songs, playlists, history and stats from this Mac.\(profile.isSignedIn ? " Your YouTube Music account isn't affected." : "")") {
+                MacSettingsRow(title: "Delete Profile") {
+                    Button("Delete…", role: .destructive) { confirmDelete = true }
+                }
+            }
+            .confirmationDialog("Delete “\(profile.displayName)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete Profile", role: .destructive) {
+                    selected = nil
+                    app.deleteProfile(id)
+                }
+            }
+        }
+    }
+
+    private struct SignInTarget: Identifiable { let id: UUID }
+}
+
+/// A profile in the Settings list: click to edit it, Switch to make it the active one.
+private struct MacProfileRow: View {
+    let profile: KodaProfile
+    let isSelected: Bool
+    let select: () -> Void
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProfileAvatar(profile: profile, size: 30)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(profile.displayName).font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                Text(profile.subtitle).font(.system(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
+            }
+            Spacer()
+            if profile.id == app.roster.activeID {
+                Text("Current").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            } else {
+                Button("Switch") { app.switchProfile(to: profile.id) }
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(isSelected ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear))
+        .contentShape(.rect)
+        .onTapGesture(perform: select)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

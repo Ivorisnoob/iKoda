@@ -1,9 +1,13 @@
 import Foundation
 import Observation
 
-/// What the listener keeps on this phone: songs they liked, albums, playlists
-/// and artists they saved, playlists they made, what they played and searched,
-/// and how long they listened. One JSON file, written after each change.
+/// What one profile keeps on this device: songs they liked, albums, playlists and artists
+/// they saved, playlists they made, what they played and searched, how long they listened
+/// and what they asked not to be offered. Two JSON files in the profile's folder: the
+/// library, and the dated history of plays, which grows and changes on its own.
+///
+/// One `Library` serves the whole app; switching profile points it at another folder with
+/// `open(directory:)`, so views holding it see the new profile's library at once.
 @MainActor
 @Observable
 public final class Library {
@@ -13,27 +17,53 @@ public final class Library {
     public private(set) var artists: [ArtistSummary] = []
     /// Most recent first, one entry per song.
     public private(set) var recent: [Song] = []
+    /// Every play, newest first, with when it happened; capped at `historyLimit`.
+    public private(set) var history: [PlayEvent] = []
     public private(set) var searches: [String] = []
-    /// Playlists made on this phone, newest first.
+    /// Playlists made on this device, newest first.
     public private(set) var userPlaylists: [UserPlaylist] = []
     /// Play counts and listening time per song, by video id.
     public private(set) var songStats: [String: SongStats] = [:]
-    /// Seconds listened per day, keyed `yyyy-MM-dd` in the phone's time zone.
+    /// Seconds listened per day, keyed `yyyy-MM-dd` in the device's time zone.
     public private(set) var dailyListening: [String: TimeInterval] = [:]
     /// Seconds to shift synced lyrics by, per video id; positive shows lines later.
     public private(set) var lyricsOffsets: [String: TimeInterval] = [:]
+    /// Songs and artists the listener doesn't want offered again.
+    public private(set) var notInterested = NotInterested()
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
 
-    private let file: URL?
+    /// Told about the listener's own likes and saves, not about ones `mergeAccount` brings in:
+    /// for sending them to a signed-in account.
+    @ObservationIgnored public var onChange: ((LibraryChange) -> Void)?
+
+    /// The folder the library is read from and written to; nil keeps it in memory only.
+    public private(set) var directory: URL?
+    private var file: URL? { directory?.appending(path: "library.json") }
+    private var historyFile: URL? { directory?.appending(path: "history.json") }
     private static let recentLimit = 200
     private static let searchLimit = 20
+    static let historyLimit = 3000
     /// Listening time arrives every few seconds; it is written with the next change or `flush()`.
-    private var hasUnsavedListening = false
+    @ObservationIgnored private var hasUnsavedListening = false
+    @ObservationIgnored private var pendingLibrary = false
+    @ObservationIgnored private var pendingHistory = false
+    @ObservationIgnored private let libraryClock = SaveClock()
+    @ObservationIgnored private let historyClock = SaveClock()
 
     public init(directory: URL?) {
-        file = directory?.appending(path: "library.json")
+        self.directory = directory
+        load()
+    }
+
+    /// Switch to the library kept in `directory`, writing what the current one still holds first.
+    public func open(directory: URL?) {
+        guard directory != self.directory else { return }
+        flush(force: true)
+        self.directory = directory
+        apply(Snapshot())
+        history = []
         load()
     }
 
@@ -42,24 +72,33 @@ public final class Library {
     public func isLiked(_ song: Song) -> Bool { liked.contains { $0.id == song.id } }
 
     public func toggleLike(_ song: Song) {
-        if let index = liked.firstIndex(where: { $0.id == song.id }) {
-            liked.remove(at: index)
-        } else {
-            liked.insert(song, at: 0)
+        setLiked(song, !isLiked(song))
+    }
+
+    public func setLiked(_ song: Song, _ isLiked: Bool) {
+        let index = liked.firstIndex { $0.id == song.id }
+        switch (isLiked, index) {
+        case (true, nil): liked.insert(song, at: 0)
+        case (false, let index?): liked.remove(at: index)
+        default: return
         }
         save()
+        onChange?(.liked(song, isLiked))
     }
 
     public func recordPlay(_ song: Song, at date: Date = Date()) {
         recent.removeAll { $0.id == song.id }
         recent.insert(song, at: 0)
         if recent.count > Self.recentLimit { recent.removeLast(recent.count - Self.recentLimit) }
+        history.insert(PlayEvent(song: song, date: date), at: 0)
+        if history.count > Self.historyLimit { history.removeLast(history.count - Self.historyLimit) }
         var stats = songStats[song.id] ?? SongStats(song: song, firstPlayed: date)
         stats.song = song
         stats.plays += 1
         stats.lastPlayed = date
         songStats[song.id] = stats
         save()
+        saveHistory()
     }
 
     /// Credit `seconds` of listening to `song` on the day of `date`.
@@ -72,14 +111,29 @@ public final class Library {
         hasUnsavedListening = true
     }
 
-    /// Write listening time gathered since the last save.
-    public func flush() {
-        if hasUnsavedListening { save() }
+    /// Write, now and on this thread, whatever hasn't reached the disk yet: for when the app is
+    /// leaving the screen and may be suspended before a background write would run.
+    public func flush(force: Bool = false) {
+        if pendingLibrary || hasUnsavedListening || force { writeLibrary(snapshot()) }
+        if pendingHistory || force { writeHistory(history) }
     }
 
     public func clearHistory() {
         recent = []
+        history = []
         save()
+        saveHistory()
+    }
+
+    /// Forget one play. A song with no play left in the history leaves Recently Played too.
+    public func removeFromHistory(_ id: PlayEvent.ID) {
+        guard let index = history.firstIndex(where: { $0.id == id }) else { return }
+        let songId = history.remove(at: index).song.id
+        if !history.contains(where: { $0.song.id == songId }) {
+            recent.removeAll { $0.id == songId }
+            save()
+        }
+        saveHistory()
     }
 
     /// Forget play counts and listening time; history and likes stay.
@@ -91,6 +145,38 @@ public final class Library {
 
     public func plays(of song: Song) -> Int { songStats[song.id]?.plays ?? 0 }
 
+    // MARK: Not interested
+
+    public func isHidden(_ song: Song) -> Bool { notInterested.hides(song) }
+    public func isHidden(artist: ArtistRef) -> Bool { notInterested.hides(artist) }
+
+    /// Songs that may be offered: without the ones the listener asked not to hear.
+    public func offerable(_ songs: [Song]) -> [Song] {
+        notInterested.isEmpty ? songs : songs.filter { !notInterested.hides($0) }
+    }
+
+    public func hide(_ song: Song) {
+        guard !notInterested.songs.contains(where: { $0.id == song.id }) else { return }
+        notInterested.songs.insert(song, at: 0)
+        save()
+    }
+
+    public func hide(artist: ArtistRef) {
+        guard !notInterested.hides(artist) else { return }
+        notInterested.artists.insert(artist, at: 0)
+        save()
+    }
+
+    public func unhide(_ song: Song) {
+        notInterested.songs.removeAll { $0.id == song.id }
+        save()
+    }
+
+    public func unhide(artist: ArtistRef) {
+        notInterested.artists.removeAll { NotInterested.same($0, artist) }
+        save()
+    }
+
     // MARK: Collections
 
     public func isSaved(album id: String) -> Bool { albums.contains { $0.id == id } }
@@ -98,26 +184,58 @@ public final class Library {
     public func isSaved(artist id: String) -> Bool { artists.contains { $0.id == id } }
 
     public func toggleSave(_ album: AlbumSummary) {
-        toggle(album, in: &albums)
+        let saved = toggle(album, in: &albums)
         save()
+        onChange?(.album(album, saved))
     }
 
     public func toggleSave(_ playlist: PlaylistSummary) {
-        toggle(playlist, in: &playlists)
+        let saved = toggle(playlist, in: &playlists)
         save()
+        onChange?(.playlist(playlist, saved))
     }
 
     public func toggleSave(_ artist: ArtistSummary) {
-        toggle(artist, in: &artists)
+        let saved = toggle(artist, in: &artists)
+        save()
+        onChange?(.artist(artist, saved))
+    }
+
+    /// Returns whether the item is saved afterwards.
+    private func toggle<T: Identifiable>(_ item: T, in list: inout [T]) -> Bool {
+        if let index = list.firstIndex(where: { $0.id == item.id }) {
+            list.remove(at: index)
+            return false
+        }
+        list.insert(item, at: 0)
+        return true
+    }
+
+    /// Bring in what a signed-in account holds, without telling `onChange`: it came from there.
+    /// What the account has and the library lacks is added in the account's order ahead of the
+    /// rest; nothing here is removed, so a like made offline and not yet sent isn't lost.
+    public func mergeAccount(liked accountLiked: [Song], albums accountAlbums: [AlbumSummary],
+                             playlists accountPlaylists: [PlaylistSummary], artists accountArtists: [ArtistSummary]) {
+        liked = Self.merged(accountLiked, into: liked)
+        albums = Self.merged(accountAlbums, into: albums)
+        playlists = Self.merged(accountPlaylists, into: playlists)
+        artists = Self.merged(accountArtists, into: artists)
         save()
     }
 
-    private func toggle<T: Identifiable>(_ item: T, in list: inout [T]) {
-        if let index = list.firstIndex(where: { $0.id == item.id }) {
-            list.remove(at: index)
-        } else {
-            list.insert(item, at: 0)
-        }
+    /// Remove what the account no longer holds, after `mergeAccount`, when the listener chose to
+    /// mirror the account: likes and saves undone on another device go here too.
+    public func dropMissing(liked keep: Set<String>?, albums keepAlbums: Set<String>?, playlists keepPlaylists: Set<String>?, artists keepArtists: Set<String>?) {
+        if let keep { liked.removeAll { !keep.contains($0.id) } }
+        if let keepAlbums { albums.removeAll { !keepAlbums.contains($0.id) } }
+        if let keepPlaylists { playlists.removeAll { !keepPlaylists.contains($0.id) } }
+        if let keepArtists { artists.removeAll { !keepArtists.contains($0.id) } }
+        save()
+    }
+
+    private static func merged<T: Identifiable>(_ incoming: [T], into list: [T]) -> [T] where T.ID == String {
+        let known = Set(list.map(\.id))
+        return incoming.filter { !known.contains($0.id) } + list
     }
 
     // MARK: Playlists made here
@@ -249,7 +367,7 @@ public final class Library {
 
     // MARK: Storage
 
-    private struct Snapshot: Codable {
+    nonisolated struct Snapshot: Codable, Sendable {
         var liked: [Song] = []
         var albums: [AlbumSummary] = []
         var playlists: [PlaylistSummary] = []
@@ -260,6 +378,7 @@ public final class Library {
         var songStats: [String: SongStats] = [:]
         var dailyListening: [String: TimeInterval] = [:]
         var lyricsOffsets: [String: TimeInterval] = [:]
+        var notInterested = NotInterested()
         var androidPlaysImportedThrough: Date?
 
         init() {}
@@ -277,14 +396,20 @@ public final class Library {
             songStats = try c.decodeIfPresent([String: SongStats].self, forKey: .songStats) ?? [:]
             dailyListening = try c.decodeIfPresent([String: TimeInterval].self, forKey: .dailyListening) ?? [:]
             lyricsOffsets = try c.decodeIfPresent([String: TimeInterval].self, forKey: .lyricsOffsets) ?? [:]
+            notInterested = try c.decodeIfPresent(NotInterested.self, forKey: .notInterested) ?? NotInterested()
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
         }
     }
 
     private func load() {
-        guard let file, let data = try? Data(contentsOf: file),
-              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
-        apply(snapshot)
+        if let file, let data = try? Data(contentsOf: file),
+           let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+            apply(snapshot)
+        }
+        if let historyFile, let data = try? Data(contentsOf: historyFile),
+           let events = try? JSONDecoder().decode([PlayEvent].self, from: data) {
+            history = events
+        }
     }
 
     private func apply(_ snapshot: Snapshot) {
@@ -298,14 +423,63 @@ public final class Library {
         songStats = snapshot.songStats
         dailyListening = snapshot.dailyListening
         lyricsOffsets = snapshot.lyricsOffsets
+        notInterested = snapshot.notInterested
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
     }
 
+    /// Write the library a moment later, off the main thread, and only its newest state: with
+    /// years of stats it is megabytes of JSON, which used to be encoded on the main thread after
+    /// every like and every song.
     private func save() {
         hasUnsavedListening = false
         guard let file else { return }
-        guard let data = try? JSONEncoder().encode(snapshot()) else { return }
+        pendingLibrary = true
+        let version = libraryClock.next()
+        let snapshot = snapshot()
+        let clock = libraryClock
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard clock.isNewest(version), let data = try? JSONEncoder().encode(snapshot), clock.isNewest(version) else { return }
+            try? data.write(to: file, options: .atomic)
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            if self?.libraryClock.isNewest(version) == true { self?.pendingLibrary = false }
+        }
+    }
+
+    private func saveHistory() {
+        guard let historyFile else { return }
+        pendingHistory = true
+        let version = historyClock.next()
+        let events = history
+        let clock = historyClock
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard clock.isNewest(version), let data = try? JSONEncoder().encode(events), clock.isNewest(version) else { return }
+            try? data.write(to: historyFile, options: .atomic)
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            if self?.historyClock.isNewest(version) == true { self?.pendingHistory = false }
+        }
+    }
+
+    /// Synchronous writes; each bumps its clock so a background write already scheduled for an
+    /// older state can't land after it.
+    private func writeLibrary(_ snapshot: Snapshot) {
+        _ = libraryClock.next()
+        pendingLibrary = false
+        hasUnsavedListening = false
+        guard let file, let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: file, options: .atomic)
+    }
+
+    private func writeHistory(_ events: [PlayEvent]) {
+        _ = historyClock.next()
+        pendingHistory = false
+        guard let historyFile, let data = try? JSONEncoder().encode(events) else { return }
+        try? data.write(to: historyFile, options: .atomic)
     }
 
     private func snapshot() -> Snapshot {
@@ -320,6 +494,7 @@ public final class Library {
         snapshot.songStats = songStats
         snapshot.dailyListening = dailyListening
         snapshot.lyricsOffsets = lyricsOffsets
+        snapshot.notInterested = notInterested
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
         return snapshot
     }
@@ -339,14 +514,15 @@ public final class Library {
         var version: Int
         var exported: Date
         var library: Snapshot
+        var history: [PlayEvent]?
     }
 
-    /// Everything in the library as one JSON file, for keeping or moving to another phone.
+    /// Everything in the library as one JSON file, for keeping or moving to another device.
     public func backupData(at date: Date = Date()) -> Data? {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try? encoder.encode(Backup(format: Self.backupFormat, version: 1, exported: date, library: snapshot()))
+        return try? encoder.encode(Backup(format: Self.backupFormat, version: 2, exported: date, library: snapshot(), history: history))
     }
 
     /// Replace the library with a backup. Nothing changes unless the whole file reads as one.
@@ -357,7 +533,70 @@ public final class Library {
             throw BackupError.notABackup
         }
         apply(backup.library)
+        // A version 1 backup has no dated history; the plays it knows of become one each, at their last play.
+        history = backup.history ?? backup.library.recent.compactMap { song in
+            backup.library.songStats[song.id].map { PlayEvent(song: song, date: $0.lastPlayed) }
+        }
         save()
+        saveHistory()
+    }
+}
+
+/// Something the listener did to their library that a signed-in account should hear about.
+public enum LibraryChange: Sendable {
+    case liked(Song, Bool)
+    case album(AlbumSummary, Bool)
+    case playlist(PlaylistSummary, Bool)
+    case artist(ArtistSummary, Bool)
+}
+
+/// One play of a song.
+public struct PlayEvent: Identifiable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public var song: Song
+    public var date: Date
+
+    public init(song: Song, date: Date, id: UUID = UUID()) {
+        self.id = id
+        self.song = song
+        self.date = date
+    }
+}
+
+/// What the listener asked not to be offered: whole songs, and artists, every song they lead
+/// or appear on. Applies to what Koda suggests (Home, mixes, radio and autoplay), never to
+/// what the listener picks themselves.
+public struct NotInterested: Codable, Hashable, Sendable {
+    /// Newest first.
+    public var songs: [Song] = []
+    public var artists: [ArtistRef] = []
+
+    public init() {}
+
+    public var isEmpty: Bool { songs.isEmpty && artists.isEmpty }
+
+    public func hides(_ song: Song) -> Bool {
+        if songs.contains(where: { $0.id == song.id }) { return true }
+        guard !artists.isEmpty else { return false }
+        // Linked artists by channel id; a byline YouTube didn't link is matched on the whole line.
+        let credited = song.artists.isEmpty ? [ArtistRef(id: nil, name: song.artistLine)] : song.artists
+        return credited.contains(where: hides)
+    }
+
+    public func hides(_ artist: ArtistRef) -> Bool {
+        artists.contains { Self.same($0, artist) }
+    }
+
+    /// The same artist: by channel id when both have one, otherwise by name.
+    static func same(_ a: ArtistRef, _ b: ArtistRef) -> Bool {
+        if let x = a.id, let y = b.id { return x == y }
+        return a.name.compare(b.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        songs = try c.decodeIfPresent([Song].self, forKey: .songs) ?? []
+        artists = try c.decodeIfPresent([ArtistRef].self, forKey: .artists) ?? []
     }
 }
 
@@ -417,6 +656,11 @@ extension Library {
         summary.plays = fresh.count
         if let newest = fresh.last?.date { androidPlaysImportedThrough = newest }
 
+        // The dated history, newest first across both.
+        let events = history + fresh.map { PlayEvent(song: $0.song, date: $0.date) }
+        let sortedEvents = events.sorted { $0.date > $1.date }
+        history = Array(sortedEvents.prefix(Self.historyLimit))
+
         // Recently played, newest first across both: each song where it was last played.
         var lastPlayed: [String: (Song, Date)] = [:]
         for song in recent { lastPlayed[song.id] = (song, songStats[song.id]?.lastPlayed ?? .distantPast) }
@@ -432,11 +676,12 @@ extension Library {
         summary.searches = searches.count - searchesBefore
 
         save()
+        saveHistory()
         return summary
     }
 }
 
-/// A playlist made on this phone.
+/// A playlist made on this device.
 public struct UserPlaylist: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public var name: String

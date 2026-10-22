@@ -94,7 +94,7 @@ struct MacHomeView: View {
                 }
             }
         }
-        let yours = model.topArtists(library)
+        let yours = model.yourArtists
         if yours.count >= 3 {
             MacShelf(title: "Your top artists", subtitle: "Based on your listening") {
                 ForEach(yours, id: \.name) { ref in

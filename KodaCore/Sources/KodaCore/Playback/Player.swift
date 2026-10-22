@@ -112,6 +112,8 @@ public final class Player {
     /// The same two moments for one occurrence in the queue, so a song repeated is a new play: for scrobbling.
     public var onItemStarted: ((QueueItem) -> Void)?
     public var onItemHeard: ((QueueItem, TimeInterval) -> Void)?
+    /// Songs the listener asked not to be offered; radio and autoplay leave them out.
+    public var isUnwanted: ((Song) -> Bool)?
     /// Loads artwork for the lock screen; set by the app, which owns image decoding.
     public var artworkLoader: (@MainActor (URL) async -> MPMediaItemArtwork?)?
 
@@ -226,7 +228,7 @@ public final class Player {
         Task {
             guard let radio = try? await music.radio(for: song.id) else { return }
             guard queue.current?.id == seed else { return }
-            queue.append(radio.songs.filter { $0.id != song.id })
+            queue.append(radio.songs.filter { $0.id != song.id && isUnwanted?($0) != true })
             persistQueue()
             prepareNext()
         }
@@ -747,7 +749,7 @@ public final class Player {
             }
             guard queue.current?.id == anchor else { return }
             let known = Set(queue.items.suffix(100).map(\.song.id))
-            let fresh = radio.songs.filter { !known.contains($0.id) }
+            let fresh = radio.songs.filter { !known.contains($0.id) && isUnwanted?($0) != true }
             guard !fresh.isEmpty else { return }
             queue.append(fresh)
             persistQueue()
@@ -1206,23 +1208,5 @@ public final class Player {
         timeAnchor = TimeAnchor(position: saved.position, date: Date(), rate: 0)
         phase = .idle
         updateNowPlaying()
-    }
-}
-
-/// Numbers each queue save, so a background write that has been overtaken by a newer
-/// save is dropped instead of overwriting it.
-final class SaveClock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var newest = 0
-
-    func next() -> Int {
-        lock.withLock {
-            newest += 1
-            return newest
-        }
-    }
-
-    func isNewest(_ version: Int) -> Bool {
-        lock.withLock { version == newest }
     }
 }

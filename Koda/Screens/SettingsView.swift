@@ -250,6 +250,13 @@ struct PrivacySettingsView: View {
                 Text("With listening history off, songs you play aren't added to Recently Played, Quick picks, Your Mix or your stats. What is already saved stays until you clear it.")
             }
             Section {
+                NavigationLink {
+                    SuggestLessView()
+                } label: {
+                    LabeledContent("Suggest Less", value: library.notInterested.isEmpty ? "" : "\(library.notInterested.songs.count + library.notInterested.artists.count)")
+                }
+            }
+            Section {
                 Button("Clear Listening History", role: .destructive) { confirm = .history }
                     .disabled(library.recent.isEmpty)
                 Button("Clear Search History", role: .destructive) { confirm = .searches }

@@ -44,6 +44,21 @@ final class AppModel {
     var isAddingProfile = false
     /// The pane the Mac's Settings window should show when it next opens or is already open.
     var requestedSettingsPane: MacSettingsPane?
+    /// Signed-in profiles' cookies (see Accounts.swift).
+    let keychain: AccountKeychain
+    /// The active profile's library is being brought in step with its account.
+    var isSyncingAccount = false
+    /// Session changes and writes to the account, one at a time and in the order asked, so a
+    /// like is always sent as the profile it was made in, even after a quick switch.
+    @ObservationIgnored var accountWork: Task<Void, Never>?
+    /// The Keychain was locked when the active profile's session was read; read it again when the app comes back.
+    @ObservationIgnored var needsSessionRead = false
+    @ObservationIgnored var lastAccountSync: [UUID: Date] = [:]
+    @ObservationIgnored var syncTask: Task<Void, Never>?
+    /// Numbers each sync, so one that was overtaken doesn't clear `isSyncingAccount` for the next.
+    @ObservationIgnored var syncRound = 0
+    /// Each signed-in profile's `AccountMirror`, read from its folder on first use.
+    @ObservationIgnored var mirrors: [UUID: AccountMirror] = [:]
 
     struct PlaylistTarget: Identifiable {
         let id = UUID()
@@ -53,7 +68,9 @@ final class AppModel {
     init() {
         let directory = URL.applicationSupportDirectory.appending(path: "Koda")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        music = YouTubeMusic()
+        let keychain = AccountKeychain(directory: directory)
+        self.keychain = keychain
+        music = YouTubeMusic(accounts: AccountSessions(store: keychain))
         player = Player(music: music, storageDirectory: directory)
         // Before profiles the name lived in the defaults and the library at the top of the folder;
         // the roster moves both into the first profile.
@@ -110,24 +127,35 @@ final class AppModel {
             guard let image = await ImagePipeline.shared.image(url, pixels: 600) else { return nil }
             return ImagePipeline.nowPlayingArtwork(image)
         }
+        connectAccounts()
     }
 
-    /// Make another profile the active one: its library replaces this one's everywhere at once.
-    /// The queue keeps playing; what is listened to from here on counts for the new profile.
+    /// Make another profile the active one: its library replaces this one's everywhere at once,
+    /// with no network, so a switch works offline and lands on the next frame. The queue keeps
+    /// playing; what is listened to from here on counts for the new profile. Its account, if it
+    /// has one, signs requests from here on and its library is brought in step behind.
     func switchProfile(to id: UUID) {
-        guard id != roster.activeID, roster.profile(id) != nil else { return }
+        guard id != roster.activeID, let profile = roster.profile(id) else { return }
+        let leaving = roster.active
         library.open(directory: roster.folder(for: id))
         home = HomeModel(profile: id)
         roster.setActive(id)
+        moveSession(from: leaving, to: profile)
     }
 
     /// Delete a profile and what it keeps on this device; another takes over if it was active.
     func deleteProfile(_ id: UUID) {
-        roster.delete(id) { next in
-            library.open(directory: roster.folder(for: next))
-            home = HomeModel(profile: next)
+        guard let profile = roster.profile(id) else { return }
+        var next: KodaProfile?
+        let deleted = roster.delete(id) { nextID in
+            library.open(directory: roster.folder(for: nextID))
+            home = HomeModel(profile: nextID)
+            next = roster.profile(nextID)
         }
+        guard deleted else { return }
         Snapshot.remove("home-\(id.uuidString)")
+        forgetAccount(of: id)
+        if let next { moveSession(from: profile, to: next) }
     }
 
     /// Open a page from outside a navigation stack: closes Now Playing and pushes it on the current tab.

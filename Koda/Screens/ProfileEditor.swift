@@ -200,6 +200,15 @@ private struct AccountSection: View {
                 LabeledContent("YouTube Music", value: profile.handle ?? profile.displayName)
                 if profile.isExpired {
                     NavigationLink("Sign In Again") { YouTubeSignInView(into: profile.id) }
+                } else if profile.id == app.roster.activeID {
+                    Button {
+                        app.syncAccount(force: true)
+                    } label: {
+                        LabeledContent("Sync Library Now") {
+                            if app.isSyncingAccount { ProgressView() }
+                        }
+                    }
+                    .disabled(app.isSyncingAccount)
                 }
                 Button("Sign Out…", role: .destructive) { confirmSignOut = true }
             } else {

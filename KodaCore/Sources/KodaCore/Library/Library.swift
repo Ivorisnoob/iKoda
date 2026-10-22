@@ -543,11 +543,37 @@ public final class Library {
 }
 
 /// Something the listener did to their library that a signed-in account should hear about.
-public enum LibraryChange: Sendable {
+public enum LibraryChange: Codable, Hashable, Sendable {
     case liked(Song, Bool)
     case album(AlbumSummary, Bool)
     case playlist(PlaylistSummary, Bool)
     case artist(ArtistSummary, Bool)
+
+    public enum Kind: String, Codable, Sendable {
+        case liked, album, playlist, artist
+    }
+
+    /// The item the change is about, whichever way it went.
+    public struct Target: Hashable, Sendable {
+        public var kind: Kind
+        public var id: String
+    }
+
+    public var target: Target {
+        switch self {
+        case .liked(let song, _): Target(kind: .liked, id: song.id)
+        case .album(let album, _): Target(kind: .album, id: album.id)
+        case .playlist(let playlist, _): Target(kind: .playlist, id: playlist.id)
+        case .artist(let artist, _): Target(kind: .artist, id: artist.id)
+        }
+    }
+
+    /// Liked or saved, rather than undone.
+    public var isOn: Bool {
+        switch self {
+        case .liked(_, let on), .album(_, let on), .playlist(_, let on), .artist(_, let on): on
+        }
+    }
 }
 
 /// One play of a song.

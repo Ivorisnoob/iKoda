@@ -163,6 +163,13 @@ public final class YouTubeMusic: Sendable {
         }
     }
 
+    /// A new anonymous identity, for a switch to or from an account. The token is the bot
+    /// check's identity; one account's carried into another's requests is how a session gets
+    /// flagged `LOGIN_REQUIRED` (Koda for Android drops it on every switch for that reason).
+    public func renewVisitorIdentity() async {
+        _ = await api.identity.replace(api.identity.cached)
+    }
+
     /// Forget fetched pages, for a pull to refresh that should really fetch again.
     public func clearPageCache() async {
         await pages.removeAll()

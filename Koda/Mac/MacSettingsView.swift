@@ -324,9 +324,15 @@ private struct MacProfilePane: View {
                          ? "Home and the library follow this account. Signing out keeps the profile and everything in it on this Mac."
                          : "Sign in to bring your YouTube Music likes, playlists and Home to this profile. Everything already here stays.") {
             if profile.isSignedIn {
-                MacSettingsRow(title: profile.handle ?? profile.displayName, detail: profile.isExpired ? "Signed out by YouTube. Sign in again to keep in step." : "Signed in") {
+                let syncing = app.isSyncingAccount && id == app.roster.activeID
+                MacSettingsRow(title: profile.handle ?? profile.displayName,
+                               detail: profile.isExpired ? "Signed out by YouTube. Sign in again to keep in step." : syncing ? "Bringing in your library…" : "Signed in") {
                     HStack {
-                        if profile.isExpired { Button("Sign In Again…") { signingIn = id } }
+                        if profile.isExpired {
+                            Button("Sign In Again…") { signingIn = id }
+                        } else if id == app.roster.activeID {
+                            Button("Sync Now") { app.syncAccount(force: true) }.disabled(syncing)
+                        }
                         Button("Sign Out…") { confirmSignOut = true }
                     }
                 }
@@ -587,6 +593,7 @@ private struct MacPrivacyPane: View {
             MacSettingsToggle(title: "Save listening history", isOn: $settings.savesListeningHistory)
             MacSettingsToggle(title: "Save search history", isOn: $settings.savesSearchHistory)
         }
+        MacSuggestLessGroup()
         MacSettingsGroup(title: "Clear") {
             MacSettingsRow(title: "Listening history", detail: "Recently Played and Quick picks start over.") {
                 Button("Clear…") { confirm = .history }.disabled(library.recent.isEmpty)

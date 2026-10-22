@@ -144,6 +144,12 @@ struct ProfileToolbarButton: View {
 
     var body: some View {
         Menu {
+            if let back = app.quickSwitchTarget {
+                Button("Switch to \(back.displayName)", systemImage: "arrow.left.arrow.right") {
+                    switches += 1
+                    app.switchProfile(to: back.id)
+                }
+            }
             Section("Switch Profile") {
                 ForEach(app.roster.profiles) { profile in
                     Button {

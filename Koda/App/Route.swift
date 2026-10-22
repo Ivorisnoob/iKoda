@@ -14,6 +14,8 @@ enum Route: Hashable {
     case userPlaylist(UUID)
     /// Listening statistics in full.
     case stats
+    /// Every play, by day.
+    case history
     /// Songs the app put together, such as Your Mix.
     case songList(title: String, subtitle: String?, songs: [Song])
     /// The player, as a page of its own on the Mac, zooming out of the player bar's cover.
@@ -48,6 +50,7 @@ extension View {
             case .shelf(let shelf): ShelfGridView(shelf: shelf)
             case .userPlaylist(let id): UserPlaylistView(id: id)
             case .stats: StatsView()
+            case .history: HistoryView()
             case .songList(let title, let subtitle, let songs): SongListView(title: title, subtitle: subtitle, songs: songs)
             case .nowPlaying: NowPlayingPage()
             }

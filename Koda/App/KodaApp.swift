@@ -32,7 +32,10 @@ struct KodaApp: App {
         .onChange(of: scenePhase) { _, phase in
             // The queue and position survive the app being closed from the switcher.
             if phase != .active { model.saveState() }
-            if phase == .active { model.lastFM.syncSoon() }
+            if phase == .active {
+                model.lastFM.syncSoon()
+                model.accountsBecameActive()
+            }
         }
 
         #if targetEnvironment(macCatalyst)

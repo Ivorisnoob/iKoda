@@ -4,7 +4,7 @@ import SwiftUI
 /// A place in the Mac's sidebar.
 enum MacSection: Hashable {
     case home, browse, search
-    case recent, liked, albums, playlists, artists, downloads, offline, stats
+    case recent, history, liked, albums, playlists, artists, downloads, offline, stats
     case lastFM
     case userPlaylist(UUID)
 }
@@ -193,6 +193,7 @@ struct MacRootView: View {
             }
             Section("Library") {
                 sidebarRow("Recently Played", "clock", .recent)
+                sidebarRow("History", "clock.arrow.circlepath", .history)
                 sidebarRow("Liked Songs", "heart", .liked, count: library.liked.count)
                 sidebarRow("Albums", "square.stack", .albums)
                 sidebarRow("Playlists", "music.note.list", .playlists)
@@ -269,6 +270,9 @@ struct MacRootView: View {
     private var profileButton: some View {
         let active = model.roster.active
         return Menu {
+            if let back = model.quickSwitchTarget {
+                Button("Switch to \(back.displayName)", systemImage: "arrow.left.arrow.right") { model.switchProfile(to: back.id) }
+            }
             Section("Profiles") {
                 ForEach(model.roster.profiles) { profile in
                     Toggle(isOn: Binding(get: { profile.id == model.roster.activeID }, set: { if $0 { model.switchProfile(to: profile.id) } })) {
@@ -324,6 +328,7 @@ struct MacRootView: View {
         case .playlists: MacLibraryGrid(kind: .playlists)
         case .artists: MacLibraryGrid(kind: .artists)
         case .stats: StatsView()
+        case .history: HistoryView()
         case .lastFM: MacLastFMView()
         case .userPlaylist(let id): UserPlaylistView(id: id).id(id)
         }

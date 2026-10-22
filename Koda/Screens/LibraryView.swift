@@ -53,6 +53,8 @@ struct LibraryView: View {
                     LibraryLink(title: "Recently Played", systemImage: "clock.fill", tint: .orange, count: library.recent.count,
                                 route: .songs(title: "Recently Played", source: .recent))
                     Divider().padding(.leading, 56)
+                    LibraryLink(title: "History", systemImage: "clock.arrow.circlepath", tint: .orange, count: 0, route: .history)
+                    Divider().padding(.leading, 56)
                     LibraryLink(title: "Listening Stats", systemImage: "chart.bar.fill", tint: .teal, count: 0, route: .stats)
                 }
                 .padding(.horizontal, 20)
@@ -82,6 +84,8 @@ struct LibraryView: View {
             .padding(.vertical, 12)
         }
         .navigationTitle("Library")
+        // A signed-in profile's pull brings in what changed on the account elsewhere.
+        .refreshable { if app.roster.active.isSignedIn { await app.refreshAccount() } }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {

@@ -21,6 +21,8 @@ extension Error {
         case .botCheck: "YouTube is refusing requests right now. Try again in a little while."
         case .unplayable(let reason): reason ?? "This isn't available."
         case .badResponse: "YouTube sent something unexpected. Try again."
+        case .signedOut: "YouTube signed this account out. Sign in again to continue."
+        case .rateLimited: "YouTube is asking Koda to slow down. Try again in a few minutes."
         case nil: "Something went wrong. Try again."
         }
     }

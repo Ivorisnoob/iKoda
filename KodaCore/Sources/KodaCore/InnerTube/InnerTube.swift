@@ -9,14 +9,28 @@ public enum MusicError: Error, Sendable, Equatable {
     case unplayable(String?)
     /// The bot check refused even a fresh identity; another one will not help right now.
     case botCheck
+    /// An account call with no session, or one YouTube answered as signed out.
+    case signedOut
+    /// HTTP 429: YouTube wants this device to slow down. Only work nobody asked for
+    /// should stand down; a listener's own request still goes when they make it.
+    case rateLimited
 }
 
 /// WEB_REMIX calls on music.youtube.com.
 struct InnerTube: Sendable {
     let session: URLSession
     let identity: VisitorIdentity
+    let accounts: AccountSessions
 
-    func music(_ endpoint: String, _ payload: [String: Any]) async throws -> JSON {
+    /// Whether a call carries the active account: public pages are signed when there is
+    /// one (Home is then the account's), account pages and writes need one.
+    enum Signing {
+        case ifSignedIn, required
+    }
+
+    func music(_ endpoint: String, _ payload: [String: Any], signing: Signing = .ifSignedIn) async throws -> JSON {
+        let ticket = await accounts.ticket()
+        if signing == .required, ticket?.cookies.sapisid == nil { throw MusicError.signedOut }
         var visitor = await identity.cached
         if visitor == nil { visitor = await identity.current() }
         var client: [String: Any] = ["clientName": "WEB_REMIX", "clientVersion": Clients.webRemixVersion, "hl": "en", "gl": "US"]
@@ -34,6 +48,9 @@ struct InnerTube: Sendable {
         request.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(Clients.webRemixVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
         if let visitor { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
+        if let ticket {
+            for (field, value) in SAPISIDHash.headers(for: ticket.cookies) { request.setValue(value, forHTTPHeaderField: field) }
+        }
 
         let (data, response): (Data, URLResponse)
         do {
@@ -45,27 +62,54 @@ struct InnerTube: Sendable {
             throw MusicError.network
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if let ticket, let setCookie = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Set-Cookie") {
+            await accounts.received(setCookie: [setCookie], for: ticket)
+        }
+        if status == 429 { throw MusicError.rateLimited }
+        // A write under a session YouTube no longer honours answers 401 UNAUTHENTICATED.
+        if status == 401, ticket != nil || signing == .required { throw MusicError.signedOut }
         guard status == 200 else { throw MusicError.badResponse(status) }
         guard let json = try? JSON(data: data), !json["error"].exists else { throw MusicError.network }
+        if let ticket, let signedIn = AccountPages.signedIn(json) {
+            await accounts.note(signedIn: signedIn, for: ticket)
+            if !signedIn, signing == .required { throw MusicError.signedOut }
+        }
         return json
     }
 }
 
-/// YouTube Music, signed out: browse, search, pages, radio and streams.
+/// YouTube Music: browse, search, pages, radio and streams, signed in as `accounts`'
+/// active profile when there is one (see Account/). Streams are always resolved anonymously.
 public final class YouTubeMusic: Sendable {
     let api: InnerTube
     let streams: StreamResolver
     private let pages = PageCache()
+    /// The session requests are signed with; the app activates and clears it.
+    public let accounts: AccountSessions
 
-    public init(defaultsSuite: String? = nil) {
+    public init(defaultsSuite: String? = nil, accounts: AccountSessions = AccountSessions()) {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
         config.httpMaximumConnectionsPerHost = 6
         config.urlCache = nil
+        // Cookies are Koda's to send, per request and per profile. A shared jar would
+        // mix one profile's cookies into another's requests and catch rotations nobody
+        // credits to the right account; signed-out calls need none (nor does Android).
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
         let session = URLSession(configuration: config)
         let identity = VisitorIdentity(session: session, suite: defaultsSuite)
-        api = InnerTube(session: session, identity: identity)
+        self.accounts = accounts
+        api = InnerTube(session: session, identity: identity, accounts: accounts)
         streams = StreamResolver(session: session, identity: identity)
+    }
+
+    /// A cached page, kept per profile: signed in, pages carry the account's state
+    /// (saved, subscribed), so one profile's are never shown to another.
+    private func page<T: Sendable>(_ key: String, load: @Sendable () async throws -> T) async throws -> T {
+        let scope = await accounts.cacheScope
+        return try await pages.value(scope + "|" + key, load: load)
     }
 
     // MARK: Browse
@@ -77,7 +121,7 @@ public final class YouTubeMusic: Sendable {
     }
 
     public func explore() async throws -> ShelfPage {
-        try await pages.value("explore") { [api] in
+        try await page("explore") { [api] in
             Pages.shelves(try await api.music("browse", ["browseId": "FEmusic_explore"]))
         }
     }
@@ -85,7 +129,7 @@ public final class YouTubeMusic: Sendable {
     /// YouTube Music's charts for a country, by its two-letter code ("ZZ" is global), or for
     /// the region YouTube places the listener in when nil.
     public func charts(country: String? = nil) async throws -> ShelfPage {
-        try await pages.value("charts|\(country ?? "")") { [api] in
+        try await page("charts|\(country ?? "")") { [api] in
             var payload: [String: Any] = ["browseId": "FEmusic_charts"]
             if let country { payload["formData"] = ["selectedValues": [country]] }
             return Pages.shelves(try await api.music("browse", payload))
@@ -112,7 +156,7 @@ public final class YouTubeMusic: Sendable {
     }
 
     public func mood(_ mood: Mood) async throws -> ShelfPage {
-        try await pages.value("mood|\(mood.browseId)|\(mood.params ?? "")") { [api] in
+        try await page("mood|\(mood.browseId)|\(mood.params ?? "")") { [api] in
             var payload: [String: Any] = ["browseId": mood.browseId]
             if let params = mood.params { payload["params"] = params }
             return Pages.shelves(try await api.music("browse", payload))
@@ -140,7 +184,7 @@ public final class YouTubeMusic: Sendable {
     // MARK: Pages
 
     public func album(_ id: String) async throws -> AlbumPage {
-        try await pages.value("album|\(id)") { try await self.fetchAlbum(id) }
+        try await page("album|\(id)") { try await self.fetchAlbum(id) }
     }
 
     private func fetchAlbum(_ id: String) async throws -> AlbumPage {
@@ -155,7 +199,7 @@ public final class YouTubeMusic: Sendable {
     }
 
     public func artist(_ id: String) async throws -> ArtistPage {
-        try await pages.value("artist|\(id)") { [api] in
+        try await page("artist|\(id)") { [api] in
             let root = try await api.music("browse", ["browseId": id])
             guard let page = Pages.artist(root, id: id) else { throw MusicError.badResponse(200) }
             return page
@@ -163,7 +207,7 @@ public final class YouTubeMusic: Sendable {
     }
 
     public func playlist(_ id: String) async throws -> PlaylistPage {
-        try await pages.value("playlist|\(id)") { try await self.fetchPlaylist(id) }
+        try await page("playlist|\(id)") { try await self.fetchPlaylist(id) }
     }
 
     private func fetchPlaylist(_ id: String) async throws -> PlaylistPage {

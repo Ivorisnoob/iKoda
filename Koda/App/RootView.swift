@@ -80,7 +80,9 @@ struct RootView: View {
         // iOS 27 made the automatic edge effect hard: an opaque band under the bars. A soft one
         // blurs content progressively instead. It applies to every scroll view below here.
         .scrollEdgeEffectStyle(.soft, for: .all)
-        .modifier(MiniPlayerAccessory(isEnabled: player.current != nil) {
+        // The songs' player belongs to music mode: in video mode a video is what plays (and
+        // starting one paused the songs), so the bar under the tabs is the video's alone.
+        .modifier(MiniPlayerAccessory(isEnabled: player.current != nil && model.settings.mode == .music) {
             MiniPlayer { showsNowPlaying = true }
                 .matchedTransitionSource(id: "player", in: playerTransition)
         })

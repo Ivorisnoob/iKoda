@@ -7,6 +7,20 @@ import Testing
 struct LiveTests {
     let music = YouTubeMusic(defaultsSuite: "koda.livetests")
 
+    /// A session YouTube doesn't know: public pages still load, the verdict comes back
+    /// signed out, and account calls throw rather than return an empty library.
+    @Test func deadSessionIsAnsweredAsSignedOut() async throws {
+        let profile = UUID()
+        let music = YouTubeMusic(defaultsSuite: "koda.livetests")
+        await music.accounts.activate(AccountSession(profileID: profile, cookies: YouTubeCookies(header: "SID=made-up; SAPISID=AbCdEfGhIjKlMnOp/QrStUvWxYz012345")))
+        var verdicts = music.accounts.verdicts.makeAsyncIterator()
+        let home = try await music.home()
+        #expect(!home.shelves.isEmpty)
+        #expect(await verdicts.next() == AccountVerdict(profileID: profile, signedIn: false))
+        await #expect(throws: MusicError.signedOut) { try await music.likedSongs() }
+        await #expect(throws: MusicError.signedOut) { try await music.setLiked(videoId: "J7p4bzqLvCw", liked: true) }
+    }
+
     @Test func searchAlbumRadioAndStream() async throws {
         let results = try await music.search("blinding lights", filter: .songs)
         let song = try #require(results.songs.first)

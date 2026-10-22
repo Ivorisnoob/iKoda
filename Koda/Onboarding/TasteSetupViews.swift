@@ -262,6 +262,17 @@ struct TasteDeckPage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drag: CGSize = .zero
     @State private var answers = 0
+    /// The room the cards have, so a card is as wide as its square cover can be.
+    @State private var cardArea: CGSize = .zero
+    /// The card's text and padding under the cover: reason, two lines of title, artist.
+    @ScaledMetric(relativeTo: .title2) private var textAllowance: CGFloat = 156
+
+    /// The cover fills the card's width, so the card is no wider than the height left for the
+    /// cover; otherwise a square fitted to a short screen sat in a wider card with a gap beside it.
+    private var cardWidth: CGFloat {
+        guard cardArea != .zero else { return 0 }
+        return max(160, min(cardArea.width, cardArea.height - textAllowance - 14))
+    }
 
     private static let threshold: CGFloat = 110
 
@@ -269,7 +280,6 @@ struct TasteDeckPage: View {
         VStack(spacing: 22) {
             OnboardingHeader(title: "Keep What You Like",
                              detail: "Swipe right to keep a song, left to skip it.")
-            Spacer(minLength: 0)
             if taste.isLoadingDeck || (taste.deck.isEmpty && taste.current == nil && answers == 0) {
                 ProgressView("Finding songs for you…")
                     .frame(maxHeight: .infinity)
@@ -279,9 +289,11 @@ struct TasteDeckPage: View {
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
                 cards(top: card)
+                    .frame(width: cardWidth)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { cardArea = $0 }
                 controls
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
@@ -401,6 +413,7 @@ private struct DeckCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Color.clear
+                .frame(maxWidth: .infinity)
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { ArtworkView(artwork: card.song.artwork, size: 600, cornerRadius: 22, fillsFrame: true) }
                 .clipShape(.rect(cornerRadius: 22, style: .continuous))
@@ -426,13 +439,14 @@ private struct DeckCardView: View {
                     .lineLimit(1)
                 Text(card.song.title)
                     .font(.title2.bold())
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                 Text(card.song.artistLine)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
         .glassEffect(.regular, in: .rect(cornerRadius: 34, style: .continuous))

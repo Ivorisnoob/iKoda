@@ -14,6 +14,9 @@ struct SyncedLyrics: View {
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
     @State private var userScrolled = false
+    /// How far the lines have scrolled up, up to `topFadeHeight`: the top fade grows with it.
+    @State private var topFade: CGFloat = 0
+    static let topFadeHeight: CGFloat = 56
     @State private var shareFrom: ShareStart?
 
     private struct ShareStart: Identifiable {
@@ -77,6 +80,9 @@ struct SyncedLyrics: View {
                     .animation(.spring(response: 0.45, dampingFraction: 0.8), value: interlude?.after)
                 }
                 .scrollIndicators(.hidden)
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, scrolled in
+                    topFade = min(max(scrolled, 0), Self.topFadeHeight)
+                }
                 .onScrollPhaseChange { _, phase in
                     if phase == .interacting { userScrolled = true }
                 }
@@ -93,9 +99,16 @@ struct SyncedLyrics: View {
                 }
             }
         }
-        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.12),
-                                     .init(color: .black, location: 0.85), .init(color: .clear, location: 1)],
-                             startPoint: .top, endPoint: .bottom))
+        // Lines fade as they pass under the song, but only once there are lines up there: at the
+        // top a fixed fade washed out the first line, which rests right under the title.
+        .mask {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                    .frame(height: topFade)
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.83), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+        }
         // The lyrics run out to the screen edges, padded back in line with the rest of the
         // player, so a glowing or swelling word at either edge is not cut off by the scroll view.
         .padding(.horizontal, -Self.bleed)

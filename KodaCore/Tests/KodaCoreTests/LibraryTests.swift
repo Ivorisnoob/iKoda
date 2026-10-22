@@ -244,6 +244,23 @@ import Testing
         #expect(Taste(library: Library(directory: nil)).isEmpty)
     }
 
+    @Test func withNothingPlayedLikedSongsSeedIt() {
+        let library = Library(directory: nil)
+        // Liked oldest to newest; the library keeps them newest first.
+        for s in [song("a1", "A"), song("b1", "B"), song("a2", "A"), song("c1", "C"), song("h1", "Hidden")] { library.toggleLike(s) }
+        library.hide(artist: ArtistRef(id: "UCHidden", name: "Hidden"))
+        let taste = Taste(library: library)
+        #expect(taste.artists == ["A", "C", "B"])
+        #expect(taste.seeds.map(\.id) == ["a2", "c1", "b1"])
+    }
+
+    @Test func playsOutrankLikes() {
+        let library = Library(directory: nil)
+        library.toggleLike(song("liked", "Liked Band"))
+        library.recordPlay(song("played", "Played Band"))
+        #expect(Taste(library: library).artists == ["Played Band"])
+    }
+
     @Test func weavesRadiosWithoutRepeats() {
         let a = [song("a1", "A"), song("shared", "S"), song("a2", "A")]
         let b = [song("b1", "B"), song("shared", "S")]

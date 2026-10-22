@@ -34,6 +34,10 @@ public struct Taste: Sendable, Equatable {
             if score > 0 { scored.append((stats, score)) }
         }
         scored.sort { a, b in a.score != b.score ? a.score > b.score : a.stats.song.id < b.stats.song.id }
+        guard !scored.isEmpty else {
+            (artists, seeds) = Self.fromLiked(library.liked.filter { !library.isHidden($0) }, maxSeeds: maxSeeds)
+            return
+        }
 
         var artistScores: [String: Double] = [:]
         for entry in scored {
@@ -48,6 +52,30 @@ public struct Taste: Sendable, Equatable {
         }
         self.artists = artists
         self.seeds = seeds
+    }
+
+    /// Taste from liked songs alone, for a profile with nothing played on this device yet, such
+    /// as one just signed in to an account: artists rank by how many of their songs are liked,
+    /// and each seeds from its most recently liked. `liked` is newest first, as the library keeps it.
+    static func fromLiked(_ liked: [Song], maxSeeds: Int) -> (artists: [String], seeds: [Song]) {
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        var newest: [String: Song] = [:]
+        for song in liked {
+            let artist = Self.leadArtist(song)
+            guard !artist.isEmpty else { continue }
+            if counts[artist] == nil {
+                order.append(artist)
+                newest[artist] = song
+            }
+            counts[artist, default: 0] += 1
+        }
+        // Stable for ties: the artist liked more recently comes first.
+        let artists = order.enumerated().sorted { a, b in
+            let ca = counts[a.element]!, cb = counts[b.element]!
+            return ca != cb ? ca > cb : a.offset < b.offset
+        }.map(\.element)
+        return (artists, artists.prefix(maxSeeds).compactMap { newest[$0] })
     }
 
     public static func leadArtist(_ song: Song) -> String {

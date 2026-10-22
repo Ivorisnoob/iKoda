@@ -127,7 +127,7 @@ struct MacHomeView: View {
                 .frame(maxWidth: width > 900 ? nil : 520, alignment: .leading)
             if !picks.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    MacSectionTitle(title: content.quickPicksTitle, subtitle: library.recent.isEmpty ? "Trending now" : "Start with these")
+                    MacSectionTitle(title: content.quickPicksTitle, subtitle: content.quickPicks == content.trending ? "Trending now" : "Start with these")
                         .padding(.leading, 6)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: columns), spacing: 2) {
                         ForEach(Array(picks.enumerated()), id: \.offset) { index, song in
@@ -153,7 +153,7 @@ struct MacHomeView: View {
     }
 
     private func load() async {
-        await model.load(music: app.music, library: library)
+        await app.loadHome(model)
     }
 
     private var greeting: String {

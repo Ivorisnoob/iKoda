@@ -209,6 +209,17 @@ public struct ShelfPage: Sendable {
         self.shelves = shelves
         self.moods = moods
     }
+
+    /// Every song on the page, in shelf order, each once: signed in, YouTube Music's Home leads
+    /// with the account's Quick picks, which is what Koda for Android takes for its own.
+    public var songs: [Song] {
+        var seen = Set<String>()
+        return shelves.flatMap(\.items).compactMap { item in
+            guard case .song(let song) = item, !song.title.trimmingCharacters(in: .whitespaces).isEmpty,
+                  seen.insert(song.id).inserted else { return nil }
+            return song
+        }
+    }
 }
 
 public struct AlbumPage: Sendable {

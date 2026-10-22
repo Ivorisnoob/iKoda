@@ -74,7 +74,8 @@ final class HomeModel {
         state.value == nil || isFromSnapshot || loadedAt.map { Date().timeIntervalSince($0) > 1800 } == true
     }
 
-    func load(music: YouTubeMusic, library: Library) async {
+    /// `signedIn`: the profile has a YouTube Music account, whose own Home then gives Quick picks.
+    func load(music: YouTubeMusic, library: Library, signedIn: Bool) async {
         // Worked out here, not in the view's body: the body is drawn again every few seconds
         // while music plays, as listening time is added, and this ranks every song ever played.
         yourArtists = topArtists(library)
@@ -84,11 +85,13 @@ final class HomeModel {
         let taste = Taste(library: library)
         // What the listener asked not to be offered stays out of everything Home suggests.
         let hidden = library.notInterested
+        let liked = library.liked
         // Home is the listener's own: Your Mix, Quick picks, what they go back to and play. From
-        // YouTube it takes only the charts, as one row, and trending songs for someone new.
+        // YouTube it takes the charts, as one row, trending songs for someone new, and signed in,
+        // the account's own Quick picks.
         async let explore = music.explore()
         async let charts = try? music.chartPlaylists()
-        async let picks = quickPicks(music: music, recent: recent)
+        async let picks = quickPicks(music: music, recent: recent, liked: liked, signedIn: signedIn)
         do {
             var content = Content()
             let explorePage = try await explore
@@ -164,9 +167,15 @@ final class HomeModel {
         return taste.artists.compactMap { refs[$0] }.prefix(limit).map { $0 }
     }
 
-    /// Songs like the last one played; with no history yet, nothing (trending fills in).
-    private func quickPicks(music: YouTubeMusic, recent: [Song]) async -> (String, [Song]) {
-        guard let seed = recent.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", []) }
+    /// Signed in, the account's Quick picks from YouTube Music's own Home, as Koda for Android
+    /// takes them. Otherwise, or when that comes back short, songs like the last one played or,
+    /// with nothing played yet, the newest liked; with neither, nothing (trending fills in).
+    private func quickPicks(music: YouTubeMusic, recent: [Song], liked: [Song], signedIn: Bool) async -> (String, [Song]) {
+        if signedIn, let home = try? await music.home() {
+            let songs = home.songs
+            if songs.count >= 3 { return ("Quick picks", Array(songs.prefix(20))) }
+        }
+        guard let seed = recent.first ?? liked.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", []) }
         let songs = Array(radio.songs.filter { $0.id != seed.id }.prefix(20))
         return ("Quick picks", songs)
     }
@@ -248,7 +257,7 @@ struct HomeView: View {
         JumpBackIn()
 
         if !content.quickPicks.isEmpty {
-            SongColumnsShelf(title: content.quickPicksTitle, strapline: library.recent.isEmpty ? "Trending now" : "Start with these", songs: content.quickPicks) { index in
+            SongColumnsShelf(title: content.quickPicksTitle, strapline: content.quickPicks == content.trending ? "Trending now" : "Start with these", songs: content.quickPicks) { index in
                 player.play(content.quickPicks, startAt: index)
             }
         }
@@ -292,7 +301,7 @@ struct HomeView: View {
     }
 
     private func load() async {
-        await model.load(music: app.music, library: library)
+        await app.loadHome(model)
     }
 
     private var greeting: String {

@@ -19,6 +19,15 @@ func fixture(_ name: String) throws -> JSON {
         #expect(page.moods.contains { $0.title == "Feel good" && $0.params != nil })
     }
 
+    @Test func homeQuickPicksAreSongs() throws {
+        let page = Pages.shelves(try fixture("home-quick-picks"))
+        #expect(page.shelves.first?.title == "Quick picks")
+        let songs = page.songs
+        #expect(songs.count == 20)
+        #expect(songs.allSatisfy { !$0.id.isEmpty && !$0.title.isEmpty && !$0.artistLine.isEmpty })
+        #expect(Set(songs.map(\.id)).count == songs.count)
+    }
+
     @Test func exploreHasNewReleasesAsAlbums() throws {
         let page = Pages.shelves(try fixture("explore"))
         let releases = try #require(page.shelves.first { $0.title == "New albums & singles" })

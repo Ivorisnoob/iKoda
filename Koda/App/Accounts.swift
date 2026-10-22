@@ -151,7 +151,11 @@ extension AppModel {
                 let info = try? await music.accountInfo()
                 // Switched away (or away and back) while it read: these pages may not all be this account's.
                 guard !Task.isCancelled, roster.activeID == id else { return }
+                let before = mirror(id)
+                let firstSync = before.liked.isEmpty && before.albums.isEmpty && before.playlists.isEmpty && before.artists.isEmpty
                 updateMirror(id) { library.reconcile(with: account, mirror: &$0) }
+                // Home was made before the account's likes arrived, so Your Mix had nothing to seed from.
+                if firstSync, home.profile == id { Task { await loadHome(home) } }
                 if let info {
                     roster.update(id) {
                         $0.handle = info.handle ?? $0.handle
@@ -166,6 +170,13 @@ extension AppModel {
                 lastAccountSync[id] = nil
             }
         }
+    }
+
+    /// Load Home once the session has settled, so a Home made by a switch or a sign-in is asked
+    /// for as the right account (or as none), not the one being left.
+    func loadHome(_ model: HomeModel) async {
+        await accountWork?.value
+        await model.load(music: music, library: library, signedIn: roster.profile(model.profile)?.isSignedIn == true)
     }
 
     /// A sync now, for pull to refresh, finishing when it does.

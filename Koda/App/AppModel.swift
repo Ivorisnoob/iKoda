@@ -44,6 +44,9 @@ final class AppModel {
     var isAddingProfile = false
     /// The pane the Mac's Settings window should show when it next opens or is already open.
     var requestedSettingsPane: MacSettingsPane?
+    /// Onboarding over the app: the whole welcome on a first launch, or only taste setup when
+    /// asked for again from Settings.
+    var onboarding: OnboardingView.Start?
     /// Signed-in profiles' cookies (see Accounts.swift).
     let keychain: AccountKeychain
     /// The active profile's library is being brought in step with its account.
@@ -59,6 +62,8 @@ final class AppModel {
     @ObservationIgnored var syncRound = 0
     /// Each signed-in profile's `AccountMirror`, read from its folder on first use.
     @ObservationIgnored var mirrors: [UUID: AccountMirror] = [:]
+    /// When a play has been heard long enough to go to the account's YouTube history.
+    @ObservationIgnored var historyThreshold = HeardThreshold()
 
     struct PlaylistTarget: Identifiable {
         let id = UUID()
@@ -128,6 +133,14 @@ final class AppModel {
             return ImagePipeline.nowPlayingArtwork(image)
         }
         connectAccounts()
+        // Someone upgrading already has a library; the welcome is for a new install.
+        if !settings.hasSeenOnboarding {
+            if library.liked.isEmpty, library.recent.isEmpty, roster.profiles.count == 1, !roster.active.isSignedIn {
+                onboarding = .welcome
+            } else {
+                settings.hasSeenOnboarding = true
+            }
+        }
     }
 
     /// Make another profile the active one: its library replaces this one's everywhere at once,

@@ -14,6 +14,11 @@ extension AppModel {
     /// and saves going to their account.
     func connectAccounts() {
         library.onChange = { [weak self] change in self?.send(change) }
+        let scrobble = player.onItemHeard
+        player.onItemHeard = { [weak self] item, seconds in
+            scrobble?(item, seconds)
+            self?.heardForHistory(item, seconds)
+        }
         let verdicts = music.accounts.verdicts
         Task { [weak self] in
             for await verdict in verdicts { self?.apply(verdict) }
@@ -242,6 +247,29 @@ extension AppModel {
             return false
         } catch {
             return true
+        }
+    }
+
+    // MARK: YouTube history
+
+    /// A play heard for 15 seconds goes to the account's YouTube history, if the profile wants
+    /// that and listening history isn't paused (a pause keeps everything from leaving, as it
+    /// does for Last.fm and Discord).
+    private func heardForHistory(_ item: QueueItem, _ seconds: TimeInterval) {
+        guard historyThreshold.add(seconds, to: item.id, duration: item.song.duration) else { return }
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired, profile.sendsPlaysToYouTube, settings.savesListeningHistory else { return }
+        let id = profile.id
+        let videoId = item.song.id
+        enqueueAccountWork { [self] in
+            guard await music.accounts.active?.profileID == id else { return }
+            do {
+                try await music.reportPlayback(videoId: videoId)
+            } catch MusicError.signedOut {
+                roster.update(id) { $0.isExpired = true }
+            } catch {
+                // A play that couldn't be filed isn't retried: history is a record of now.
+            }
         }
     }
 

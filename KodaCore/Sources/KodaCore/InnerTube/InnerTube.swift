@@ -76,6 +76,34 @@ struct InnerTube: Sendable {
         }
         return json
     }
+
+    /// A signed GET to one of YouTube's tracking URLs (history pings), as the active account.
+    /// Only `HistoryPing.trackingURL` builds these, so the cookies go to YouTube's hosts alone.
+    func ping(_ url: URL, referer: String) async throws {
+        guard let ticket = await accounts.ticket(), ticket.cookies.sapisid != nil else { throw MusicError.signedOut }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue(Clients.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+        for (field, value) in SAPISIDHash.headers(for: ticket.cookies) { request.setValue(value, forHTTPHeaderField: field) }
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            throw MusicError.network
+        }
+        let http = response as? HTTPURLResponse
+        if let setCookie = http?.value(forHTTPHeaderField: "Set-Cookie") {
+            await accounts.received(setCookie: [setCookie], for: ticket)
+        }
+        let status = http?.statusCode ?? 0
+        if status == 429 { throw MusicError.rateLimited }
+        guard (200..<300).contains(status) else { throw MusicError.badResponse(status) }
+    }
 }
 
 /// YouTube Music: browse, search, pages, radio and streams, signed in as `accounts`'
@@ -86,6 +114,8 @@ public final class YouTubeMusic: Sendable {
     private let pages = PageCache()
     /// The session requests are signed with; the app activates and clears it.
     public let accounts: AccountSessions
+    /// What history `/player` calls carry; see PlaybackHistory.swift.
+    let signatures: PlayerSignatureTimestamp
 
     public init(defaultsSuite: String? = nil, accounts: AccountSessions = AccountSessions()) {
         let config = URLSessionConfiguration.default
@@ -103,6 +133,7 @@ public final class YouTubeMusic: Sendable {
         self.accounts = accounts
         api = InnerTube(session: session, identity: identity, accounts: accounts)
         streams = StreamResolver(session: session, identity: identity)
+        signatures = PlayerSignatureTimestamp(session: session, suite: defaultsSuite)
     }
 
     /// A cached page, kept per profile: signed in, pages carry the account's state
@@ -153,6 +184,12 @@ public final class YouTubeMusic: Sendable {
             }
         }
         return playlists
+    }
+
+    /// A chart's top artists (40), for taste setup's grid: the region YouTube places the listener
+    /// in when `country` is nil.
+    public func chartArtists(country: String? = nil) async throws -> [ArtistSummary] {
+        try await charts(country: country).artists
     }
 
     public func mood(_ mood: Mood) async throws -> ShelfPage {

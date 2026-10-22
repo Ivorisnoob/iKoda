@@ -85,7 +85,9 @@ final class HomeModel {
         let taste = Taste(library: library)
         // What the listener asked not to be offered stays out of everything Home suggests.
         let hidden = library.notInterested
-        let liked = library.liked
+        // Liked first, then what was kept in taste setup: Quick picks' seed when nothing's been played.
+        let liked = library.liked + library.taste.songs
+        let pickedArtists = library.taste.artists
         // Home is the listener's own: Your Mix, Quick picks, what they go back to and play. From
         // YouTube it takes the charts, as one row, trending songs for someone new, and signed in,
         // the account's own Quick picks.
@@ -111,7 +113,7 @@ final class HomeModel {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.buildMix(music: music, taste: taste, recent: recent, hidden: hidden) }
+            group.addTask { await self.buildMix(music: music, taste: taste, picks: pickedArtists, recent: recent, hidden: hidden) }
             group.addTask { await self.loadArtistPhotos(music: music, library: library) }
         }
         // Radios that all failed still leave a card: trending songs, as for someone new.
@@ -126,7 +128,21 @@ final class HomeModel {
     }
 
     /// Your Mix: a radio from each top artist's favourite song, woven together.
-    private func buildMix(music: YouTubeMusic, taste: Taste, recent: [Song], hidden: NotInterested) async {
+    private func buildMix(music: YouTubeMusic, taste: Taste, picks: [ArtistSummary], recent: [Song], hidden: NotInterested) async {
+        var taste = taste
+        if taste.isEmpty, !picks.isEmpty {
+            // Nothing played, liked or kept yet: start from the artists picked in taste setup.
+            let chosen = Array(picks.filter { $0.id.hasPrefix("UC") }.prefix(4))
+            let tops = await withTaskGroup(of: (Int, Song?).self) { group in
+                for (index, artist) in chosen.enumerated() {
+                    group.addTask { (index, try? await music.artist(artist.id).topSongs.first(where: { !hidden.hides($0) })) }
+                }
+                var byIndex: [Int: Song] = [:]
+                for await (index, song) in group { if let song { byIndex[index] = song } }
+                return chosen.indices.compactMap { byIndex[$0] }
+            }
+            taste = Taste(artists: chosen.map(\.name), seeds: tops)
+        }
         guard !taste.isEmpty else { return }
         let radios = await withTaskGroup(of: (Int, [Song]).self) { group in
             for (index, seed) in taste.seeds.enumerated() {

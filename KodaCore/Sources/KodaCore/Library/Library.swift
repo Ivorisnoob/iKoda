@@ -30,6 +30,8 @@ public final class Library {
     public private(set) var lyricsOffsets: [String: TimeInterval] = [:]
     /// Songs and artists the listener doesn't want offered again.
     public private(set) var notInterested = NotInterested()
+    /// The artists, genres and songs picked in taste setup.
+    public private(set) var taste = TasteProfile()
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
@@ -174,6 +176,35 @@ public final class Library {
 
     public func unhide(artist: ArtistRef) {
         notInterested.artists.removeAll { NotInterested.same($0, artist) }
+        save()
+    }
+
+    // MARK: Taste
+
+    public func setTasteArtists(_ artists: [ArtistSummary]) {
+        var seen = Set<String>()
+        taste.artists = Array(artists.filter { seen.insert($0.id).inserted }.prefix(TasteProfile.maxArtists))
+        save()
+    }
+
+    public func setTasteGenres(_ genres: [String]) {
+        taste.genres = genres.filter(TasteProfile.genres.contains)
+        save()
+    }
+
+    /// A song said yes to in the deck.
+    public func keepTasteSong(_ song: Song) {
+        taste.songs = Array(([song] + taste.songs.filter { $0.id != song.id }).prefix(TasteProfile.maxSongs))
+        save()
+    }
+
+    public func dropTasteSong(_ song: Song) {
+        taste.songs.removeAll { $0.id == song.id }
+        save()
+    }
+
+    public func clearTaste() {
+        taste = TasteProfile()
         save()
     }
 
@@ -379,6 +410,7 @@ public final class Library {
         var dailyListening: [String: TimeInterval] = [:]
         var lyricsOffsets: [String: TimeInterval] = [:]
         var notInterested = NotInterested()
+        var taste = TasteProfile()
         var androidPlaysImportedThrough: Date?
 
         init() {}
@@ -397,6 +429,7 @@ public final class Library {
             dailyListening = try c.decodeIfPresent([String: TimeInterval].self, forKey: .dailyListening) ?? [:]
             lyricsOffsets = try c.decodeIfPresent([String: TimeInterval].self, forKey: .lyricsOffsets) ?? [:]
             notInterested = try c.decodeIfPresent(NotInterested.self, forKey: .notInterested) ?? NotInterested()
+            taste = try c.decodeIfPresent(TasteProfile.self, forKey: .taste) ?? TasteProfile()
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
         }
     }
@@ -424,6 +457,7 @@ public final class Library {
         dailyListening = snapshot.dailyListening
         lyricsOffsets = snapshot.lyricsOffsets
         notInterested = snapshot.notInterested
+        taste = snapshot.taste
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
     }
 
@@ -495,6 +529,7 @@ public final class Library {
         snapshot.dailyListening = dailyListening
         snapshot.lyricsOffsets = lyricsOffsets
         snapshot.notInterested = notInterested
+        snapshot.taste = taste
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
         return snapshot
     }

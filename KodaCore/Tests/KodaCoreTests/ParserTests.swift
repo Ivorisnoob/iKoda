@@ -28,6 +28,13 @@ func fixture(_ name: String) throws -> JSON {
         #expect(Set(songs.map(\.id)).count == songs.count)
     }
 
+    @Test func chartTopArtistsAreArtists() throws {
+        let page = Pages.shelves(try fixture("charts-top-artists"))
+        let artists = page.artists
+        #expect(artists.count == 40)
+        #expect(artists.allSatisfy { $0.id.hasPrefix("UC") && !$0.name.isEmpty && $0.artwork != nil })
+    }
+
     @Test func exploreHasNewReleasesAsAlbums() throws {
         let page = Pages.shelves(try fixture("explore"))
         let releases = try #require(page.shelves.first { $0.title == "New albums & singles" })

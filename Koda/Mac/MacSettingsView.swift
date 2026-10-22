@@ -245,6 +245,16 @@ private func byteText(_ bytes: Int64?) -> String {
 
 /// Every profile, a click to switch, and the selected one's name, picture and account.
 private struct MacProfilePane: View {
+    private var tasteSummary: String {
+        let taste = library.taste
+        guard !taste.isEmpty else { return "Not set up" }
+        var parts: [String] = []
+        if !taste.artists.isEmpty { parts.append(taste.artists.count == 1 ? "1 artist" : "\(taste.artists.count) artists") }
+        if !taste.genres.isEmpty { parts.append(taste.genres.count == 1 ? "1 genre" : "\(taste.genres.count) genres") }
+        if !taste.songs.isEmpty { parts.append(taste.songs.count == 1 ? "1 song" : "\(taste.songs.count) songs") }
+        return ListFormatter.localizedString(byJoining: parts)
+    }
+
     @Environment(AppModel.self) private var app
     @State private var selected: UUID?
     @State private var photo: PhotosPickerItem?
@@ -252,6 +262,8 @@ private struct MacProfilePane: View {
     @State private var signingIn: UUID?
     @State private var confirmDelete = false
     @State private var confirmSignOut = false
+    @State private var tuningTaste = false
+    @Environment(Library.self) private var library
 
     private var profile: KodaProfile { selected.flatMap(app.roster.profile) ?? app.roster.active }
 
@@ -320,6 +332,16 @@ private struct MacProfilePane: View {
                 EmptyView()
             }
         }
+        if id == app.roster.activeID {
+            MacSettingsGroup(title: "Taste", footer: "The artists, genres and songs Home starts from, before and beside what you play.") {
+                MacSettingsRow(title: "Your taste", detail: tasteSummary) {
+                    Button(library.taste.isEmpty ? "Set Up…" : "Edit…") { tuningTaste = true }
+                }
+            }
+            .sheet(isPresented: $tuningTaste) {
+                OnboardingView(start: .taste, music: app.music, library: library).appEnvironment(app)
+            }
+        }
         MacSettingsGroup(title: "YouTube Music", footer: profile.isSignedIn
                          ? "Home and the library follow this account. Signing out keeps the profile and everything in it on this Mac."
                          : "Sign in to bring your YouTube Music likes, playlists and Home to this profile. Everything already here stays.") {
@@ -336,6 +358,10 @@ private struct MacProfilePane: View {
                         Button("Sign Out…") { confirmSignOut = true }
                     }
                 }
+                MacSettingsToggle(title: "Add plays to YouTube history",
+                                  detail: "Songs played for 15 seconds appear in your YouTube Music history and shape its recommendations. Nothing is sent while listening history is off.",
+                                  isOn: Binding(get: { profile.sendsPlaysToYouTube },
+                                                set: { on in app.roster.update(id) { $0.sendsPlaysToYouTube = on } }))
             } else {
                 MacSettingsRow(title: "Not signed in") {
                     Button("Sign In…") { signingIn = id }

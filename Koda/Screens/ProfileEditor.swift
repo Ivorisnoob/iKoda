@@ -210,6 +210,9 @@ private struct AccountSection: View {
                     }
                     .disabled(app.isSyncingAccount)
                 }
+                Toggle("Add Plays to YouTube History", isOn: Binding(
+                    get: { profile.sendsPlaysToYouTube },
+                    set: { on in app.roster.update(profile.id) { $0.sendsPlaysToYouTube = on } }))
                 Button("Sign Out…", role: .destructive) { confirmSignOut = true }
             } else {
                 NavigationLink("Sign In to YouTube Music") { YouTubeSignInView(into: profile.id) }
@@ -218,7 +221,7 @@ private struct AccountSection: View {
             Text("Account")
         } footer: {
             Text(profile.isSignedIn
-                 ? "Home and your library follow your YouTube Music account."
+                 ? "Home and your library follow your YouTube Music account. With YouTube history on, songs you play for 15 seconds appear in your history on YouTube Music and shape its recommendations; nothing is sent while Koda's listening history is off."
                  : "Sign in to bring your YouTube Music likes, playlists and Home to this profile. Everything already here stays.")
         }
         .confirmationDialog("Sign out of YouTube Music?", isPresented: $confirmSignOut, titleVisibility: .visible) {

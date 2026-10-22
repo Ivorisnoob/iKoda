@@ -35,7 +35,10 @@ public struct Taste: Sendable, Equatable {
         }
         scored.sort { a, b in a.score != b.score ? a.score > b.score : a.stats.song.id < b.stats.song.id }
         guard !scored.isEmpty else {
-            (artists, seeds) = Self.fromLiked(library.liked.filter { !library.isHidden($0) }, maxSeeds: maxSeeds)
+            // Nothing played yet: what the listener liked, then what they kept in taste setup.
+            var seen = Set<String>()
+            let said = (library.liked + library.taste.songs).filter { !library.isHidden($0) && seen.insert($0.id).inserted }
+            (artists, seeds) = Self.fromLiked(said, maxSeeds: maxSeeds)
             return
         }
 

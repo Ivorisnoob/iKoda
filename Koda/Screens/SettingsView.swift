@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
+    @State private var tuningTaste = false
 
     var body: some View {
         @Bindable var player = player
@@ -105,6 +106,17 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button {
+                        tuningTaste = true
+                    } label: {
+                        SettingLabel("Your Taste", systemImage: "sparkles", tint: .pink)
+                    }
+                    .foregroundStyle(.primary)
+                } footer: {
+                    Text("The artists, genres and songs Home starts from.")
+                }
+
+                Section {
                     NavigationLink {
                         PrivacySettingsView()
                     } label: {
@@ -141,6 +153,10 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            // Its own sheet: Settings is itself a sheet, which one from the root can't cover.
+            .sheet(isPresented: $tuningTaste) {
+                OnboardingView(start: .taste, music: app.music, library: library).appEnvironment(app)
+            }
             .scrollEdgeEffectStyle(.soft, for: .all)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

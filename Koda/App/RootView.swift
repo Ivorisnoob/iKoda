@@ -62,6 +62,9 @@ struct RootView: View {
         .playlistPicker(whenOnTop: !showsNowPlaying)
         .sheet(isPresented: $model.isProfilePresented) { ProfileView().appEnvironment(model) }
         .sheet(isPresented: $model.isAddingProfile) { AddProfileView().appEnvironment(model) }
+        .fullScreenCover(item: $model.onboarding) { start in
+            OnboardingView(start: start, music: model.music, library: model.library).appEnvironment(model)
+        }
         // Pages opened in another profile (its playlists, its liked songs) aren't this one's.
         .onChange(of: model.roster.activeID) {
             homePath = []

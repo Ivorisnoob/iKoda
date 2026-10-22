@@ -36,6 +36,9 @@ public struct KodaProfile: Identifiable, Hashable, Codable, Sendable {
     public var added: Date
     /// YouTube answered this account's requests as signed out: it needs signing in again.
     public var isExpired: Bool
+    /// Songs played here are added to the account's YouTube history, so its recommendations
+    /// follow Koda. On unless the listener turns it off; only ever while listening history is on.
+    public var sendsPlaysToYouTube: Bool
 
     public init(id: UUID = UUID(), kind: Kind, name: String, added: Date = Date()) {
         self.id = id
@@ -46,6 +49,7 @@ public struct KodaProfile: Identifiable, Hashable, Codable, Sendable {
         photoVersion = 0
         self.added = added
         isExpired = false
+        sendsPlaysToYouTube = true
     }
 
     public var isSignedIn: Bool { kind == .youtube }
@@ -69,6 +73,7 @@ public struct KodaProfile: Identifiable, Hashable, Codable, Sendable {
         photoVersion = try c.decodeIfPresent(Int.self, forKey: .photoVersion) ?? 0
         added = try c.decodeIfPresent(Date.self, forKey: .added) ?? Date()
         isExpired = try c.decodeIfPresent(Bool.self, forKey: .isExpired) ?? false
+        sendsPlaysToYouTube = try c.decodeIfPresent(Bool.self, forKey: .sendsPlaysToYouTube) ?? true
     }
 }
 

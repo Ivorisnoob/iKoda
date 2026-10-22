@@ -121,6 +121,9 @@ struct MacRootView: View {
         .sheet(isPresented: Binding(get: { model.isAddingProfile }, set: { model.isAddingProfile = $0 })) {
             AddProfileView().appEnvironment(model)
         }
+        .sheet(item: Binding(get: { model.onboarding }, set: { model.onboarding = $0 })) { start in
+            OnboardingView(start: start, music: model.music, library: model.library).appEnvironment(model)
+        }
         .onChange(of: model.pendingRoute) { _, route in
             guard let route else { return }
             model.pendingRoute = nil

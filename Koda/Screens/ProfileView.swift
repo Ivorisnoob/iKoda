@@ -74,9 +74,7 @@ struct ProfileView: View {
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
-    @State private var photo: PhotosPickerItem?
-    @State private var editingName = false
-    @State private var draftName = ""
+    @State private var editing = false
     @State private var showsSettings = false
 
     var body: some View {
@@ -85,6 +83,11 @@ struct ProfileView: View {
             ScrollView {
                 VStack(spacing: 28) {
                     header(summary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "Profiles")
+                        ProfilesGrid()
+                    }
+                    .padding(.horizontal, 20)
                     tiles(summary)
                     WeekChart(days: summary.days)
                         .padding(.horizontal, 20)
@@ -115,33 +118,19 @@ struct ProfileView: View {
                 }
             }
             .sheet(isPresented: $showsSettings) { SettingsView().appEnvironment(app) }
-            .alert("Your Name", isPresented: $editingName) {
-                TextField("Name", text: $draftName)
-                    .textContentType(.givenName)
-                Button("Cancel", role: .cancel) {}
-                Button("Save") { app.profile.name = draftName.trimmingCharacters(in: .whitespacesAndNewlines) }
-            } message: {
-                Text("Shown on your profile and the playlists you make. It stays on this iPhone.")
-            }
-            .onChange(of: photo) { _, item in
-                guard let item else { return }
-                Task {
-                    let data = try? await item.loadTransferable(type: Data.self)
-                    app.profile.setAvatar(data)
-                    photo = nil
-                }
-            }
+            .sheet(isPresented: $editing) { ProfileEditorView(profileID: app.roster.activeID).appEnvironment(app) }
         }
     }
 
     // MARK: Header
 
     private func header(_ summary: ListeningSummary) -> some View {
-        VStack(spacing: 12) {
-            PhotosPicker(selection: $photo, matching: .images) {
-                AvatarView(size: 112)
+        let profile = app.roster.active
+        return VStack(spacing: 12) {
+            Button { editing = true } label: {
+                ProfileAvatar(profile: profile, size: 112)
                     .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "camera.fill")
+                        Image(systemName: "pencil")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.primary)
                             .frame(width: 32, height: 32)
@@ -150,24 +139,14 @@ struct ProfileView: View {
                     .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Change Photo")
-            .contextMenu {
-                if app.profile.avatar != nil {
-                    Button("Remove Photo", systemImage: "trash", role: .destructive) { app.profile.setAvatar(nil) }
-                }
-            }
+            .accessibilityLabel("Edit Profile")
 
-            Button {
-                draftName = app.profile.name
-                editingName = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(app.profile.displayName).font(.title.bold())
-                    Image(systemName: "pencil").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                }
+            VStack(spacing: 2) {
+                Text(profile.displayName).font(.title.bold())
+                Text(profile.subtitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(profile.isExpired ? .red : .secondary)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Edit your name")
 
             if let first = summary.firstPlayed {
                 Text("Listening since \(first.formatted(.dateTime.month(.wide).year()))")

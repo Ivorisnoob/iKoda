@@ -19,7 +19,6 @@ struct MacRootView: View {
     @State private var section: MacSection? = .home
     /// Each section's own trail of pages, so going back to a section returns to where you were.
     @State private var paths: [MacSection: [Route]] = [:]
-    @State private var home = HomeModel()
     @State private var search = SearchModel()
     @FocusState private var searchFocused: Bool
     /// The namespace the player bar's cover is the zoom source in.
@@ -112,6 +111,15 @@ struct MacRootView: View {
             guard let requested else { return }
             model.requestedMacSection = nil
             section = requested
+        }
+        // Pages opened in another profile (its playlists, its liked songs) aren't this one's.
+        .onChange(of: model.roster.activeID) {
+            closeNowPlaying()
+            paths = [:]
+            if case .userPlaylist = section { section = .home }
+        }
+        .sheet(isPresented: Binding(get: { model.isAddingProfile }, set: { model.isAddingProfile = $0 })) {
+            AddProfileView().appEnvironment(model)
         }
         .onChange(of: model.pendingRoute) { _, route in
             guard let route else { return }
@@ -256,26 +264,48 @@ struct MacRootView: View {
         .accessibilityAddTraits(section == target ? .isSelected : [])
     }
 
-    /// The listener, at the foot of the sidebar: their profile, stats and Settings.
+    /// The listener, at the foot of the sidebar: a menu of the profiles to switch between, as
+    /// the Mac's own apps keep accounts, with the profile's page and Settings beside them.
     private var profileButton: some View {
-        Button { model.isProfilePresented = true } label: {
+        let active = model.roster.active
+        return Menu {
+            Section("Profiles") {
+                ForEach(model.roster.profiles) { profile in
+                    Toggle(isOn: Binding(get: { profile.id == model.roster.activeID }, set: { if $0 { model.switchProfile(to: profile.id) } })) {
+                        Text(profile.displayName)
+                        Text(profile.subtitle)
+                    }
+                }
+            }
+            Button("Add Profile…", systemImage: "person.badge.plus") { model.isAddingProfile = true }
+            Divider()
+            Button("Edit Profile…", systemImage: "person.crop.circle") {
+                model.requestedSettingsPane = .profile
+                model.isProfilePresented = true
+            }
+            Button("Settings…", systemImage: "gearshape") { model.isProfilePresented = true }
+        } label: {
             HStack(spacing: 10) {
-                AvatarView(size: 28)
+                ProfileAvatar(profile: active, size: 28)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(model.profile.displayName).font(.callout.weight(.semibold)).lineLimit(1)
-                    Text("Settings").font(.caption).foregroundStyle(.secondary)
+                    Text(active.displayName).font(.callout.weight(.semibold)).lineLimit(1)
+                    Text(active.subtitle).font(.caption).foregroundStyle(active.isExpired ? .red : .secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "gearshape")
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
             .padding(8)
             .contentShape(.rect)
         }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
         .buttonStyle(MacSidebarButtonStyle())
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
-        .help("Profile and Settings (⌘,)")
+        .help("Switch Profile")
+        .accessibilityLabel("Profile, \(active.displayName)")
     }
 
     // MARK: Detail
@@ -283,7 +313,7 @@ struct MacRootView: View {
     @ViewBuilder
     private var detail: some View {
         switch section ?? .home {
-        case .home: MacHomeView(model: home)
+        case .home: MacHomeView(model: model.home).id(model.roster.activeID)
         case .browse: MacBrowseView(search: search) { submit($0) }
         case .search: MacSearchResultsView(model: search)
         case .recent: SavedSongsView(title: "Recently Played", source: .recent)

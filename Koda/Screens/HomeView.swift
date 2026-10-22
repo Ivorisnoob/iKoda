@@ -38,6 +38,8 @@ final class HomeModel {
     private(set) var mixPending = true
     /// Portraits for the listener's top artists, by channel id; fetched after the page shows.
     private(set) var artistPhotos: [String: Artwork] = [:]
+    /// The listener's most-played artists, as of the last load.
+    private(set) var yourArtists: [ArtistRef] = []
     /// When Home last loaded, so a window coming back to it after a long while can refresh it.
     private(set) var loadedAt: Date?
     /// What's shown came from the last launch's snapshot and hasn't been refreshed yet.
@@ -51,11 +53,13 @@ final class HomeModel {
         var loadedAt: Date
     }
 
-    /// Read once per launch: `@State` builds a model each time its view is initialised.
-    private static let launchSnapshot = Snapshot.load(Saved.self, "home")
+    /// Whose Home this is: each profile's is its own, and so is its snapshot.
+    let profile: UUID
+    private var snapshotName: String { "home-\(profile.uuidString)" }
 
-    init() {
-        guard let saved = Self.launchSnapshot else { return }
+    init(profile: UUID) {
+        self.profile = profile
+        guard let saved = Snapshot.load(Saved.self, "home-\(profile.uuidString)") else { return }
         state = .loaded(saved.content)
         mix = saved.mix
         mixPending = saved.mix == nil
@@ -71,10 +75,15 @@ final class HomeModel {
     }
 
     func load(music: YouTubeMusic, library: Library) async {
+        // Worked out here, not in the view's body: the body is drawn again every few seconds
+        // while music plays, as listening time is added, and this ranks every song ever played.
+        yourArtists = topArtists(library)
         if state.value == nil { state = .loading }
         if mix == nil { mixPending = true }
         let recent = library.recent
         let taste = Taste(library: library)
+        // What the listener asked not to be offered stays out of everything Home suggests.
+        let hidden = library.notInterested
         // Home is the listener's own: Your Mix, Quick picks, what they go back to and play. From
         // YouTube it takes only the charts, as one row, and trending songs for someone new.
         async let explore = music.explore()
@@ -83,11 +92,12 @@ final class HomeModel {
         do {
             var content = Content()
             let explorePage = try await explore
-            content.trending = trending(explorePage)
+            content.trending = trending(explorePage).filter { !hidden.hides($0) }
             content.charts = await charts ?? []
             let (title, songs) = await picks
             content.quickPicksTitle = title
-            content.quickPicks = songs.isEmpty ? content.trending : songs
+            let offered = songs.filter { !hidden.hides($0) }
+            content.quickPicks = offered.isEmpty ? content.trending : offered
             state = .loaded(content)
             loadedAt = Date()
             if mix == nil, taste.isEmpty, !content.trending.isEmpty {
@@ -98,7 +108,7 @@ final class HomeModel {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.buildMix(music: music, taste: taste, recent: recent) }
+            group.addTask { await self.buildMix(music: music, taste: taste, recent: recent, hidden: hidden) }
             group.addTask { await self.loadArtistPhotos(music: music, library: library) }
         }
         // Radios that all failed still leave a card: trending songs, as for someone new.
@@ -108,12 +118,12 @@ final class HomeModel {
         withAnimation(.smooth) { mixPending = false }
         if let content = state.value, let loadedAt {
             isFromSnapshot = false
-            Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt), "home")
+            Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt), snapshotName)
         }
     }
 
     /// Your Mix: a radio from each top artist's favourite song, woven together.
-    private func buildMix(music: YouTubeMusic, taste: Taste, recent: [Song]) async {
+    private func buildMix(music: YouTubeMusic, taste: Taste, recent: [Song], hidden: NotInterested) async {
         guard !taste.isEmpty else { return }
         let radios = await withTaskGroup(of: (Int, [Song]).self) { group in
             for (index, seed) in taste.seeds.enumerated() {
@@ -125,13 +135,13 @@ final class HomeModel {
         }
         // The seeds and the last few songs played are left out, so the mix is something to go on to.
         let skip = Set(taste.seeds.map(\.id) + recent.prefix(10).map(\.id))
-        let songs = Taste.weave(radios, excluding: skip)
+        let songs = Taste.weave(radios.map { $0.filter { !hidden.hides($0) } }, excluding: skip)
         guard !songs.isEmpty else { return }
         withAnimation(.smooth) { mix = Mix(artists: Array(taste.artists.prefix(3)), songs: songs, isPersonal: true) }
     }
 
     private func loadArtistPhotos(music: YouTubeMusic, library: Library) async {
-        let ids = topArtists(library).compactMap(\.id).filter { artistPhotos[$0] == nil }
+        let ids = yourArtists.compactMap(\.id).filter { artistPhotos[$0] == nil }
         guard !ids.isEmpty else { return }
         let found = await withTaskGroup(of: (String, Artwork?).self) { group in
             for id in ids {
@@ -173,7 +183,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
-    @State private var model = HomeModel()
+    private var model: HomeModel { app.home }
 
     var body: some View {
         ScrollView {
@@ -212,8 +222,7 @@ struct HomeView: View {
         .navigationTitle(greeting)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { app.isProfilePresented = true } label: { AvatarView(size: 32) }
-                    .accessibilityLabel("Profile and Settings")
+                ProfileToolbarButton { app.isProfilePresented = true }
             }
         }
         .refreshable {
@@ -254,7 +263,7 @@ struct HomeView: View {
                 }
             }
         }
-        let yours = model.topArtists(library)
+        let yours = model.yourArtists
         if yours.count >= 3 {
             ShelfView(title: "Your top artists", strapline: "Based on your listening") {
                 ForEach(yours, id: \.name) { ref in

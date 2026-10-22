@@ -24,7 +24,8 @@ public struct Taste: Sendable, Equatable {
     public init(library: Library, now: Date = Date(), maxSeeds: Int = 4) {
         let liked = Set(library.liked.map(\.id))
         var scored: [(stats: SongStats, score: Double)] = []
-        for stats in library.songStats.values {
+        // What the listener asked not to be offered doesn't seed their mix either.
+        for stats in library.songStats.values where !library.isHidden(stats.song) {
             let age = max(0, now.timeIntervalSince(stats.lastPlayed))
             let decay: Double = pow(0.5, age / Self.halfLife)
             let bonus: Double = liked.contains(stats.song.id) ? 2 : 0

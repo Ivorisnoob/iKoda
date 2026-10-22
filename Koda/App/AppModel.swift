@@ -11,7 +11,11 @@ final class AppModel {
     let library: Library
     let lyrics = LyricsClient()
     let sleepTimer: SleepTimer
-    let profile: Profile
+    /// Everyone who uses Koda on this device; the library is the active profile's.
+    let roster: ProfileRoster
+    let profilePhotos: ProfilePhotos
+    /// The active profile's Home, shared by the phone's tab and the Mac's page; a new one per profile.
+    private(set) var home: HomeModel
     let settings = AppSettings()
     let downloads: Downloads
     let lastFM: LastFM
@@ -36,6 +40,10 @@ final class AppModel {
     var playlistTarget: PlaylistTarget?
     /// A shared link that could not be opened, shown as an alert.
     var linkError: String?
+    /// The sheet that adds a profile, asked for from a toolbar menu, the profile page or the Mac's sidebar.
+    var isAddingProfile = false
+    /// The pane the Mac's Settings window should show when it next opens or is already open.
+    var requestedSettingsPane: MacSettingsPane?
 
     struct PlaylistTarget: Identifiable {
         let id = UUID()
@@ -47,9 +55,13 @@ final class AppModel {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         music = YouTubeMusic()
         player = Player(music: music, storageDirectory: directory)
-        library = Library(directory: directory)
+        // Before profiles the name lived in the defaults and the library at the top of the folder;
+        // the roster moves both into the first profile.
+        roster = ProfileRoster(root: directory, legacyName: UserDefaults.standard.string(forKey: "koda.profile.name"))
+        profilePhotos = ProfilePhotos(roster: roster)
+        library = Library(directory: roster.folder(for: roster.activeID))
+        home = HomeModel(profile: roster.activeID)
         sleepTimer = SleepTimer(player: player)
-        profile = Profile(directory: directory)
         let settings = settings
         // Songs can be gigabytes; they come back from YouTube, so they stay out of iCloud backups.
         var audioDirectory = directory.appending(path: "Audio")
@@ -66,6 +78,7 @@ final class AppModel {
         player.onListened = { [library] song, seconds in
             if settings.savesListeningHistory { library.addListening(seconds, to: song) }
         }
+        player.isUnwanted = { [library] song in library.isHidden(song) }
         let lastFM = LastFM(directory: directory)
         self.lastFM = lastFM
         player.onItemStarted = { [lastFM, player] item in
@@ -97,6 +110,24 @@ final class AppModel {
             guard let image = await ImagePipeline.shared.image(url, pixels: 600) else { return nil }
             return ImagePipeline.nowPlayingArtwork(image)
         }
+    }
+
+    /// Make another profile the active one: its library replaces this one's everywhere at once.
+    /// The queue keeps playing; what is listened to from here on counts for the new profile.
+    func switchProfile(to id: UUID) {
+        guard id != roster.activeID, roster.profile(id) != nil else { return }
+        library.open(directory: roster.folder(for: id))
+        home = HomeModel(profile: id)
+        roster.setActive(id)
+    }
+
+    /// Delete a profile and what it keeps on this device; another takes over if it was active.
+    func deleteProfile(_ id: UUID) {
+        roster.delete(id) { next in
+            library.open(directory: roster.folder(for: next))
+            home = HomeModel(profile: next)
+        }
+        Snapshot.remove("home-\(id.uuidString)")
     }
 
     /// Open a page from outside a navigation stack: closes Now Playing and pushes it on the current tab.

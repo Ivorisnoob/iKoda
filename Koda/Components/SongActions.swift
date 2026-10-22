@@ -29,6 +29,42 @@ struct SongMenuItems: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
         }
+        Section {
+            NotInterestedMenu(song: song)
+        }
+    }
+}
+
+/// "Suggest less" for a song or the artists on it: kept out of Home, mixes, radio and autoplay
+/// from then on. The playing song, turned down, is skipped at once.
+struct NotInterestedMenu: View {
+    let song: Song
+    @Environment(Player.self) private var player
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let artists = song.artists.filter { $0.id != nil }
+        if library.notInterested.songs.contains(where: { $0.id == song.id }) {
+            Button("Suggest This Song Again", systemImage: "hand.thumbsup") { library.unhide(song) }
+        } else if artists.isEmpty {
+            Button("Suggest Less of This Song", systemImage: "hand.thumbsdown") { hide { library.hide(song) } }
+        } else {
+            Menu("Suggest Less", systemImage: "hand.thumbsdown") {
+                Button("This Song", systemImage: "music.note") { hide { library.hide(song) } }
+                ForEach(artists, id: \.self) { artist in
+                    if library.isHidden(artist: artist) {
+                        Button("Suggest \(artist.name) Again", systemImage: "hand.thumbsup") { library.unhide(artist: artist) }
+                    } else {
+                        Button("Songs by \(artist.name)", systemImage: "music.mic") { hide { library.hide(artist: artist) } }
+                    }
+                }
+            }
+        }
+    }
+
+    private func hide(_ change: () -> Void) {
+        change()
+        if player.current?.id == song.id, library.isHidden(song) { player.next() }
     }
 }
 

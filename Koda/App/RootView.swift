@@ -27,7 +27,8 @@ struct RootView: View {
         return TabView(selection: $model.selectedTab) {
             Tab("Home", systemImage: "house.fill", value: AppTab.home) {
                 NavigationStack(path: $homePath) {
-                    HomeView().routeDestinations()
+                    // A fresh Home for each profile: its own mix, picks and snapshot.
+                    HomeView().id(model.roster.activeID).routeDestinations()
                 }
             }
             Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
@@ -60,6 +61,13 @@ struct RootView: View {
         .task(id: player.current?.artwork) { await model.nowPlayingPalette.load(player.current?.artwork) }
         .playlistPicker(whenOnTop: !showsNowPlaying)
         .sheet(isPresented: $model.isProfilePresented) { ProfileView().appEnvironment(model) }
+        .sheet(isPresented: $model.isAddingProfile) { AddProfileView().appEnvironment(model) }
+        // Pages opened in another profile (its playlists, its liked songs) aren't this one's.
+        .onChange(of: model.roster.activeID) {
+            homePath = []
+            libraryPath = []
+            searchPath = []
+        }
         .onOpenURL { url in
             if !model.open(url) { model.linkError = "Koda can open YouTube Music songs, albums, playlists and artists." }
         }

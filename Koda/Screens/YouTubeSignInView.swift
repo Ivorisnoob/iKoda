@@ -118,19 +118,65 @@ private struct SignInWebView: UIViewRepresentable {
     @Binding var progress: Double
     let onCookies: ([HTTPCookie]) -> Bool
 
-    static let start = URL(string: "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F")!
+    /// Through youtube.com's own sign-in handler, as the YouTube website does, which then sends
+    /// the browser on to YouTube Music.
+    static let start = URL(string: "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F")!
+
+    // Google turns away sign-ins from browsers it doesn't recognise; Safari's own identity is
+    // what this view is.
+    static let macUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+    static let phoneUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
+
+    static var userAgent: String {
+        #if DEBUG
+        // For trying other identities against Google without a rebuild.
+        if let override = ProcessInfo.processInfo.environment["KODA_SIGNIN_UA"] {
+            switch override {
+            case "mac": return macUserAgent
+            case "phone": return phoneUserAgent
+            default: return override
+            }
+        }
+        #endif
+        return Platform.isMac ? macUserAgent : phoneUserAgent
+    }
+
+    /// WebKit offers passkeys to the page, but an app without Apple's browser entitlement can't
+    /// complete one, so Google's passkey flow dead-ends in an error instead of asking for the
+    /// password. Hiding the API before Google's scripts look sends it down the password path.
+    static let hidePasskeys = WKUserScript(source: """
+        (function () {
+            try {
+                delete window.PublicKeyCredential;
+                Object.defineProperty(window, "PublicKeyCredential", { value: undefined, writable: false, configurable: false });
+            } catch (e) {}
+            try {
+                var credentials = window.navigator && window.navigator.credentials;
+                if (!credentials) { return; }
+                var prototype = Object.getPrototypeOf(credentials);
+                var wrap = function (original) {
+                    if (typeof original !== "function") { return original; }
+                    return function (options) {
+                        if (options && options.publicKey) {
+                            return Promise.reject(new DOMException("Passkeys are not available in this app.", "NotAllowedError"));
+                        }
+                        return original.apply(this, arguments);
+                    };
+                };
+                prototype.get = wrap(prototype.get);
+                prototype.create = wrap(prototype.create);
+            } catch (e) {}
+        })();
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: false)
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(Self.hidePasskeys)
         let view = WKWebView(frame: .zero, configuration: configuration)
-        // Google turns away sign-ins from browsers it doesn't recognise; Safari's own identity
-        // is what this view is.
-        view.customUserAgent = Platform.isMac
-            ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
-            : "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
+        view.customUserAgent = Self.userAgent
         view.navigationDelegate = context.coordinator
         context.coordinator.observe(view)
         context.coordinator.loadedAttempt = attempt

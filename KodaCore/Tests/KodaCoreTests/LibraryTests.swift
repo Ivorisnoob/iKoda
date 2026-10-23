@@ -258,7 +258,20 @@ import Testing
         let library = Library(directory: nil)
         library.toggleLike(song("liked", "Liked Band"))
         library.recordPlay(song("played", "Played Band"))
-        #expect(Taste(library: library).artists == ["Played Band"])
+        // Played first; liked songs only fill the seeds plays leave empty.
+        #expect(Taste(library: library).artists == ["Played Band", "Liked Band"])
+        #expect(Taste(library: library).seeds.map(\.id) == ["played", "liked"])
+        #expect(Taste(library: library, maxSeeds: 1).artists == ["Played Band"])
+    }
+
+    @Test func aFewPlaysDontCrowdOutTheAccountsLikes() {
+        // Just signed in: one artist played here, the account's likes from many more.
+        let library = Library(directory: nil)
+        for s in [song("b1", "B"), song("c1", "C"), song("a1", "A"), song("d1", "D"), song("e1", "E")] { library.toggleLike(s) }
+        library.recordPlay(song("a2", "A"))
+        let taste = Taste(library: library)
+        #expect(taste.seeds.map(\.id) == ["a2", "e1", "d1", "c1"], "A's liked song doesn't seed A twice")
+        #expect(taste.artists == ["A", "E", "D", "C"])
     }
 
     @Test func weavesRadiosWithoutRepeats() {

@@ -122,27 +122,22 @@ struct MacVideoBar: View {
                     }
                     .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BarButtonStyle(padding: 4))
                 .help("Back to the Video")
 
                 Spacer(minLength: 8)
 
-                HStack(spacing: 18) {
+                HStack(spacing: 10) {
                     if !playback.isLive {
-                        Button("Back 10 Seconds", systemImage: "gobackward.10") { playback.skip(by: -10) }
+                        iconButton("gobackward.10", help: "Back 10 Seconds") { playback.skip(by: -10) }
                     }
-                    Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") {
+                    iconButton(playback.isPlaying ? "pause.fill" : "play.fill", help: playback.isPlaying ? "Pause" : "Play", size: 22) {
                         if playback.autoplayCountdown != nil { playback.playNext() } else { playback.togglePlay() }
                     }
-                    .font(.system(size: 22))
-                    .contentTransition(.symbolEffect(.replace))
                     if !playback.isLive {
-                        Button("Forward 10 Seconds", systemImage: "goforward.10") { playback.skip(by: 10) }
+                        iconButton("goforward.10", help: "Forward 10 Seconds") { playback.skip(by: 10) }
                     }
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .font(.system(size: 17, weight: .medium))
 
                 if !playback.isLive, playback.duration > 0 {
                     ProgressView(value: min(playback.time, playback.duration), total: playback.duration)
@@ -152,18 +147,34 @@ struct MacVideoBar: View {
                         .accessibilityLabel("Playback position")
                 }
 
-                Button("Close Video", systemImage: "xmark") { withAnimation(.smooth) { playback.stop() } }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .help("Close Video")
+                iconButton("xmark", help: "Close Video", size: 14, weight: .semibold, style: .secondary) {
+                    withAnimation(.smooth) { playback.stop() }
+                }
             }
             .padding(.horizontal, 12)
             .frame(height: 68)
+            // The whole bar takes the click: glass alone doesn't, and a click between its
+            // buttons went through to the page scrolled under it.
+            .contentShape(.rect(cornerRadius: 22, style: .continuous))
             .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
         }
+    }
+
+    /// As the songs' bar draws them: a 28 pt target, not just the symbol's own pixels.
+    private func iconButton(_ symbol: String, help: String, size: CGFloat = 17, weight: Font.Weight = .medium,
+                            style: HierarchicalShapeStyle = .primary, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: weight))
+                .foregroundStyle(style)
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(BarButtonStyle())
+        .help(help)
+        .accessibilityLabel(help)
     }
 }

@@ -204,10 +204,14 @@ public struct Mood: Identifiable, Hashable, Codable, Sendable {
 public struct ShelfPage: Sendable {
     public var shelves: [Shelf]
     public var moods: [Mood]
+    /// The songs of the page's first shelf of song rows: signed in, the account's Quick picks on
+    /// YouTube Music's Home, which is what Koda for Android takes for its own.
+    public var quickPicks: [Song]
 
-    public init(shelves: [Shelf], moods: [Mood]) {
+    public init(shelves: [Shelf], moods: [Mood], quickPicks: [Song] = []) {
         self.shelves = shelves
         self.moods = moods
+        self.quickPicks = quickPicks
     }
 
     /// Every artist on the page, in shelf order, each once: a chart's "Top artists".
@@ -219,8 +223,7 @@ public struct ShelfPage: Sendable {
         }
     }
 
-    /// Every song on the page, in shelf order, each once: signed in, YouTube Music's Home leads
-    /// with the account's Quick picks, which is what Koda for Android takes for its own.
+    /// Every song on the page, in shelf order, each once.
     public var songs: [Song] {
         var seen = Set<String>()
         return shelves.flatMap(\.items).compactMap { item in

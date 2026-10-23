@@ -47,11 +47,20 @@ public struct Taste: Sendable, Equatable {
             artistScores[Self.leadArtist(entry.stats.song), default: 0] += entry.score
         }
         let ranked = artistScores.sorted { a, b in a.value != b.value ? a.value > b.value : a.key < b.key }
-        let artists = ranked.map(\.key).filter { !$0.isEmpty }
 
+        var artists = ranked.map(\.key).filter { !$0.isEmpty }
         var seeds: [Song] = []
         for artist in artists where seeds.count < maxSeeds {
             if let best = scored.first(where: { Self.leadArtist($0.stats.song) == artist }) { seeds.append(best.stats.song) }
+        }
+        if seeds.count < maxSeeds {
+            // Only a few artists played here yet, as just after signing in: the account's liked
+            // songs fill the rest, so the mix isn't one or two artists' radios alone.
+            let played = Set(artists)
+            let said = library.liked.filter { !library.isHidden($0) && !played.contains(Self.leadArtist($0)) }
+            let more = Self.fromLiked(said, maxSeeds: maxSeeds - seeds.count)
+            artists += more.artists.prefix(more.seeds.count)
+            seeds += more.seeds
         }
         self.artists = artists
         self.seeds = seeds

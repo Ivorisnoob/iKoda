@@ -188,7 +188,7 @@ final class HomeModel {
     /// with nothing played yet, the newest liked; with neither, nothing (trending fills in).
     private func quickPicks(music: YouTubeMusic, recent: [Song], liked: [Song], signedIn: Bool) async -> (String, [Song]) {
         if signedIn, let home = try? await music.home() {
-            let songs = home.songs
+            let songs = home.quickPicks
             if songs.count >= 3 { return ("Quick picks", Array(songs.prefix(20))) }
         }
         guard let seed = recent.first ?? liked.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", []) }

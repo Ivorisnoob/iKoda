@@ -122,7 +122,7 @@ struct MacPlayerBar: View {
 }
 
 /// A plain button that lights up under the pointer and dims on press, as toolbar buttons do.
-private struct BarButtonStyle: ButtonStyle {
+struct BarButtonStyle: ButtonStyle {
     var padding: CGFloat = 0
     @State private var hovering = false
     @Environment(\.isEnabled) private var isEnabled

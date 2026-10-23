@@ -1,0 +1,203 @@
+{
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "itemSectionRenderer": {
+           "contents": [
+            {
+             "playlistVideoListRenderer": {
+              "playlistId": "WL",
+              "contents": [
+               {
+                "playlistVideoRenderer": {
+                 "videoId": "aaaaaaaaaa1",
+                 "thumbnail": {
+                  "thumbnails": [
+                   {
+                    "url": "https://i.ytimg.com/vi/aaaaaaaaaa1/hqdefault.jpg",
+                    "width": 336,
+                    "height": 188
+                   }
+                  ]
+                 },
+                 "title": {
+                  "runs": [
+                   {
+                    "text": "Saved Video 1"
+                   }
+                  ]
+                 },
+                 "shortBylineText": {
+                  "runs": [
+                   {
+                    "text": "Channel 1",
+                    "navigationEndpoint": {
+                     "browseEndpoint": {
+                      "browseId": "UCchannel1"
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "lengthText": {
+                  "simpleText": "1:28:08"
+                 },
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "aaaaaaaaaa1",
+                   "playlistId": "WL",
+                   "index": 0
+                  }
+                 },
+                 "isPlayable": true,
+                 "videoInfo": {
+                  "runs": [
+                   {
+                    "text": "150K views"
+                   },
+                   {
+                    "text": " • "
+                   },
+                   {
+                    "text": "1 day ago"
+                   }
+                  ]
+                 },
+                 "thumbnailOverlays": [
+                  {
+                   "thumbnailOverlayTimeStatusRenderer": {
+                    "style": "DEFAULT",
+                    "text": {
+                     "simpleText": "1:28:08"
+                    }
+                   }
+                  }
+                 ]
+                }
+               },
+               {
+                "playlistVideoRenderer": {
+                 "videoId": "ccccccccccc",
+                 "title": {
+                  "runs": [
+                   {
+                    "text": "[Deleted video]"
+                   }
+                  ]
+                 },
+                 "isPlayable": false
+                }
+               },
+               {
+                "playlistVideoRenderer": {
+                 "videoId": "bbbbbbbbbb2",
+                 "thumbnail": {
+                  "thumbnails": [
+                   {
+                    "url": "https://i.ytimg.com/vi/bbbbbbbbbb2/hqdefault.jpg",
+                    "width": 336,
+                    "height": 188
+                   }
+                  ]
+                 },
+                 "title": {
+                  "runs": [
+                   {
+                    "text": "Saved Video 2"
+                   }
+                  ]
+                 },
+                 "shortBylineText": {
+                  "runs": [
+                   {
+                    "text": "Channel 2",
+                    "navigationEndpoint": {
+                     "browseEndpoint": {
+                      "browseId": "UCchannel2"
+                     }
+                    }
+                   }
+                  ]
+                 },
+                 "lengthText": {
+                  "simpleText": "12:05"
+                 },
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "bbbbbbbbbb2",
+                   "playlistId": "WL",
+                   "index": 1
+                  }
+                 },
+                 "isPlayable": true,
+                 "videoInfo": {
+                  "runs": [
+                   {
+                    "text": "150K views"
+                   },
+                   {
+                    "text": " • "
+                   },
+                   {
+                    "text": "1 day ago"
+                   }
+                  ]
+                 },
+                 "thumbnailOverlays": [
+                  {
+                   "thumbnailOverlayTimeStatusRenderer": {
+                    "style": "DEFAULT",
+                    "text": {
+                     "simpleText": "1:28:08"
+                    }
+                   }
+                  }
+                 ]
+                }
+               },
+               {
+                "continuationItemRenderer": {
+                 "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+                 "continuationEndpoint": {
+                  "commandExecutorCommand": {
+                   "commands": [
+                    {
+                     "playlistVotingRefreshPopupCommand": {}
+                    },
+                    {
+                     "continuationCommand": {
+                      "token": "WL-NEXT-PAGE",
+                      "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+                     }
+                    }
+                   ]
+                  }
+                 }
+                }
+               }
+              ]
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "playlistMetadataRenderer": {
+   "title": "Watch later"
+  }
+ }
+}

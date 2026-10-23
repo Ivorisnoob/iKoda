@@ -152,6 +152,22 @@ import Testing
         #expect(page.videos.continuation != nil)
     }
 
+    @Test func watchLaterReadsItsOlderRows() throws {
+        // Watch Later's shape signed in, cut down and with made-up videos: playlistVideoRenderer
+        // rows in a playlistVideoListRenderer, a deleted video among them.
+        let page = try #require(VideoPages.playlist(try fixture("watch-later")))
+        #expect(page.title == "Watch later")
+        let videos = page.videos.videos
+        #expect(videos.map(\.id) == ["aaaaaaaaaa1", "bbbbbbbbbb2"], "the deleted video is left out")
+        #expect(videos[0].title == "Saved Video 1")
+        #expect(videos[0].channel == ChannelRef(id: "UCchannel1", name: "Channel 1"))
+        #expect(videos[0].duration == 5288)
+        #expect(videos[0].views == "150K views")
+        #expect(videos[0].published == "1 day ago")
+        #expect(videos[0].thumbnail != nil)
+        #expect(page.videos.continuation == "WL-NEXT-PAGE")
+    }
+
     @Test func theGuideListsSubscribedChannelsOnly() throws {
         // The guide's shape for a signed-in account, cut down: the Explore section's Music
         // entry is a channel too, and isn't a subscription.

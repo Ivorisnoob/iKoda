@@ -26,6 +26,25 @@ func fixture(_ name: String) throws -> JSON {
         #expect(songs.count == 20)
         #expect(songs.allSatisfy { !$0.id.isEmpty && !$0.title.isEmpty && !$0.artistLine.isEmpty })
         #expect(Set(songs.map(\.id)).count == songs.count)
+        #expect(page.quickPicks.map(\.id) == songs.map(\.id))
+    }
+
+    @Test func homeQuickPicksLeaveOutListenAgain() throws {
+        // Signed in, Home can lead with "Listen again", cards of songs already heard.
+        let heard = ["musicTwoRowItemRenderer": [
+            "title": ["runs": [["text": "Heard Before"]]],
+            "subtitle": ["runs": [["text": "Some Artist"]]],
+            "navigationEndpoint": ["watchEndpoint": ["videoId": "heardBefore"]],
+        ]]
+        let listenAgain = ["musicCarouselShelfRenderer": [
+            "header": ["musicCarouselShelfBasicHeaderRenderer": ["title": ["runs": [["text": "Listen again"]]]]],
+            "contents": [heard],
+        ]]
+        let quick = try fixture("home-quick-picks").objects("musicCarouselShelfRenderer")[0].raw!
+        let page = Pages.shelves(JSON(["contents": [listenAgain, ["musicCarouselShelfRenderer": quick]]]))
+        #expect(page.songs.first?.id == "heardBefore")
+        #expect(page.quickPicks.count == 20)
+        #expect(!page.quickPicks.contains { $0.id == "heardBefore" })
     }
 
     @Test func chartTopArtistsAreArtists() throws {

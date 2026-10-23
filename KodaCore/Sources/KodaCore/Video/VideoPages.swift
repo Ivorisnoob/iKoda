@@ -291,13 +291,16 @@ enum VideoPages {
         }
     }
 
-    /// A playlist's page (Watch Later, Liked videos, any other): its title and videos, which are
-    /// lockups like Up Next's, in the first section's list.
+    /// A playlist's page (Watch Later, Liked videos, any other): its title and videos, in the
+    /// first section's list. Most are lockups like Up Next's; Watch Later still comes as
+    /// `playlistVideoRenderer` rows wrapped in a `playlistVideoListRenderer` [verified October 2026].
     static func playlist(_ root: JSON) -> VideoPlaylistPage? {
         let header = root.first("pageHeaderViewModel")
         let title = header["title"].strings("content").first ?? root.first("playlistMetadataRenderer")["title"].string ?? ""
         let sections = root.first("sectionListRenderer")["contents"]
-        let list = sections[0]["itemSectionRenderer"]["contents"]
+        var list = sections[0]["itemSectionRenderer"]["contents"]
+        // Unwrapped, so its continuation is found at the list's own end.
+        if list[0]["playlistVideoListRenderer"].exists { list = list[0]["playlistVideoListRenderer"]["contents"] }
         guard !title.isEmpty || list.exists else { return nil }
         var videos = page(list)
         // The first page's continuation sits beside the list, not at its end.
@@ -331,6 +334,8 @@ enum VideoPages {
                     if let video = video(renderer: JSON(dict[key])) { out.append(video) }
                 case "lockupViewModel":
                     if let video = video(lockup: JSON(dict[key])) { out.append(video) }
+                case "playlistVideoRenderer":
+                    if let video = video(playlistRow: JSON(dict[key])) { out.append(video) }
                 case "reelShelfRenderer", "shortsLockupViewModel", "continuationItemRenderer":
                     continue
                 default:
@@ -357,6 +362,21 @@ enum VideoPages {
                      duration: Rows.duration(row["lengthText"].text),
                      views: (row["shortViewCountText"].text.nonEmptyString ?? row["viewCountText"].text.nonEmptyString),
                      published: row["publishedTimeText"].text.nonEmptyString, isLive: isLive)
+    }
+
+    /// Watch Later's row: `playlistVideoRenderer`. Views and age share one line ("150K views",
+    /// " • ", "1 day ago"). Deleted and private videos stay in the list but can't be played.
+    static func video(playlistRow row: JSON) -> Video? {
+        guard let id = row["videoId"].nonEmpty, row["isPlayable"].bool != false else { return nil }
+        let owner = row["shortBylineText"].runs.first ?? .null
+        let channel = owner.exists
+            ? ChannelRef(id: owner["navigationEndpoint"]["browseEndpoint"]["browseId"].nonEmpty, name: owner["text"].string ?? "", avatar: nil)
+            : nil
+        let info = row["videoInfo"].runs.compactMap { $0["text"].string?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && $0 != "•" }
+        let isLive = row["thumbnailOverlays"].array.contains { $0["thumbnailOverlayTimeStatusRenderer"]["style"].string == "LIVE" }
+        return Video(id: id, title: row["title"].text, channel: channel, thumbnail: row["thumbnail"].bestThumbnail,
+                     duration: Rows.duration(row["lengthText"].text), views: info.first,
+                     published: isLive ? nil : info.dropFirst().first, isLive: isLive)
     }
 
     /// The watch page's, channels' and Home's row: `lockupViewModel` of content type video.

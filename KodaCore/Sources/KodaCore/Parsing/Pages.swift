@@ -7,11 +7,23 @@ enum Pages {
 
     static func shelves(_ root: JSON) -> ShelfPage {
         var shelves: [Shelf] = []
+        var quickPicks: [Song] = []
         for carousel in root.objects("musicCarouselShelfRenderer") {
             let header = carousel["header"]["musicCarouselShelfBasicHeaderRenderer"]
-            let items = carousel["contents"].array.compactMap(Rows.item(entry:))
+            let entries = carousel["contents"].array
+            let items = entries.compactMap(Rows.item(entry:))
             guard !items.isEmpty else { continue }
-            shelves.append(Shelf(title: header["title"].text, strapline: header["strapline"].text.nonEmptyString, items: dedupe(items)))
+            let shelf = Shelf(title: header["title"].text, strapline: header["strapline"].text.nonEmptyString, items: dedupe(items))
+            shelves.append(shelf)
+            // Quick picks is the one Home shelf drawn as rows of songs; the shelves around it
+            // ("Listen again", mixes, albums) are cards, and their songs are ones already heard.
+            // Told apart by layout, not title, which is in the listener's language.
+            if quickPicks.isEmpty, entries.first?["musicResponsiveListItemRenderer"].exists == true {
+                quickPicks = shelf.items.compactMap { item in
+                    guard case .song(let song) = item, !song.title.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+                    return song
+                }
+            }
         }
         var moods: [Mood] = []
         for chip in root.objects("chipCloudChipRenderer") {
@@ -22,7 +34,7 @@ enum Pages {
             guard let target = button["clickCommand"].browseTarget else { continue }
             moods.append(Mood(title: button["buttonText"].text, browseId: target.id, params: target.params))
         }
-        return ShelfPage(shelves: shelves, moods: moods)
+        return ShelfPage(shelves: shelves, moods: moods, quickPicks: quickPicks)
     }
 
     static func dedupe<T: Identifiable>(_ items: [T]) -> [T] {

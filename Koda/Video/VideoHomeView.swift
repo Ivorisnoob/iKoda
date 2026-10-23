@@ -69,6 +69,7 @@ struct VideoHomeView: View {
                         VideoCard(video: video, width: 420)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu { VideoMenuItems(video: video) }
                     .padding(.horizontal, VideoMetrics.side)
                 }
                 if model.canLoadMore {
@@ -92,7 +93,7 @@ struct VideoHomeView: View {
             if feed.kind == .home, !library.watched.isEmpty {
                 RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
             }
-            VideoGrid(model: feed)
+            VideoGrid(model: feed) { await load(feed) }
         }
         .navigationTitle(feed.kind == .subscriptions ? "Subscriptions" : "Videos")
         .task { if feed.state.value == nil { await load(feed) } }
@@ -107,6 +108,7 @@ struct VideoHomeView: View {
 /// A feed as the Mac's grid of cards, paging as its end comes into view.
 struct VideoGrid: View {
     let model: VideoFeedModel
+    let retry: () async -> Void
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
 
@@ -119,6 +121,8 @@ struct VideoGrid: View {
                 Label("Couldn't Load Videos", systemImage: "wifi.exclamationmark")
             } description: {
                 Text(message)
+            } actions: {
+                Button("Try Again") { Task { await retry() } }.buttonStyle(.glass)
             }
             .frame(maxWidth: .infinity, minHeight: 320)
         case .loaded(let videos):
@@ -153,7 +157,7 @@ struct VideoCardGrid: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    ShareLink(item: video.watchURL) { Label("Share", systemImage: "square.and.arrow.up") }
+                    VideoMenuItems(video: video)
                     if let remove {
                         Button("Remove from Watched", systemImage: "trash", role: .destructive) { remove(video) }
                     }
@@ -207,8 +211,16 @@ struct VideoSearchResultsView: View {
             content(VideoSearchResults(channels: [], videos: VideoPage(videos: Video.placeholders)))
                 .loadingPlaceholder()
         case .failed(let message):
-            ContentUnavailableView("Couldn't Search", systemImage: "wifi.exclamationmark", description: Text(message))
-                .frame(maxWidth: .infinity, minHeight: 320)
+            ContentUnavailableView {
+                Label("Couldn't Search", systemImage: "wifi.exclamationmark")
+            } description: {
+                Text(message)
+            } actions: {
+                if let query = model.submitted {
+                    Button("Try Again") { Task { await model.search(query, music: app.music) } }.buttonStyle(.glass)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 320)
         case .loaded(let results):
             if results.videos.videos.isEmpty, results.channels.isEmpty {
                 ContentUnavailableView.search(text: model.submitted ?? "")
@@ -241,6 +253,7 @@ struct VideoSearchResultsView: View {
                 ForEach(results.videos.videos) { video in
                     NavigationLink(value: Route.video(video)) { VideoCard(video: video, width: 420) }
                         .buttonStyle(.plain)
+                        .contextMenu { VideoMenuItems(video: video) }
                         .padding(.horizontal, VideoMetrics.side)
                 }
             }

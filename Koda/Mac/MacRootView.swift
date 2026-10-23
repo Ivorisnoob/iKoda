@@ -59,8 +59,14 @@ struct MacRootView: View {
         }
         .environment(\.nowPlayingZoom, playerZoom)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // The songs' bar belongs to music mode; in video mode the video is what plays.
-            if player.current != nil, model.settings.mode == .music {
+            // A video playing away from its page has the bar (in music mode only while it plays,
+            // so it can always be stopped); otherwise the songs' bar, which belongs to music mode.
+            if showsVideoBar {
+                MacVideoBar(playback: model.videos) {
+                    if let video = model.videos.current { model.open(.video(video)) }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if player.current != nil, model.settings.mode == .music {
                 // Under Now Playing the bar only repeats it, so it steps out of sight; it stays in
                 // place, as the cover the player zooms back into.
                 MacPlayerBar(open: { panel in
@@ -74,7 +80,13 @@ struct MacRootView: View {
             }
         }
         .animation(.smooth(duration: 0.35), value: player.current == nil || model.settings.mode == .video)
+        .animation(.smooth(duration: 0.35), value: showsVideoBar)
         .animation(.smooth(duration: 0.25), value: showsNowPlaying)
+    }
+
+    private var showsVideoBar: Bool {
+        let videos = model.videos
+        return videos.current != nil && !videos.isOnItsPage && (model.settings.mode == .video || videos.isPlaying)
     }
 
     private func searching<V: View>(_ content: V) -> some View {

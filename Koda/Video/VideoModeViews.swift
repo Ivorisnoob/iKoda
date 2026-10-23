@@ -1,25 +1,55 @@
 import KodaCore
 import SwiftUI
 
-/// Music or Video, at the top of Home (iPhone) and of the sidebar (Mac): the whole app follows it,
-/// as Koda for Android's toggle does.
+/// Music or Video: the whole app follows it, as Koda for Android's toggle does.
+///
+/// iPhone: one glass button at the top of each Home naming the mode, which opens the system menu
+/// with both, the way Mail and Photos switch what a screen shows; a segmented control squeezed
+/// into the bar beside the profile button read as two cramped buttons. Mac: a segmented control
+/// heading the sidebar, as Mac apps head their sidebars.
 struct ModeToggle: View {
     @Environment(AppModel.self) private var app
-    @State private var flips = 0
+
+    private var mode: Binding<AppSettings.Mode> {
+        Binding(get: { app.settings.mode }, set: { mode in
+            withAnimation(.smooth) { app.settings.mode = mode }
+        })
+    }
 
     var body: some View {
-        Picker("Mode", selection: Binding(get: { app.settings.mode }, set: { mode in
-            flips += 1
-            withAnimation(.smooth) { app.settings.mode = mode }
-        })) {
-            ForEach(AppSettings.Mode.allCases) { mode in
-                Text(mode.title).tag(mode)
+        Group {
+            if Platform.isMac {
+                Picker("Mode", selection: mode) {
+                    ForEach(AppSettings.Mode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            } else {
+                Menu {
+                    Picker("Mode", selection: mode) {
+                        ForEach(AppSettings.Mode.allCases) { mode in
+                            Label(mode.title, systemImage: mode.systemImage).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: app.settings.mode.systemImage)
+                            .contentTransition(.symbolEffect(.replace))
+                        Text(app.settings.mode.title)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 4)
+                }
+                .accessibilityLabel("Mode")
+                .accessibilityValue(app.settings.mode.title)
+                .accessibilityHint("Switches between music and videos")
             }
         }
-        .pickerStyle(.segmented)
-        .fixedSize()
-        .sensoryFeedback(.selection, trigger: flips)
-        .accessibilityLabel("Mode")
+        .sensoryFeedback(.selection, trigger: app.settings.mode)
     }
 }
 

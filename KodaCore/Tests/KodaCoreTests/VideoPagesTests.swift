@@ -40,7 +40,7 @@ import Testing
         #expect(page.date == "Nov 10, 2014")
         #expect(page.subscribers == "1.25M subscribers")
         #expect(page.description.hasPrefix("UHD High Frame rate version"))
-        #expect(!page.isSubscribed)
+        #expect(page.isSubscribed == false)
         let related = page.related.videos
         #expect(related.count >= 15)
         #expect(!related.contains { $0.id == "aqz-KE-bpKQ" })

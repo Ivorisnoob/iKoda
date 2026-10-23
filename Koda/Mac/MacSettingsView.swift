@@ -451,6 +451,10 @@ private struct MacPlaybackPane: View {
             }
             .disabled(!player.crossfades)
         }
+        MacSettingsGroup(title: "Videos", footer: "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and M mutes. Double-click a video for full screen.") {
+            MacSettingsToggle(title: "Autoplay next video", detail: "When a video ends, the next in Up Next starts after a short countdown.",
+                              isOn: $settings.autoplaysVideos)
+        }
         MacSettingsGroup(title: "Skipping", footer: "⌥⌘← and ⌥⌘→ skip back and ahead too, with the buttons shown or not.") {
             MacSettingsToggle(title: "Skip buttons", detail: "Beside play in the player bar and Now Playing, to jump within the song.",
                               isOn: $settings.showsSkipButtons)

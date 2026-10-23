@@ -9,7 +9,10 @@ struct VideoThumbnail: View {
     var cornerRadius: CGFloat = 12
     /// The width it's drawn at, for the pixels to load.
     var width: CGFloat = 400
+    /// The bar showing how far it was watched; off inside the player, which has its own.
+    var showsProgress = true
     @Environment(\.displayScale) private var scale
+    @Environment(Library.self) private var library
     @State private var image: UIImage?
 
     var body: some View {
@@ -21,6 +24,7 @@ struct VideoThumbnail: View {
                     Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
                 }
             }
+            .overlay(alignment: .bottom) { progress }
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .overlay(alignment: .bottomTrailing) { badge }
             .task(id: video.id) {
@@ -42,6 +46,21 @@ struct VideoThumbnail: View {
             .accessibilityHidden(true)
     }
 
+    /// How far it was watched, along the foot of the frame, as YouTube draws it.
+    @ViewBuilder
+    private var progress: some View {
+        if showsProgress, !video.isLive, let fraction = library.videoProgress[video.id]?.fraction, fraction > 0.01 {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(.black.opacity(0.35))
+                    Rectangle().fill(.red).frame(width: geometry.size.width * fraction)
+                }
+            }
+            .frame(height: 3)
+            .accessibilityHidden(true)
+        }
+    }
+
     @ViewBuilder
     private var badge: some View {
         if video.isLive {
@@ -61,6 +80,7 @@ struct VideoThumbnail: View {
                 .background(.black.opacity(0.75), in: .rect(cornerRadius: 5, style: .continuous))
                 .foregroundStyle(.white)
                 .padding(6)
+                .padding(.bottom, library.videoProgress[video.id] == nil ? 0 : 3)
         }
     }
 }
@@ -136,6 +156,19 @@ struct VideoRow: View {
         }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// What a video's context menu offers wherever it's listed: sharing it and going to its channel.
+struct VideoMenuItems: View {
+    let video: Video
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        ShareLink(item: video.watchURL, subject: Text(video.title)) { Label("Share", systemImage: "square.and.arrow.up") }
+        if let channel = video.channel, let id = channel.id {
+            Button("Go to Channel", systemImage: "person.crop.square") { app.open(.channel(id: id, name: channel.name)) }
+        }
     }
 }
 

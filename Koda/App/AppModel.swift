@@ -66,6 +66,13 @@ final class AppModel {
     @ObservationIgnored var mirrors: [UUID: AccountMirror] = [:]
     /// When a play has been heard long enough to go to the account's YouTube history.
     @ObservationIgnored var historyThreshold = HeardThreshold()
+    /// Channels subscribed to or left from Koda this run, by id: newer than any page loaded
+    /// before the change, so every page shows the same answer.
+    var subscriptions: [String: Bool] = [:]
+    /// Videos rated from Koda this run, by id, for the same reason.
+    var videoRatings: [String: LikeStatus] = [:]
+    /// The video being reported to the account's YouTube history, and whose account it is.
+    @ObservationIgnored var videoHistory: (session: VideoWatchSession, profile: UUID)?
 
     struct PlaylistTarget: Identifiable {
         let id = UUID()
@@ -105,6 +112,11 @@ final class AppModel {
         videos.onWatch = { [library] video in
             if settings.savesListeningHistory { library.recordWatch(video) }
         }
+        videos.resumePosition = { [library] id in library.videoProgress[id]?.resumeAt }
+        videos.onProgress = { [library] id, position, duration in
+            if settings.savesListeningHistory { library.setProgress(position, of: duration, for: id) }
+        }
+        videos.autoplays = { settings.autoplaysVideos }
         videos.restoreQuality(settings.videoQuality)
         videos.onQualityChange = { lines in settings.videoQuality = lines }
         videos.pauseMusic = { [player] in

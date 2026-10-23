@@ -19,6 +19,15 @@ extension AppModel {
             scrobble?(item, seconds)
             self?.heardForHistory(item, seconds)
         }
+        let watched = videos.onWatch
+        videos.onWatch = { [weak self] video in
+            watched?(video)
+            // Each watch is its own play in the account's history.
+            self?.videoHistory = nil
+        }
+        videos.onWatchSpan = { [weak self] id, start, end, final in
+            self?.watchedForHistory(id, from: start, to: end, final: final)
+        }
         let verdicts = music.accounts.verdicts
         Task { [weak self] in
             for await verdict in verdicts { self?.apply(verdict) }
@@ -250,14 +259,15 @@ extension AppModel {
         }
     }
 
-    // MARK: Subscriptions
+    // MARK: Subscriptions and ratings
 
     /// Subscribe to a channel, or unsubscribe, as the active account; false if it didn't go.
+    /// Every page showing the channel follows (`subscriptions`).
     func setSubscribed(_ channelId: String, _ on: Bool) async -> Bool {
         let profile = roster.active
         guard profile.isSignedIn, !profile.isExpired else { return false }
         let id = profile.id
-        return (try? await withAccountWork { [self] () async throws -> Bool in
+        let sent = (try? await withAccountWork { [self] () async throws -> Bool in
             guard await music.accounts.active?.profileID == id else { return false }
             do {
                 try await music.setSubscribed(channelId: channelId, subscribed: on)
@@ -267,6 +277,58 @@ extension AppModel {
                 return false
             }
         }) ?? false
+        if sent, roster.activeID == id { subscriptions[channelId] = on }
+        return sent
+    }
+
+    /// Whether the active account follows a channel: a change made here this run, else what
+    /// the page said (nil when it didn't say).
+    func isSubscribed(_ channelId: String, page: Bool?) -> Bool? {
+        subscriptions[channelId] ?? page
+    }
+
+    /// Like, dislike or clear the rating of a video as the active account; false if it didn't go.
+    func rate(_ videoId: String, _ status: LikeStatus) async -> Bool {
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired else { return false }
+        let id = profile.id
+        let sent = (try? await withAccountWork { [self] () async throws -> Bool in
+            guard await music.accounts.active?.profileID == id else { return false }
+            do {
+                try await music.rate(videoId: videoId, status)
+                return true
+            } catch MusicError.signedOut {
+                roster.update(id) { $0.isExpired = true }
+                return false
+            }
+        }) ?? false
+        if sent, roster.activeID == id { videoRatings[videoId] = status }
+        return sent
+    }
+
+    // MARK: YouTube history for videos
+
+    /// A span of a video watched: the first files the video in the account's YouTube history
+    /// (Android's VideoWatchTracker), the rest say how far it got. Same switches as songs.
+    private func watchedForHistory(_ videoId: String, from start: TimeInterval, to end: TimeInterval, final: Bool) {
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired, profile.sendsPlaysToYouTube, settings.savesListeningHistory else { return }
+        let id = profile.id
+        enqueueAccountWork { [self] in
+            guard await music.accounts.active?.profileID == id else { return }
+            do {
+                if videoHistory?.session.videoId != videoId || videoHistory?.profile != id {
+                    videoHistory = (try await music.beginVideoHistory(videoId: videoId, at: start), id)
+                }
+                guard let session = videoHistory?.session else { return }
+                try await music.reportVideoWatchtime(session, from: start, to: end, final: final)
+            } catch MusicError.signedOut {
+                roster.update(id) { $0.isExpired = true }
+                videoHistory = nil
+            } catch {
+                // Best effort, as for songs: a missed ping isn't retried.
+            }
+        }
     }
 
     // MARK: YouTube history

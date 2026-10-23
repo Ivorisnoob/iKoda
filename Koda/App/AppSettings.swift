@@ -102,6 +102,12 @@ final class AppSettings {
     var mode: Mode { didSet { defaults.set(mode.rawValue, forKey: Keys.mode) } }
     /// The tallest picture a video plays at, in lines (720, 1080…); 0 lets it follow the connection.
     var videoQuality: Int { didSet { defaults.set(videoQuality, forKey: Keys.videoQuality) } }
+    /// At a video's end, the next in Up Next starts after a short countdown.
+    var autoplaysVideos: Bool { didSet { defaults.set(autoplaysVideos, forKey: Keys.videoAutoplay) } }
+    /// Touching and holding a video plays it at 2× until the finger lifts.
+    var holdsToSpeedUp: Bool { didSet { defaults.set(holdsToSpeedUp, forKey: Keys.videoHoldSpeed) } }
+    /// In full screen on the iPhone, sliding up and down the left half sets the brightness.
+    var swipesForBrightness: Bool { didSet { defaults.set(swipesForBrightness, forKey: Keys.videoBrightness) } }
     /// The welcome and taste setup have been offered on this device, finished or skipped.
     var hasSeenOnboarding: Bool { didSet { defaults.set(hasSeenOnboarding, forKey: Keys.onboarding) } }
 
@@ -123,6 +129,9 @@ final class AppSettings {
         static let onboarding = "koda.onboarding.seen"
         static let mode = "koda.mode"
         static let videoQuality = "koda.video.quality"
+        static let videoAutoplay = "koda.video.autoplay"
+        static let videoHoldSpeed = "koda.video.holdSpeed"
+        static let videoBrightness = "koda.video.brightnessSwipe"
     }
 
     init() {
@@ -146,6 +155,9 @@ final class AppSettings {
         hasSeenOnboarding = d.bool(forKey: Keys.onboarding)
         mode = d.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .music
         videoQuality = d.integer(forKey: Keys.videoQuality)
+        autoplaysVideos = d.object(forKey: Keys.videoAutoplay) as? Bool ?? true
+        holdsToSpeedUp = d.object(forKey: Keys.videoHoldSpeed) as? Bool ?? true
+        swipesForBrightness = d.object(forKey: Keys.videoBrightness) as? Bool ?? true
     }
 
     /// The services to ask, best first.

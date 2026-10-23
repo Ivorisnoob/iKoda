@@ -30,6 +30,52 @@ extension YouTubeMusic {
     }
 }
 
+/// One video's reporting to the account's YouTube history: filed as watched when it starts, then
+/// told how far it got. Koda for Android's VideoWatchTracker (WEB watchtime and FEhistory
+/// readback verified September 2026).
+public struct VideoWatchSession: Sendable {
+    public let videoId: String
+    let profile: UUID
+    let cpn: String
+    let watchtimeURL: String
+}
+
+extension YouTubeMusic {
+    /// File `videoId` in the active account's YouTube history, as www.youtube.com's player does:
+    /// a signed WEB `/player` hands back tracking URLs, and the playback ping files the watch.
+    /// The session it returns carries the watch-time pings, which say how much was seen (the
+    /// red bar under the video on YouTube).
+    public func beginVideoHistory(videoId: String, at position: TimeInterval) async throws -> VideoWatchSession {
+        guard let profile = await accounts.active?.profileID else { throw MusicError.signedOut }
+        let cpn = HistoryPing.cpn()
+        let sent = await signatures.current()
+        var root = try await api.web("player", HistoryPing.playerPayload(videoId: videoId, cpn: cpn, signatureTimestamp: sent),
+                                     signing: .required)
+        if !root["playbackTracking"].exists, let retry = await signatures.refreshAfterRejection(sent) {
+            root = try await api.web("player", HistoryPing.playerPayload(videoId: videoId, cpn: cpn, signatureTimestamp: retry),
+                                     signing: .required)
+        }
+        let tracking = root["playbackTracking"]
+        guard let playback = tracking["videostatsPlaybackUrl"]["baseUrl"].nonEmpty,
+              let watchtime = tracking["videostatsWatchtimeUrl"]["baseUrl"].nonEmpty,
+              let url = HistoryPing.videoTrackingURL(playback, cpn: cpn, from: position, to: position, final: false)
+        else { throw MusicError.badResponse(200) }
+        guard await accounts.active?.profileID == profile else { throw MusicError.signedOut }
+        try await api.ping(url, referer: "https://www.youtube.com/watch?v=\(videoId)", origin: "https://www.youtube.com")
+        return VideoWatchSession(videoId: videoId, profile: profile, cpn: cpn, watchtimeURL: watchtime)
+    }
+
+    /// Tell YouTube the span from `start` to `position` was watched. Seeks end a span: a skipped
+    /// part is never claimed as seen.
+    public func reportVideoWatchtime(_ session: VideoWatchSession, from start: TimeInterval, to position: TimeInterval,
+                                     final: Bool) async throws {
+        guard await accounts.active?.profileID == session.profile else { throw MusicError.signedOut }
+        guard let url = HistoryPing.videoTrackingURL(session.watchtimeURL, cpn: session.cpn, from: start, to: position, final: final)
+        else { throw MusicError.badResponse(200) }
+        try await api.ping(url, referer: "https://www.youtube.com/watch?v=\(session.videoId)", origin: "https://www.youtube.com")
+    }
+}
+
 enum HistoryPing {
     /// Where a history ping may carry the account's cookies: the hosts `/player` returns
     /// tracking URLs on [verified September 2026, signed in].
@@ -49,9 +95,25 @@ enum HistoryPing {
     /// The ping URL: https on a YouTube tracking host only, with this play's `cpn`, `ver` and
     /// `c` set (replacing any the URL carries rather than sending them twice).
     static func trackingURL(_ base: String, cpn: String) -> URL? {
+        tracking(base, setting: ["cpn": cpn, "ver": "2", "c": "WEB_REMIX"])
+    }
+
+    /// A video's ping: the WEB client's, with the watched span (`st`…`et`, `cmt` where it is now)
+    /// and whether it's the last for this watch.
+    static func videoTrackingURL(_ base: String, cpn: String, from start: TimeInterval, to position: TimeInterval, final: Bool) -> URL? {
+        let position = max(0, position)
+        let seconds = { (value: TimeInterval) in String(format: "%.3f", value) }
+        return tracking(base, setting: [
+            "cpn": cpn, "ver": "2", "c": "WEB", "cver": Clients.webVersion,
+            "cmt": seconds(position), "st": seconds(min(max(0, start), position)), "et": seconds(position),
+            "state": final ? "paused" : "playing", "final": final ? "1" : "0",
+        ])
+    }
+
+    /// `base` with `set` replacing any of the same names, on a YouTube tracking host over https only.
+    private static func tracking(_ base: String, setting set: [String: String]) -> URL? {
         guard var components = URLComponents(string: base), components.scheme == "https",
               let host = components.host, trackingHosts.contains(host) else { return nil }
-        let set = ["cpn": cpn, "ver": "2", "c": "WEB_REMIX"]
         var items = (components.queryItems ?? []).filter { set[$0.name] == nil }
         items += set.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         components.queryItems = items

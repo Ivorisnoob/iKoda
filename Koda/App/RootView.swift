@@ -18,6 +18,11 @@ struct RootView: View {
     /// `isNowPlayingPresented` mirrors it, for opening and closing from elsewhere.
     @State private var showsNowPlaying = false
 
+    private var showsVideoBar: Bool {
+        let videos = model.videos
+        return videos.current != nil && !videos.isOnItsPage && (model.settings.mode == .video || videos.isPlaying)
+    }
+
     var body: some View {
         if Platform.isMac {
             MacRootView()
@@ -80,11 +85,18 @@ struct RootView: View {
         // iOS 27 made the automatic edge effect hard: an opaque band under the bars. A soft one
         // blurs content progressively instead. It applies to every scroll view below here.
         .scrollEdgeEffectStyle(.soft, for: .all)
-        // The songs' player belongs to music mode: in video mode a video is what plays (and
-        // starting one paused the songs), so the bar under the tabs is the video's alone.
-        .modifier(MiniPlayerAccessory(isEnabled: player.current != nil && model.settings.mode == .music) {
-            MiniPlayer { showsNowPlaying = true }
-                .matchedTransitionSource(id: "player", in: playerTransition)
+        // One bar under the tabs: a video left playing away from its page (in video mode, or
+        // still playing in music mode, so it can always be stopped), else the songs' player,
+        // which belongs to music mode.
+        .modifier(MiniPlayerAccessory(isEnabled: showsVideoBar || (player.current != nil && model.settings.mode == .music)) {
+            if showsVideoBar {
+                VideoMiniPlayer(playback: model.videos) {
+                    if let video = model.videos.current { model.open(.video(video)) }
+                }
+            } else {
+                MiniPlayer { showsNowPlaying = true }
+                    .matchedTransitionSource(id: "player", in: playerTransition)
+            }
         })
         .fullScreenCover(isPresented: $showsNowPlaying) {
             NowPlayingView()

@@ -100,14 +100,14 @@ struct InnerTube: Sendable {
 
     /// A signed GET to one of YouTube's tracking URLs (history pings), as the active account.
     /// Only `HistoryPing.trackingURL` builds these, so the cookies go to YouTube's hosts alone.
-    func ping(_ url: URL, referer: String) async throws {
+    func ping(_ url: URL, referer: String, origin: String = "https://music.youtube.com") async throws {
         guard let ticket = await accounts.ticket(), ticket.cookies.sapisid != nil else { throw MusicError.signedOut }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue(Clients.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue(origin, forHTTPHeaderField: "Origin")
         request.setValue(referer, forHTTPHeaderField: "Referer")
-        for (field, value) in SAPISIDHash.headers(for: ticket.cookies) { request.setValue(value, forHTTPHeaderField: field) }
+        for (field, value) in SAPISIDHash.headers(for: ticket.cookies, origin: origin) { request.setValue(value, forHTTPHeaderField: field) }
         let response: URLResponse
         do {
             (_, response) = try await session.data(for: request)

@@ -9,6 +9,12 @@ import UIKit
 /// the top; back 10 s, play/pause and forward 10 s in the middle; a scrubber that follows the
 /// finger, the times and full screen along the bottom. They fade after three seconds of playing
 /// and come back with a tap (or the pointer, on the Mac).
+///
+/// Gestures, as Koda for Android has them: double-tap a side to skip 10 s (keep tapping to skip
+/// further), touch and hold for 2× (slide sideways for other speeds), swipe up for full screen
+/// and down to leave it; inline on the iPhone a swipe down hands the video to the mini player.
+/// In full screen the left half sets the brightness and a pinch fills the screen. The Mac has
+/// YouTube's keys instead, and a double-click for full screen.
 struct VideoPlayerView: View {
     let playback: VideoPlayback
     /// The page's video, drawn as its frame until it's the one playing.
@@ -16,36 +22,70 @@ struct VideoPlayerView: View {
     var isFullScreen = false
     /// Inline on the iPhone the page has no bar; its back button sits on the video.
     var onBack: (() -> Void)?
+    /// A swipe down the inline video: the page goes and the video carries on in the mini player.
+    var onMinimize: (() -> Void)?
 
+    @Environment(AppModel.self) private var app
     @State private var showsControls = true
     @State private var isScrubbing = false
     /// Bumped by every touch of the controls, so they stay while they're being used.
     @State private var activity = 0
+    @State private var size: CGSize = .zero
+    /// The double-tap skip being shown: which side, how far in all, and a pulse per tap.
+    @State private var skipping: Skipping?
+    @State private var skipTaps = 0
+    @State private var isBoosting = false
+    @State private var boostEnded = Date.distantPast
+    /// What a vertical drag is doing, decided by where and which way it starts.
+    @State private var drag: DragKind?
+    /// How far the inline video follows a swipe down before it lets go.
+    @State private var pullDown: CGFloat = 0
+    @State private var brightness: CGFloat?
+    @State private var brightnessAtStart: CGFloat = 0
+    /// The screen's brightness before the video changed it, to give back on leaving.
+    @State private var systemBrightness: CGFloat?
+    @State private var fillsScreen = false
+    @State private var note: String?
+    @State private var showsResumed = false
+    @State private var commits = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isThis: Bool { playback.current?.id == video.id }
     private var hasPicture: Bool { isThis && playback.player.currentItem != nil }
+    private var counting: Bool { isThis && playback.autoplayCountdown != nil && playback.upNext != nil }
 
     var body: some View {
         ZStack {
             Color.black
             if hasPicture {
                 VideoSurface(player: playback.player, drivesPictureInPicture: isFullScreen || !playback.isFullScreen,
-                             attach: playback.attach)
+                             fills: isFullScreen && fillsScreen, attach: playback.attach)
             } else {
-                VideoThumbnail(video: video, cornerRadius: 0, width: 800)
+                VideoThumbnail(video: video, cornerRadius: 0, width: 800, showsProgress: false)
             }
             if isThis, let error = playback.error {
                 errorView(error)
+            } else if counting, let next = playback.upNext {
+                UpNextCountdown(next: next, seconds: playback.autoplayCountdown ?? 0, isCompact: size.height < 230,
+                                cancel: { playback.cancelAutoplay() }, play: { playback.playNext() })
+                    .transition(.opacity)
             } else {
                 controls
+                feedback
             }
         }
         .contentShape(.rect)
-        .onTapGesture { toggleControls() }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+        .offset(y: pullDown)
+        .gesture(taps)
+        .simultaneousGesture(hold, isEnabled: hasPicture && !Platform.isMac && app.settings.holdsToSpeedUp)
+        .simultaneousGesture(swipe, isEnabled: !Platform.isMac)
+        .simultaneousGesture(pinch, isEnabled: isFullScreen && hasPicture && !Platform.isMac)
         .onContinuousHover { phase in
             if case .active = phase { reveal() }
         }
+        // Only the player in front takes the keys (the page's stays under the full-screen one).
+        .background { if Platform.isMac, isThis, isFullScreen == playback.isFullScreen { keyboardShortcuts } }
         .task(id: HideKey(activity: activity, playing: playback.isPlaying, scrubbing: isScrubbing)) {
             // Fade once the video has played a few seconds untouched; a paused video keeps them.
             guard playback.isPlaying, !isScrubbing, showsControls else { return }
@@ -53,7 +93,28 @@ struct VideoPlayerView: View {
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) { showsControls = false }
         }
+        .task(id: playback.resumedFrom) {
+            guard isThis, playback.resumedFrom != nil else {
+                showsResumed = false
+                return
+            }
+            withAnimation(.smooth) { showsResumed = true }
+            try? await Task.sleep(for: .seconds(6))
+            withAnimation(.smooth) { showsResumed = false }
+        }
+        .task(id: note) {
+            guard note != nil else { return }
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.smooth) { note = nil }
+        }
         .onChange(of: playback.isPlaying) { _, playing in if !playing { reveal() } }
+        .onDisappear {
+            playback.endBoost()
+            if let systemBrightness { Self.screen?.brightness = systemBrightness }
+        }
+        .sensoryFeedback(.selection, trigger: skipTaps)
+        .sensoryFeedback(.impact(weight: .medium), trigger: commits)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: counting)
     }
 
     // MARK: Controls
@@ -73,9 +134,15 @@ struct VideoPlayerView: View {
             centre
         }
         .foregroundStyle(.white)
-        .opacity(showsControls || !hasPicture ? 1 : 0)
-        .allowsHitTesting(showsControls || !hasPicture)
+        .opacity(controlsShown ? 1 : 0)
+        .allowsHitTesting(controlsShown)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: showsControls)
+    }
+
+    /// Up unless they've faded, or a gesture is drawing its own feedback over the picture.
+    private var controlsShown: Bool {
+        guard hasPicture else { return true }
+        return showsControls && !isBoosting && skipping == nil && drag != .brightness
     }
 
     private var topBar: some View {
@@ -122,7 +189,8 @@ struct VideoPlayerView: View {
                         playback.skip(by: -10)
                     }
                 }
-                ControlButton(systemImage: playback.isPlaying ? "pause.fill" : "play.fill", label: playback.isPlaying ? "Pause" : "Play",
+                ControlButton(systemImage: playback.hasEnded ? "arrow.counterclockwise" : playback.isPlaying ? "pause.fill" : "play.fill",
+                              label: playback.hasEnded ? "Replay" : playback.isPlaying ? "Pause" : "Play",
                               size: isFullScreen ? 72 : 60) {
                     poke()
                     playback.togglePlay()
@@ -135,7 +203,6 @@ struct VideoPlayerView: View {
                     }
                 }
             }
-            .opacity(showsControls ? 1 : 0)
         } else if !isThis {
             // Another video is on: this page's starts with a tap.
             ControlButton(systemImage: "play.fill", label: "Play", size: 64) { playback.play(video) }
@@ -143,25 +210,77 @@ struct VideoPlayerView: View {
     }
 
     private var bottomBar: some View {
-        HStack(alignment: .bottom, spacing: 12) {
-            if hasPicture {
-                if playback.isLive {
-                    Label("Live", systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.red, in: .capsule)
-                    Spacer(minLength: 0)
-                } else {
-                    VideoScrubber(time: playback.time, duration: playback.duration, isScrubbing: $isScrubbing) { playback.seek(to: $0) }
+        VStack(alignment: .leading, spacing: 8) {
+            if showsResumed, let from = playback.resumedFrom {
+                ResumedNote(from: from) {
+                    showsResumed = false
+                    playback.seek(to: 0)
                 }
-                ControlButton(systemImage: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                              label: isFullScreen ? "Exit Full Screen" : "Full Screen") {
-                    playback.isFullScreen.toggle()
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            HStack(alignment: .bottom, spacing: 12) {
+                if hasPicture {
+                    if playback.isLive {
+                        Label("Live", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.red, in: .capsule)
+                        Spacer(minLength: 0)
+                    } else {
+                        VideoScrubber(time: playback.time, duration: playback.duration, isScrubbing: $isScrubbing) { playback.seek(to: $0) }
+                    }
+                    ControlButton(systemImage: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                  label: isFullScreen ? "Exit Full Screen" : "Full Screen") {
+                        playback.isFullScreen.toggle()
+                    }
+                    .padding(.bottom, playback.isLive ? 0 : 18)
                 }
-                .padding(.bottom, playback.isLive ? 0 : 18)
             }
         }
+    }
+
+    /// What the gestures draw over the picture: the skip, the speed, the brightness, the zoom.
+    private var feedback: some View {
+        ZStack {
+            if let skipping {
+                SkipBadge(skipping: skipping, isFullScreen: isFullScreen, width: size.width * 0.38)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: skipping.forward ? .trailing : .leading)
+                    .transition(.opacity)
+            }
+            if isBoosting, let rate = playback.boost {
+                Label {
+                    Text("\(VideoSettingsMenu.speedName(rate))").monospacedDigit().contentTransition(.numericText(value: Double(rate)))
+                } icon: {
+                    Image(systemName: "forward.fill")
+                }
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: .capsule)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, isFullScreen ? 24 : 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if drag == .brightness, let brightness {
+                LevelIndicator(value: brightness, systemImage: "sun.max.fill", label: "Brightness")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 40)
+                    .transition(.opacity)
+            }
+            if let note {
+                Text(note)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular, in: .capsule)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+        }
+        .foregroundStyle(.white)
+        .allowsHitTesting(false)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: isBoosting)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: skipping?.forward)
     }
 
     private func errorView(_ message: String) -> some View {
@@ -178,6 +297,194 @@ struct VideoPlayerView: View {
                 ControlButton(systemImage: "chevron.backward", label: "Back", action: onBack).padding(10)
             }
         }
+    }
+
+    // MARK: Gestures
+
+    /// One tap shows or hides the controls; two skip (iPhone) or go full screen (Mac). While a
+    /// skip is showing, single taps on that side keep skipping, as on YouTube.
+    private var taps: some Gesture {
+        SpatialTapGesture(count: 2)
+            .onEnded { value in
+                if Platform.isMac {
+                    playback.isFullScreen.toggle()
+                } else {
+                    skip(at: value.location)
+                }
+            }
+            .exclusively(before: SpatialTapGesture(count: 1).onEnded { value in
+                // The lift that ends a hold isn't a tap.
+                guard Date().timeIntervalSince(boostEnded) > 0.3 else { return }
+                if let skipping, hasPicture, side(of: value.location) == (skipping.forward ? 1 : -1) {
+                    skip(at: value.location)
+                } else {
+                    toggleControls()
+                }
+            })
+    }
+
+    /// -1 for the left third, 1 for the right, 0 between.
+    private func side(of point: CGPoint) -> Int {
+        guard size.width > 0 else { return 0 }
+        let x = point.x / size.width
+        return x < 0.4 ? -1 : x > 0.6 ? 1 : 0
+    }
+
+    private func skip(at point: CGPoint) {
+        guard hasPicture, !playback.isLive else { return }
+        let direction = side(of: point)
+        guard direction != 0 else {
+            // Two taps in the middle play or pause, as YouTube's do.
+            playback.togglePlay()
+            return
+        }
+        let forward = direction > 0
+        let seconds = skipping?.forward == forward ? (skipping?.seconds ?? 0) + 10 : 10
+        withAnimation(.smooth(duration: 0.2)) { skipping = Skipping(forward: forward, seconds: seconds, pulse: skipTaps + 1) }
+        skipTaps += 1
+        playback.skip(by: forward ? 10 : -10)
+        let pulse = skipTaps
+        Task {
+            try? await Task.sleep(for: .seconds(0.75))
+            if skipTaps == pulse { withAnimation(.smooth(duration: 0.25)) { skipping = nil } }
+        }
+    }
+
+    /// Hold for 2×; slide the held finger right or left for faster or slower, in quarter steps.
+    private var hold: some Gesture {
+        LongPressGesture(minimumDuration: 0.45, maximumDistance: 12)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                guard case .second(true, let dragged) = value else { return }
+                if !isBoosting {
+                    guard playback.isPlaying, !playback.isLive else { return }
+                    isBoosting = true
+                    commits += 1
+                    playback.startBoost(2)
+                }
+                if let dragged {
+                    let steps = (dragged.translation.width / 36).rounded(.towardZero)
+                    let rate = 2 + Float(steps) * 0.25
+                    if rate != playback.boost { playback.setBoost(rate) }
+                }
+            }
+            .onEnded { _ in endBoost() }
+    }
+
+    private func endBoost() {
+        guard isBoosting else { return }
+        isBoosting = false
+        boostEnded = Date()
+        playback.endBoost()
+    }
+
+    private enum DragKind {
+        case enterFullScreen, minimize, exitFullScreen, brightness
+    }
+
+    /// Up for full screen, down to leave it (or, inline, to the mini player); in full screen the
+    /// left half's lane is the brightness.
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { value in
+                guard !isBoosting, !isScrubbing else { return }
+                let dx = value.translation.width, dy = value.translation.height
+                if drag == nil {
+                    // Sideways is the scrubber's; only a clearly vertical drag is ours.
+                    guard abs(dy) > abs(dx) * 1.4 else { return }
+                    drag = kind(start: value.startLocation, down: dy > 0)
+                    if drag == .brightness {
+                        let current = Self.screen?.brightness ?? 0.5
+                        if systemBrightness == nil { systemBrightness = current }
+                        brightnessAtStart = current
+                    }
+                }
+                switch drag {
+                case .brightness:
+                    // The lane's full height takes it from dark to bright.
+                    let level = min(1, max(0, brightnessAtStart - dy / max(size.height * 0.8, 1)))
+                    brightness = level
+                    Self.screen?.brightness = level
+                case .minimize:
+                    // Follows the finger, with resistance, so it's clear what letting go will do.
+                    pullDown = max(0, dy) * 0.55
+                case .enterFullScreen:
+                    if dy < -60 {
+                        drag = nil
+                        commits += 1
+                        playback.isFullScreen = true
+                    }
+                case .exitFullScreen:
+                    if dy > 70 {
+                        drag = nil
+                        commits += 1
+                        playback.isFullScreen = false
+                    }
+                case nil:
+                    break
+                }
+            }
+            .onEnded { value in
+                defer { drag = nil }
+                guard drag == .minimize else { return }
+                if value.translation.height > 110 || value.predictedEndTranslation.height > 260, let onMinimize {
+                    commits += 1
+                    onMinimize()
+                } else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { pullDown = 0 }
+                }
+            }
+    }
+
+    private func kind(start: CGPoint, down: Bool) -> DragKind? {
+        if isFullScreen {
+            // Clear of the top edge, where a pull is the system's.
+            if start.x < size.width / 2, start.y > size.height * 0.15, app.settings.swipesForBrightness, hasPicture { return .brightness }
+            return down ? .exitFullScreen : nil
+        }
+        if down { return onMinimize == nil ? nil : .minimize }
+        return hasPicture ? .enterFullScreen : nil
+    }
+
+    /// Pinch open to fill the screen (cropping the edges), closed to see the whole picture.
+    private var pinch: some Gesture {
+        MagnifyGesture()
+            .onEnded { value in
+                let fills = value.magnification > 1.12 ? true : value.magnification < 0.9 ? false : fillsScreen
+                guard fills != fillsScreen else { return }
+                withAnimation(.smooth) {
+                    fillsScreen = fills
+                    note = fills ? "Zoomed to Fill" : "Original"
+                }
+                commits += 1
+            }
+    }
+
+    /// YouTube's keys on the Mac: Space and K play/pause, J and L skip 10 s, ← and → skip 5,
+    /// F full screen, M mute.
+    private var keyboardShortcuts: some View {
+        Group {
+            Button("Play/Pause") { playback.togglePlay() }.keyboardShortcut(.space, modifiers: [])
+            Button("Play/Pause") { playback.togglePlay() }.keyboardShortcut("k", modifiers: [])
+            Button("Back 10 Seconds") { playback.skip(by: -10) }.keyboardShortcut("j", modifiers: [])
+            Button("Forward 10 Seconds") { playback.skip(by: 10) }.keyboardShortcut("l", modifiers: [])
+            Button("Back 5 Seconds") { playback.skip(by: -5) }.keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Forward 5 Seconds") { playback.skip(by: 5) }.keyboardShortcut(.rightArrow, modifiers: [])
+            Button("Full Screen") { playback.isFullScreen.toggle() }.keyboardShortcut("f", modifiers: [])
+            Button("Mute") {
+                playback.isMuted.toggle()
+                note = playback.isMuted ? "Muted" : "Sound On"
+            }
+            .keyboardShortcut("m", modifiers: [])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// The screen the app is on, for the brightness lane.
+    private static var screen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }?.screen
     }
 
     private func toggleControls() {
@@ -199,6 +506,137 @@ struct VideoPlayerView: View {
         let activity: Int
         let playing: Bool
         let scrubbing: Bool
+    }
+}
+
+/// A double-tap skip in progress.
+struct Skipping: Equatable {
+    var forward: Bool
+    /// The seconds skipped by this run of taps.
+    var seconds: Int
+    var pulse: Int
+}
+
+/// The skip, drawn over the side that was tapped: an arc of light from that edge with the
+/// arrows and how far it has gone, as YouTube draws it.
+private struct SkipBadge: View {
+    let skipping: Skipping
+    let isFullScreen: Bool
+    let width: CGFloat
+
+    var body: some View {
+        ZStack {
+            Ellipse()
+                .fill(.white.opacity(0.14))
+                .scaleEffect(x: 1.5, y: 1.4, anchor: skipping.forward ? .leading : .trailing)
+                .offset(x: skipping.forward ? 70 : -70)
+            VStack(spacing: 6) {
+                Image(systemName: skipping.forward ? "forward.fill" : "backward.fill")
+                    .font(.system(size: isFullScreen ? 26 : 20, weight: .semibold))
+                    .symbolEffect(.bounce, value: skipping.pulse)
+                Text("\(skipping.seconds) seconds")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(skipping.seconds)))
+            }
+            .offset(x: skipping.forward ? 18 : -18)
+        }
+        .frame(maxHeight: .infinity)
+        .frame(width: max(width, 1))
+        .clipped()
+        .accessibilityElement()
+        .accessibilityLabel(skipping.forward ? "Forward \(skipping.seconds) seconds" : "Back \(skipping.seconds) seconds")
+    }
+}
+
+/// A level being set by a swipe: a slim glass bar filling from the bottom, its symbol under it.
+private struct LevelIndicator: View {
+    let value: CGFloat
+    let systemImage: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Capsule()
+                .fill(.white.opacity(0.25))
+                .frame(width: 6, height: 120)
+                .overlay(alignment: .bottom) {
+                    Capsule().fill(.white).frame(width: 6, height: 120 * value)
+                }
+            Image(systemName: systemImage).font(.subheadline.weight(.semibold))
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .glassEffect(.regular, in: .capsule)
+        .accessibilityElement()
+        .accessibilityLabel(label)
+        .accessibilityValue(Text(value, format: .percent.precision(.fractionLength(0))))
+    }
+}
+
+/// "Resumed at 4:12", with the way back to the start.
+private struct ResumedNote: View {
+    let from: TimeInterval
+    let startOver: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Resumed at \(VideoScrubber.format(from))")
+                .font(.footnote.weight(.medium))
+                .monospacedDigit()
+            Button("Start Over", action: startOver)
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .underline()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .glassEffect(.regular, in: .capsule)
+    }
+}
+
+/// The end of a video with Up Next about to start: what it is, the seconds left, and both ways
+/// out. Compact inline on the iPhone, where the frame is short.
+private struct UpNextCountdown: View {
+    let next: Video
+    let seconds: Int
+    let isCompact: Bool
+    let cancel: () -> Void
+    let play: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55)
+            HStack(alignment: .center, spacing: 14) {
+                if !isCompact {
+                    VideoThumbnail(video: next, cornerRadius: 10, width: 180).frame(width: 180)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Up Next in \(seconds)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .monospacedDigit()
+                        .contentTransition(.numericText(countsDown: true))
+                    Text(next.title)
+                        .font(isCompact ? .subheadline.weight(.semibold) : .headline)
+                        .lineLimit(2)
+                    if let channel = next.channel?.name {
+                        Text(channel).font(.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                    }
+                    HStack(spacing: 8) {
+                        Button("Cancel", action: cancel).buttonStyle(.glass)
+                        Button("Play Now", action: play).buttonStyle(.glassProminent)
+                    }
+                    .controlSize(isCompact ? .small : .regular)
+                    .padding(.top, 6)
+                }
+                .frame(maxWidth: 320, alignment: .leading)
+            }
+            .padding(.horizontal, 20)
+            .foregroundStyle(.white)
+        }
+        .animation(.smooth, value: seconds)
     }
 }
 
@@ -291,7 +729,7 @@ private struct VideoSettingsMenu: View {
 
 /// Where the video is: drag anywhere on it to move through, the bar thickening under the finger;
 /// the time moves with it and the video jumps when it's let go.
-private struct VideoScrubber: View {
+struct VideoScrubber: View {
     let time: TimeInterval
     let duration: TimeInterval
     @Binding var isScrubbing: Bool
@@ -351,9 +789,11 @@ private struct VideoScrubber: View {
 
 /// The picture: an AVPlayerLayer. The surface in front drives picture in picture, so it can
 /// start from full screen as from the page.
-private struct VideoSurface: UIViewRepresentable {
+struct VideoSurface: UIViewRepresentable {
     let player: AVPlayer
     let drivesPictureInPicture: Bool
+    /// Cropped to fill the frame rather than fitted inside it.
+    var fills = false
     let attach: (AVPlayerLayer) -> Void
 
     func makeUIView(context: Context) -> PlayerLayerView {
@@ -366,11 +806,18 @@ private struct VideoSurface: UIViewRepresentable {
 
     func updateUIView(_ view: PlayerLayerView, context: Context) {
         if view.playerLayer.player !== player { view.playerLayer.player = player }
+        let gravity: AVLayerVideoGravity = fills ? .resizeAspectFill : .resizeAspect
+        if view.playerLayer.videoGravity != gravity {
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.3)
+            view.playerLayer.videoGravity = gravity
+            CATransaction.commit()
+        }
         if drivesPictureInPicture { attach(view.playerLayer) }
     }
 }
 
-private final class PlayerLayerView: UIView {
+final class PlayerLayerView: UIView {
     override static var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }

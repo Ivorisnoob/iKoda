@@ -35,6 +35,8 @@ public final class Library {
     /// Videos watched, most recent first, one entry each: Continue Watching, and what a
     /// signed-out video Home is built from.
     public private(set) var watched: [Video] = []
+    /// How far each watched video got, by id: the bars on its frame and where it starts again.
+    public private(set) var videoProgress: [String: VideoProgress] = [:]
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
@@ -128,6 +130,7 @@ public final class Library {
         recent = []
         history = []
         watched = []
+        videoProgress = [:]
         save()
         saveHistory()
     }
@@ -189,12 +192,25 @@ public final class Library {
     public func recordWatch(_ video: Video) {
         watched.removeAll { $0.id == video.id }
         watched.insert(video, at: 0)
-        if watched.count > Self.watchedLimit { watched.removeLast(watched.count - Self.watchedLimit) }
+        if watched.count > Self.watchedLimit {
+            for dropped in watched[Self.watchedLimit...] { videoProgress[dropped.id] = nil }
+            watched.removeLast(watched.count - Self.watchedLimit)
+        }
         save()
     }
 
     public func removeWatched(_ id: String) {
         watched.removeAll { $0.id == id }
+        videoProgress[id] = nil
+        save()
+    }
+
+    /// Where a watched video got to. Only for one in `watched`: the bar belongs to its entry there.
+    public func setProgress(_ position: TimeInterval, of duration: TimeInterval, for videoId: String) {
+        guard duration > 0, position.isFinite, watched.contains(where: { $0.id == videoId }) else { return }
+        let progress = VideoProgress(position: min(max(0, position), duration), duration: duration)
+        guard videoProgress[videoId] != progress else { return }
+        videoProgress[videoId] = progress
         save()
     }
 
@@ -431,6 +447,7 @@ public final class Library {
         var notInterested = NotInterested()
         var taste = TasteProfile()
         var watched: [Video] = []
+        var videoProgress: [String: VideoProgress] = [:]
         var androidPlaysImportedThrough: Date?
 
         init() {}
@@ -451,6 +468,7 @@ public final class Library {
             notInterested = try c.decodeIfPresent(NotInterested.self, forKey: .notInterested) ?? NotInterested()
             taste = try c.decodeIfPresent(TasteProfile.self, forKey: .taste) ?? TasteProfile()
             watched = try c.decodeIfPresent([Video].self, forKey: .watched) ?? []
+            videoProgress = try c.decodeIfPresent([String: VideoProgress].self, forKey: .videoProgress) ?? [:]
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
         }
     }
@@ -480,6 +498,7 @@ public final class Library {
         notInterested = snapshot.notInterested
         taste = snapshot.taste
         watched = snapshot.watched
+        videoProgress = snapshot.videoProgress
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
     }
 
@@ -553,6 +572,7 @@ public final class Library {
         snapshot.notInterested = notInterested
         snapshot.taste = taste
         snapshot.watched = watched
+        snapshot.videoProgress = videoProgress
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
         return snapshot
     }
@@ -796,5 +816,24 @@ public struct SongStats: Hashable, Codable, Sendable {
         self.song = song
         self.firstPlayed = firstPlayed
         lastPlayed = firstPlayed
+    }
+}
+
+/// How far into a video the listener got.
+public struct VideoProgress: Codable, Sendable, Hashable {
+    public var position: TimeInterval
+    public var duration: TimeInterval
+
+    public init(position: TimeInterval, duration: TimeInterval) {
+        self.position = position
+        self.duration = duration
+    }
+
+    public var fraction: Double { duration > 0 ? min(1, max(0, position / duration)) : 0 }
+
+    /// Where the video starts again: here, unless it had barely begun or was all but over, when
+    /// it starts from the top, as YouTube does.
+    public var resumeAt: TimeInterval? {
+        position >= 10 && position < duration - 20 && fraction < 0.95 ? position : nil
     }
 }

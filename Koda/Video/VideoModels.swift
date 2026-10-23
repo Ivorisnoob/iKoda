@@ -160,7 +160,6 @@ final class WatchModel {
     let videoId: String
     private(set) var state: LoadState<WatchPage> = .loading
     private(set) var isLoadingMore = false
-    var isSubscribed = false
 
     init(videoId: String) {
         self.videoId = videoId
@@ -168,9 +167,7 @@ final class WatchModel {
 
     func load(music: YouTubeMusic) async {
         do {
-            let page = try await music.watchPage(videoId)
-            isSubscribed = page.isSubscribed
-            state = .loaded(page)
+            state = .loaded(try await music.watchPage(videoId))
         } catch {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
@@ -188,13 +185,16 @@ final class WatchModel {
     }
 }
 
+/// A channel: its header, the open tab (Videos or Live) in the chosen order, and its About panel.
 @MainActor
 @Observable
 final class ChannelModel {
     let channelId: String
     private(set) var state: LoadState<ChannelPage> = .loading
     private(set) var isLoadingMore = false
-    var isSubscribed = false
+    /// A tab or an order being loaded: the list dims rather than emptying.
+    private(set) var isSwitching = false
+    private(set) var about: LoadState<ChannelAbout>?
 
     init(channelId: String) {
         self.channelId = channelId
@@ -202,16 +202,48 @@ final class ChannelModel {
 
     func load(music: YouTubeMusic) async {
         do {
-            let page = try await music.channel(channelId)
-            isSubscribed = page.isSubscribed
-            state = .loaded(page)
+            state = .loaded(try await music.channel(channelId, tab: state.value.flatMap { page in page.tabs.first { $0.kind == page.tab } }))
         } catch {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
     }
 
+    /// Another tab, keeping the header.
+    func open(_ tab: ChannelTab, music: YouTubeMusic) async {
+        guard var page = state.value, page.tab != tab.kind, !isSwitching else { return }
+        isSwitching = true
+        defer { isSwitching = false }
+        guard let loaded = try? await music.channel(channelId, tab: tab) else { return }
+        page.tab = loaded.tab
+        page.sorts = loaded.sorts
+        page.videos = loaded.videos
+        state = .loaded(page)
+    }
+
+    /// The open tab in another order.
+    func sort(by sort: ChannelSort, music: YouTubeMusic) async {
+        guard var page = state.value, !sort.isSelected, !isSwitching else { return }
+        isSwitching = true
+        defer { isSwitching = false }
+        guard let sorted = try? await music.channelVideos(sortedBy: sort, channel: page.channel.ref) else { return }
+        page.videos = sorted.videos
+        // The reload sends the chips again with this one chosen; if not, mark it here.
+        page.sorts = sorted.sorts.isEmpty ? page.sorts.map { var s = $0; s.isSelected = $0.id == sort.id; return s } : sorted.sorts
+        state = .loaded(page)
+    }
+
+    func loadAbout(music: YouTubeMusic) async {
+        guard about?.value == nil, let token = state.value?.aboutToken else { return }
+        about = .loading
+        do {
+            about = .loaded(try await music.channelAbout(token))
+        } catch {
+            about = .failed(error.friendlyMessage)
+        }
+    }
+
     func loadMore(music: YouTubeMusic) async {
-        guard !isLoadingMore, var page = state.value, let token = page.videos.continuation else { return }
+        guard !isLoadingMore, !isSwitching, var page = state.value, let token = page.videos.continuation else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
         guard let more = try? await music.moreVideos(token, from: .browse) else { return }
@@ -224,5 +256,41 @@ final class ChannelModel {
         }
         page.videos.continuation = more.continuation
         state = .loaded(page)
+    }
+}
+
+/// A video's comments, a page at a time.
+@MainActor
+@Observable
+final class CommentsModel {
+    private(set) var state: LoadState<[VideoComment]> = .loading
+    private(set) var isLoadingMore = false
+    @ObservationIgnored private var first: String
+    @ObservationIgnored private var continuation: String?
+
+    init(token: String) {
+        first = token
+    }
+
+    var canLoadMore: Bool { continuation != nil }
+
+    func load(music: YouTubeMusic) async {
+        do {
+            let page = try await music.comments(first)
+            continuation = page.continuation
+            state = .loaded(page.comments)
+        } catch {
+            if state.value == nil { state = .failed(error.friendlyMessage) }
+        }
+    }
+
+    func loadMore(music: YouTubeMusic) async {
+        guard !isLoadingMore, let token = continuation, let current = state.value else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        guard let page = try? await music.comments(token) else { return }
+        continuation = page.continuation
+        let known = Set(current.map(\.id))
+        state = .loaded(current + page.comments.filter { !known.contains($0.id) })
     }
 }

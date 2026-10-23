@@ -55,6 +55,22 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(isOn: $settings.autoplaysVideos) {
+                        SettingLabel("Autoplay Next Video", systemImage: "play.square.stack.fill", tint: .red)
+                    }
+                    Toggle(isOn: $settings.holdsToSpeedUp) {
+                        SettingLabel("Hold to Speed Up", systemImage: "forward.fill", tint: .blue)
+                    }
+                    Toggle(isOn: $settings.swipesForBrightness) {
+                        SettingLabel("Swipe for Brightness", systemImage: "sun.max.fill", tint: .yellow)
+                    }
+                } header: {
+                    Text("Videos")
+                } footer: {
+                    Text("Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
+                }
+
+                Section {
                     NavigationLink {
                         LyricsSettingsView()
                     } label: {

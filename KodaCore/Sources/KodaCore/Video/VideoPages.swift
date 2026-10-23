@@ -36,24 +36,90 @@ enum VideoPages {
         let title = primary["title"].text
         guard !title.isEmpty else { return nil }
         let owner = secondary["owner"]["videoOwnerRenderer"]
+        let channelId = owner["navigationEndpoint"]["browseEndpoint"]["browseId"].nonEmpty
         let channel = owner.exists
-            ? ChannelRef(id: owner["navigationEndpoint"]["browseEndpoint"]["browseId"].nonEmpty, name: owner["title"].text,
-                         avatar: owner["thumbnail"].bestThumbnail)
+            ? ChannelRef(id: channelId, name: owner["title"].text, avatar: owner["thumbnail"].bestThumbnail)
             : nil
         let counts = primary["viewCount"]["videoViewCountRenderer"]
         let isLive = counts["isLive"].bool == true
         let video = Video(id: id, title: title, channel: channel, views: counts["shortViewCount"].text.nonEmptyString,
                           published: primary["relativeDateText"].text.nonEmptyString, isLive: isLive)
         let related = root.first("twoColumnWatchNextResults")["secondaryResults"]["secondaryResults"]["results"]
+        let comments = root.objects("engagementPanelSectionListRenderer")
+            .first { $0["panelIdentifier"].string == "engagement-panel-comments-section" } ?? .null
         return WatchPage(
             video: video,
             viewCount: counts["viewCount"].text.nonEmptyString,
             date: primary["dateText"].text.nonEmptyString,
             description: secondary["attributedDescription"]["content"].string ?? "",
             subscribers: owner["subscriberCountText"].text.nonEmptyString,
-            isSubscribed: root.first("subscribeButtonRenderer")["subscribed"].bool ?? false,
+            isSubscribed: isSubscribed(root, to: channelId),
+            likeCounts: likeCounts(primary),
+            likeStatus: likeStatus(root, videoId: id),
+            commentCount: comments.first("engagementPanelTitleHeaderRenderer")["contextualInfo"].text.nonEmptyString,
+            commentsToken: commentsToken(root),
+            autoplayId: root.first("autoplayVideo")["watchEndpoint"]["videoId"].nonEmpty,
             related: page(related)
         )
+    }
+
+    /// The count on the video's own like button for each rating. A creator hiding it leaves the
+    /// button saying "Like", which isn't a count.
+    static func likeCounts(_ primary: JSON) -> [LikeStatus: String] {
+        let entity = primary.first("likeCountEntity")
+        var counts: [LikeStatus: String] = [:]
+        for (status, key) in [(LikeStatus.indifferent, "likeCountIfIndifferent"), (.like, "likeCountIfLiked"), (.dislike, "likeCountIfDisliked")] {
+            if let count = entity[key]["content"].nonEmpty, count.contains(where: \.isNumber) { counts[status] = count }
+        }
+        return counts
+    }
+
+    /// The response draws a like button in several places (under the video, in full screen),
+    /// each with its own status entity: the one keyed to this video is the video's.
+    static func likeStatus(_ root: JSON, videoId: String) -> LikeStatus {
+        let entities = root.objects("likeStatusEntity")
+        let own = entities.first { entityKey($0["key"].string, names: videoId) } ?? entities.first
+        return switch own?["likeStatus"].string {
+        case "LIKE": .like
+        case "DISLIKE": .dislike
+        default: .indifferent
+        }
+    }
+
+    /// Whether the account follows `channelId`. The current Subscribe button keeps its state in
+    /// a `subscriptionStateEntity` (frameworkUpdates), the older one in `subscribeButtonRenderer`;
+    /// both are live. A page draws buttons for other channels too (featured ones, collaborators),
+    /// so only a state naming this channel counts, and none is nil rather than false.
+    static func isSubscribed(_ root: JSON, to channelId: String?) -> Bool? {
+        guard let channelId else { return nil }
+        if let entity = root.objects("subscriptionStateEntity").first(where: { entityKey($0["key"].string, names: channelId) }),
+           let subscribed = entity["subscribed"].bool {
+            return subscribed
+        }
+        if let button = root.objects("subscribeButtonRenderer").first(where: { $0["channelId"].string == channelId }),
+           let subscribed = button["subscribed"].bool {
+            return subscribed
+        }
+        return nil
+    }
+
+    /// A framework entity's key is URL-encoded base64 with the id of what it describes inside
+    /// it in plain ASCII (a channel's for a subscription, a video's for a like) [verified
+    /// October 2026, Koda for Android].
+    static func entityKey(_ key: String?, names id: String) -> Bool {
+        guard let key = key?.removingPercentEncoding, !id.isEmpty else { return false }
+        var base64 = key.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64 += "=" }
+        guard let data = Data(base64Encoded: base64), let text = String(data: data, encoding: .isoLatin1) else { return false }
+        return text.contains(id)
+    }
+
+    /// The comments section's token. It holds two; the longer opens the full list.
+    static func commentsToken(_ root: JSON) -> String? {
+        root.objects("itemSectionRenderer")
+            .filter { $0["sectionIdentifier"].string == "comment-item-section" }
+            .flatMap { $0.objects("continuationCommand").compactMap { $0["token"].nonEmpty } }
+            .max { $0.count < $1.count }
     }
 
     static func channel(_ root: JSON, id: String) -> ChannelPage? {
@@ -68,16 +134,113 @@ enum VideoPages {
         let videoCount = parts.first { $0.localizedCaseInsensitiveContains("video") }
         let summary = ChannelSummary(id: id, name: name, handle: handle, subscribers: subscribers,
                                      avatar: bestSource(header.first("decoratedAvatarViewModel")))
-        // The tab that is open is the one asked for (Videos); its grid is the page's videos.
-        let tab = root.objects("tabRenderer").first { $0["selected"].bool == true } ?? root
+        // The tab that is open is the one asked for; its grid is the page's videos.
+        let tabRenderers = root.objects("tabRenderer")
+        let open = tabRenderers.first { $0["selected"].bool == true } ?? root
+        let tabs = tabRenderers.compactMap(tab)
+        let preview = header.first("descriptionPreviewViewModel")
         return ChannelPage(
             channel: summary,
             banner: bestSource(header.first("imageBannerViewModel")),
-            description: header.first("descriptionPreviewViewModel")["description"]["content"].nonEmpty,
+            description: preview["description"]["content"].nonEmpty,
             videoCount: videoCount,
-            isSubscribed: root.first("subscribeButtonRenderer")["subscribed"].bool ?? false,
-            videos: withChannel(feed(tab), summary.ref)
+            isSubscribed: isSubscribed(root, to: id),
+            // The tick is an image run on the title, named by a client resource, not a label.
+            isVerified: header["title"].strings("imageName").contains { $0.hasPrefix("CHECK_CIRCLE") },
+            tabs: tabs,
+            tab: tab(open)?.kind ?? .videos,
+            sorts: sorts(open),
+            aboutToken: preview.first("continuationCommand")["token"].nonEmpty,
+            videos: withChannel(feed(open), summary.ref)
         )
+    }
+
+    /// A tab Koda shows; Home, Shorts, Playlists, Posts and the rest aren't.
+    static func tab(_ renderer: JSON) -> ChannelTab? {
+        guard let params = renderer["endpoint"]["browseEndpoint"]["params"].nonEmpty?.removingPercentEncoding else { return nil }
+        let kind: ChannelTabKind? = switch renderer["title"].string {
+        case "Videos": .videos
+        case "Live": .live
+        default: nil
+        }
+        return kind.map { ChannelTab(kind: $0, params: params) }
+    }
+
+    /// Latest, Popular and Oldest: chips over the tab's grid, each a continuation that reloads it.
+    static func sorts(_ tab: JSON) -> [ChannelSort] {
+        tab.first("chipBarViewModel")["chips"].array.compactMap { chip in
+            let chip = chip["chipViewModel"]
+            guard let title = chip["text"].nonEmpty, let token = chip["tapCommand"].first("continuationCommand")["token"].nonEmpty else { return nil }
+            return ChannelSort(title: title, token: token, isSelected: chip["selected"].bool == true)
+        }
+    }
+
+    /// A sort chip's answer: the grid's header (the chips, now with this one selected) and its
+    /// body, each in a `reloadContinuationItemsCommand`.
+    static func reloaded(_ root: JSON) -> (videos: VideoPage, sorts: [ChannelSort]) {
+        var videos = VideoPage()
+        var sorts: [ChannelSort] = []
+        for action in root["onResponseReceivedActions"].array {
+            let command = action["reloadContinuationItemsCommand"]
+            switch command["slot"].string {
+            case "RELOAD_CONTINUATION_SLOT_BODY": videos = page(command["continuationItems"])
+            case "RELOAD_CONTINUATION_SLOT_HEADER": sorts = self.sorts(command)
+            default: continue
+            }
+        }
+        return (videos, sorts)
+    }
+
+    /// The About panel, reached by the header description's continuation.
+    static func about(_ root: JSON) -> ChannelAbout? {
+        let about = root.first("aboutChannelViewModel")
+        guard about.exists else { return nil }
+        let links = about["links"].array.compactMap { item -> ChannelLink? in
+            let link = item["channelExternalLinkViewModel"]
+            guard let label = link["link"]["content"].nonEmpty,
+                  let url = unwrapRedirect(link["link"].first("urlEndpoint")["url"].string) ?? URL(string: "https://\(label)") else { return nil }
+            return ChannelLink(title: link["title"]["content"].nonEmpty ?? label, label: label, url: url)
+        }
+        return ChannelAbout(description: about["description"].nonEmpty, country: about["country"].nonEmpty,
+                            subscribers: about["subscriberCountText"].nonEmpty, views: about["viewCountText"].nonEmpty,
+                            joined: about["joinedDateText"]["content"].nonEmpty, videoCount: about["videoCountText"].nonEmpty,
+                            links: links)
+    }
+
+    /// YouTube sends outside links through `youtube.com/redirect?q=<the link>`.
+    static func unwrapRedirect(_ string: String?) -> URL? {
+        guard let string, let components = URLComponents(string: string) else { return nil }
+        if components.path == "/redirect", let target = components.queryItems?.first(where: { $0.name == "q" })?.value {
+            return URL(string: target)
+        }
+        return components.scheme?.hasPrefix("http") == true ? components.url : nil
+    }
+
+    /// A page of comments: `commentEntityPayload`s in the framework updates, in order (replies
+    /// left out), and the token at the end of the list for the next page.
+    static func comments(_ root: JSON) -> CommentsPage {
+        let comments = root.objects("commentEntityPayload").compactMap { payload -> VideoComment? in
+            let properties = payload["properties"]
+            guard let id = properties["commentId"].nonEmpty, (properties["replyLevel"].int ?? 0) == 0 else { return nil }
+            let author = payload["author"]
+            let toolbar = payload["toolbar"]
+            return VideoComment(id: id, author: author["displayName"].string ?? "", authorChannelId: author["channelId"].nonEmpty,
+                                avatar: author["avatarThumbnailUrl"].string.flatMap(URL.imageURL),
+                                text: properties["content"]["content"].string ?? "", published: properties["publishedTime"].string ?? "",
+                                likes: toolbar["likeCountNotliked"].string ?? "", replies: toolbar["replyCount"].string ?? "",
+                                isCreator: author["isCreator"].bool == true, isVerified: author["isVerified"].bool == true)
+        }
+        var token: String?
+        for key in ["onResponseReceivedEndpoints", "onResponseReceivedActions"] {
+            for action in root[key].array {
+                let items = action["reloadContinuationItemsCommand"]["continuationItems"].exists
+                    ? action["reloadContinuationItemsCommand"]["continuationItems"]
+                    : action["appendContinuationItemsAction"]["continuationItems"]
+                if let found = Self.token(items) { token = found }
+            }
+        }
+        var seen = Set<String>()
+        return CommentsPage(comments: comments.filter { seen.insert($0.id).inserted }, continuation: token)
     }
 
     /// A channel's own rows leave the channel out; it's the page's.

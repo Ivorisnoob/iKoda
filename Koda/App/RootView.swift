@@ -55,13 +55,13 @@ struct RootView: View {
                 Tab("Home", systemImage: "play.rectangle.fill", value: AppTab.videos) {
                     NavigationStack(path: $videosPath) {
                         // Each profile's own feed and watched list.
-                        VideoHomeView(kind: .home).id(model.roster.activeID).routeDestinations()
+                        VideoHomeView(feed: model.videoFeed(.home)).id(model.roster.activeID).routeDestinations()
                     }
                 }
                 if model.roster.active.isSignedIn {
                     Tab("Subscriptions", systemImage: "person.2.crop.square.stack.fill", value: AppTab.subscriptions) {
                         NavigationStack(path: $subscriptionsPath) {
-                            VideoHomeView(kind: .subscriptions).id(model.roster.activeID).routeDestinations()
+                            VideoHomeView(feed: model.videoFeed(.subscriptions)).id(model.roster.activeID).routeDestinations()
                         }
                     }
                 }

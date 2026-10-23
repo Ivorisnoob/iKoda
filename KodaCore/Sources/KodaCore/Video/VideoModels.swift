@@ -93,6 +93,23 @@ public struct VideoSearchResults: Sendable {
     }
 }
 
+/// A titled row of videos on a topic page.
+public struct VideoShelf: Sendable, Identifiable {
+    public var title: String
+    public var videos: [Video]
+    public var id: String { title }
+
+    public init(title: String, videos: [Video]) {
+        self.title = title
+        self.videos = videos
+    }
+}
+
+public struct VideoPlaylistPage: Sendable {
+    public var title: String
+    public var videos: VideoPage
+}
+
 /// The account's rating of a video, as YouTube's like and dislike buttons draw it.
 public enum LikeStatus: String, Sendable, Codable {
     case like, dislike, indifferent

@@ -34,21 +34,55 @@ extension YouTubeMusic {
         return VideoPages.continuation(try await api.web(endpoint, ["continuation": continuation]))
     }
 
-    /// Everything under the player: the video's details, its channel and Up Next.
+    /// Everything under the player: the video's details, its channel and Up Next. Kept ten
+    /// minutes per profile: going back to a video, or opening one a signed-out Home was built
+    /// from, asks YouTube nothing. (Ratings and subscriptions made since are the app's to apply.)
     public func watchPage(_ videoId: String) async throws -> WatchPage {
-        guard let page = VideoPages.watch(try await api.web("next", ["videoId": videoId]), id: videoId) else {
+        try await page("watch|\(videoId)") { [api] in
+            guard let page = VideoPages.watch(try await api.web("next", ["videoId": videoId]), id: videoId) else {
+                throw MusicError.badResponse(200)
+            }
+            return page
+        }
+    }
+
+    /// A channel's header and one of its tabs: the Videos tab, newest first, unless `tab` (from
+    /// an earlier page's `tabs`) says otherwise.
+    public func channel(_ channelId: String, tab: ChannelTab? = nil, fresh: Bool = false) async throws -> ChannelPage {
+        // The Videos tab's params [verified October 2026].
+        let params = tab?.params ?? "EgZ2aWRlb3PyBgQKAjoA"
+        let load: @Sendable () async throws -> ChannelPage = { [api] in
+            let root = try await api.web("browse", ["browseId": channelId, "params": params])
+            guard let page = VideoPages.channel(root, id: channelId) else { throw MusicError.badResponse(200) }
+            return page
+        }
+        // Pull to refresh asks again; otherwise a channel seen in the last ten minutes is reused.
+        return fresh ? try await load() : try await page("channel|\(channelId)|\(params)", load: load)
+    }
+
+    /// A topic page's shelves: Music, Live, News, Sports, Learning (`ExploreTopic`).
+    public func explore(_ browseId: String) async throws -> [VideoShelf] {
+        try await page("explore|\(browseId)") { [api] in
+            let shelves = VideoPages.shelves(try await api.web("browse", ["browseId": browseId]))
+            guard !shelves.isEmpty else { throw MusicError.badResponse(200) }
+            return shelves
+        }
+    }
+
+    /// A playlist of videos: `WL` (Watch Later) and `LL` (Liked videos) are the account's own and
+    /// need it signed in. Never cached: they change as the listener uses them.
+    public func videoPlaylist(_ playlistId: String) async throws -> VideoPlaylistPage {
+        let signing: InnerTube.Signing = ["WL", "LL"].contains(playlistId) ? .required : .ifSignedIn
+        guard let page = VideoPages.playlist(try await api.web("browse", ["browseId": "VL" + playlistId], signing: signing)) else {
             throw MusicError.badResponse(200)
         }
         return page
     }
 
-    /// A channel's header and one of its tabs: the Videos tab, newest first, unless `tab` (from
-    /// an earlier page's `tabs`) says otherwise.
-    public func channel(_ channelId: String, tab: ChannelTab? = nil) async throws -> ChannelPage {
-        // The Videos tab's params [verified October 2026].
-        let root = try await api.web("browse", ["browseId": channelId, "params": tab?.params ?? "EgZ2aWRlb3PyBgQKAjoA"])
-        guard let page = VideoPages.channel(root, id: channelId) else { throw MusicError.badResponse(200) }
-        return page
+    /// The channels the signed-in account subscribes to, from YouTube's sidebar (`guide`): one
+    /// call, kept ten minutes.
+    public func subscribedChannels() async throws -> [ChannelRef] {
+        try await page("guide") { [api] in VideoPages.subscriptions(try await api.web("guide", [:], signing: .required)) }
     }
 
     /// A channel tab's videos in another order (a `ChannelSort`), and the orders as now chosen.

@@ -69,6 +69,12 @@ final class AppModel {
     /// Channels subscribed to or left from Koda this run, by id: newer than any page loaded
     /// before the change, so every page shows the same answer.
     var subscriptions: [String: Bool] = [:]
+    /// The channels the active account subscribes to (the Mac's sidebar, the iPhone's Library);
+    /// nil until asked for, empty signed out.
+    var subscribedChannels: [ChannelRef]?
+    /// The active profile's video feeds, kept while the app runs: switching modes or sidebar
+    /// places shows them at once instead of asking YouTube again.
+    @ObservationIgnored private var videoFeeds: [VideoFeedModel.Kind: VideoFeedModel] = [:]
     /// Videos rated from Koda this run, by id, for the same reason.
     var videoRatings: [String: LikeStatus] = [:]
     /// The video being reported to the account's YouTube history, and whose account it is.
@@ -117,8 +123,7 @@ final class AppModel {
             if settings.savesListeningHistory { library.setProgress(position, of: duration, for: id) }
         }
         videos.autoplays = { settings.autoplaysVideos }
-        videos.restoreQuality(settings.videoQuality)
-        videos.onQualityChange = { lines in settings.videoQuality = lines }
+        videos.defaultQuality = { settings.videoQuality }
         videos.pauseMusic = { [player] in
             if player.wantsToPlay { player.togglePlayPause() }
         }
@@ -176,6 +181,7 @@ final class AppModel {
     func switchProfile(to id: UUID) {
         guard id != roster.activeID, let profile = roster.profile(id) else { return }
         let leaving = roster.active
+        forgetVideoState()
         library.open(directory: roster.folder(for: id))
         home = HomeModel(profile: id)
         roster.setActive(id)
@@ -192,9 +198,35 @@ final class AppModel {
             next = roster.profile(nextID)
         }
         guard deleted else { return }
+        forgetVideoState()
         Snapshot.remove("home-\(id.uuidString)")
         forgetAccount(of: id)
         if let next { moveSession(from: profile, to: next) }
+    }
+
+    /// A video feed, made once per profile and kept.
+    func videoFeed(_ kind: VideoFeedModel.Kind) -> VideoFeedModel {
+        if let feed = videoFeeds[kind] { return feed }
+        let feed = VideoFeedModel(kind: kind)
+        videoFeeds[kind] = feed
+        return feed
+    }
+
+    /// The channels the account subscribes to, from YouTube's sidebar; none signed out.
+    func loadSubscribedChannels() async {
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired else { return subscribedChannels = [] }
+        await accountWork?.value
+        let channels = (try? await music.subscribedChannels()) ?? subscribedChannels ?? []
+        if roster.activeID == profile.id { subscribedChannels = channels }
+    }
+
+    /// Another profile's feeds, subscriptions and ratings aren't this one's.
+    private func forgetVideoState() {
+        videoFeeds = [:]
+        subscribedChannels = nil
+        subscriptions = [:]
+        videoRatings = [:]
     }
 
     /// Open a page from outside a navigation stack: closes Now Playing and pushes it on the current tab.

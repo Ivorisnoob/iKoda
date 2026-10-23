@@ -15,6 +15,10 @@ final class VideoFeedModel {
     let kind: Kind
     private(set) var state: LoadState<[Video]> = .loading
     private(set) var isLoadingMore = false
+    @ObservationIgnored private var loadedAt: Date?
+
+    /// Never loaded, or loaded over half an hour ago: what YouTube recommends has moved on.
+    var needsLoad: Bool { loadedAt.map { Date().timeIntervalSince($0) > 30 * 60 } ?? true }
     @ObservationIgnored private var continuation: String?
     /// Signed out, Home pages through the watched list six seeds at a time.
     @ObservationIgnored private var seedOffset = 0
@@ -30,6 +34,7 @@ final class VideoFeedModel {
         if state.value == nil { state = .loading }
         continuation = nil
         seedOffset = 0
+        loadedAt = Date()
         do {
             switch kind {
             case .subscriptions:
@@ -49,6 +54,7 @@ final class VideoFeedModel {
                 state = .loaded(built)
             }
         } catch {
+            loadedAt = nil
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
     }
@@ -64,7 +70,7 @@ final class VideoFeedModel {
             continuation = page?.continuation
             more = page?.videos ?? []
         } else if kind == .home, !signedInFeed {
-            seedOffset += 6
+            seedOffset += Self.seedsPerPage
             more = await relatedToWatched(music: music, library: library)
         }
         let known = Set(current.map(\.id))
@@ -90,10 +96,14 @@ final class VideoFeedModel {
         return Self.unique(TasteModel.interleave(lists))
     }
 
-    /// Up Next of six watched videos, taken in turn, minus what's been watched.
+    /// Watch pages asked for per page of the built Home. Each is a request (cached ten minutes,
+    /// so opening one of those videos costs nothing more); four give a page of about sixty.
+    private static let seedsPerPage = 4
+
+    /// Up Next of a few watched videos, taken in turn, minus what's been watched.
     private func relatedToWatched(music: YouTubeMusic, library: Library) async -> [Video] {
         let watched = library.watched
-        let seeds = Array(watched.dropFirst(seedOffset).prefix(6))
+        let seeds = Array(watched.dropFirst(seedOffset).prefix(Self.seedsPerPage))
         guard !seeds.isEmpty else { return [] }
         let lists = await withTaskGroup(of: (Int, [Video]).self) { group in
             for (index, seed) in seeds.enumerated() {
@@ -200,9 +210,10 @@ final class ChannelModel {
         self.channelId = channelId
     }
 
-    func load(music: YouTubeMusic) async {
+    func load(music: YouTubeMusic, fresh: Bool = false) async {
         do {
-            state = .loaded(try await music.channel(channelId, tab: state.value.flatMap { page in page.tabs.first { $0.kind == page.tab } }))
+            let tab = state.value.flatMap { page in page.tabs.first { $0.kind == page.tab } }
+            state = .loaded(try await music.channel(channelId, tab: tab, fresh: fresh))
         } catch {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
@@ -265,18 +276,26 @@ final class ChannelModel {
 final class CommentsModel {
     private(set) var state: LoadState<[VideoComment]> = .loading
     private(set) var isLoadingMore = false
-    @ObservationIgnored private var first: String
+    let token: String
     @ObservationIgnored private var continuation: String?
+    @ObservationIgnored private var started = false
 
     init(token: String) {
-        first = token
+        self.token = token
     }
 
     var canLoadMore: Bool { continuation != nil }
 
+    /// The first page, once: the card under the video and the sheet share it.
+    func loadIfNeeded(music: YouTubeMusic) async {
+        guard !started else { return }
+        await load(music: music)
+    }
+
     func load(music: YouTubeMusic) async {
+        started = true
         do {
-            let page = try await music.comments(first)
+            let page = try await music.comments(token)
             continuation = page.continuation
             state = .loaded(page.comments)
         } catch {

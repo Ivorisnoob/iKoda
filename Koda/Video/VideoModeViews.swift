@@ -64,17 +64,14 @@ struct VideoSearchView: View {
         ScrollView {
             if search.submitted != nil {
                 VideoSearchResultsView(model: search)
-            } else if !library.watched.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
+            } else {
+                VStack(alignment: .leading, spacing: 26) {
+                    ExploreGrid()
+                    if !library.watched.isEmpty {
+                        RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
+                    }
                 }
                 .padding(.vertical, 8)
-            }
-        }
-        .overlay {
-            if search.submitted == nil, library.watched.isEmpty {
-                ContentUnavailableView("Search YouTube", systemImage: "magnifyingglass",
-                                       description: Text("Find videos and channels."))
             }
         }
         .navigationTitle("Search")
@@ -84,10 +81,14 @@ struct VideoSearchView: View {
     }
 }
 
-/// Video mode's Library: what was watched, most recent first, to go back to or remove.
+/// Video mode's Library: Watch Later, Liked Videos and the channels followed (signed in), then
+/// what was watched, most recent first, to go back to or remove.
 struct VideoLibraryView: View {
+    @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @State private var confirmsClear = false
+
+    private var signedIn: Bool { !Platform.isMac && app.roster.active.isSignedIn && !app.roster.active.isExpired }
 
     var body: some View {
         Group {
@@ -106,6 +107,21 @@ struct VideoLibraryView: View {
                 }
             } else {
                 List {
+                    if signedIn {
+                        Section {
+                            NavigationLink(value: Route.videoPlaylist(id: "WL", title: "Watch Later")) {
+                                Label("Watch Later", systemImage: "clock")
+                            }
+                            NavigationLink(value: Route.videoPlaylist(id: "LL", title: "Liked Videos")) {
+                                Label("Liked Videos", systemImage: "hand.thumbsup")
+                            }
+                            NavigationLink(value: Route.subscribedChannels) {
+                                Label("Channels", systemImage: "person.2")
+                            }
+                        }
+                        .font(.body.weight(.medium))
+                    }
+                    Section {
                     ForEach(library.watched) { video in
                         NavigationLink(value: Route.video(video)) { VideoRow(video: video) }
                             .swipeActions {
@@ -114,9 +130,12 @@ struct VideoLibraryView: View {
                                 }
                             }
                     }
+                    } header: {
+                        if signedIn, !library.watched.isEmpty { Text("History") }
+                    }
                 }
                 .listStyle(.plain)
-                .overlay { if library.watched.isEmpty { empty } }
+                .overlay { if library.watched.isEmpty, !signedIn { empty } }
                 .toolbar {
                     if !library.watched.isEmpty {
                         Button("Clear", role: .destructive) { confirmsClear = true }
@@ -137,5 +156,28 @@ struct VideoLibraryView: View {
     private var empty: some View {
         ContentUnavailableView("Nothing Watched Yet", systemImage: "play.rectangle",
                                description: Text("Videos you watch appear here."))
+    }
+}
+
+/// The topics to browse before searching: a grid of glass tiles.
+private struct ExploreGrid: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Explore").font(.title3.bold())
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                ForEach(ExploreTopic.allCases) { topic in
+                    NavigationLink(value: Route.explore(topic)) {
+                        Label(topic.title, systemImage: topic.systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .background(.fill.quinary, in: .rect(cornerRadius: 14, style: .continuous))
+                            .contentShape(.rect(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, VideoMetrics.side)
     }
 }

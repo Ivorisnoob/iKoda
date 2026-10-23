@@ -103,7 +103,7 @@ struct ChannelView: View {
             .ignoresSafeArea(edges: .top)
             .navigationBarTitleDisplayMode(.inline)
             .revealsTitle(page.channel.name, after: bannerHeight + 60)
-            .refreshable { await model.load(music: app.music) }
+            .refreshable { await model.load(music: app.music, fresh: true) }
         }
     }
 

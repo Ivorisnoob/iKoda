@@ -452,6 +452,13 @@ private struct MacPlaybackPane: View {
             .disabled(!player.crossfades)
         }
         MacSettingsGroup(title: "Videos", footer: "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and M mutes. Double-click a video for full screen.") {
+            MacSettingsRow(title: "Default quality", detail: "Videos start at this, or the best they have below it. Auto follows the connection.") {
+                Picker("Default quality", selection: $settings.videoQuality) {
+                    ForEach(AppSettings.videoQualities, id: \.self) { Text(VideoQualityName.long($0)).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
             MacSettingsToggle(title: "Autoplay next video", detail: "When a video ends, the next in Up Next starts after a short countdown.",
                               isOn: $settings.autoplaysVideos)
         }

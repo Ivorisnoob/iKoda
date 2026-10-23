@@ -100,8 +100,14 @@ final class AppSettings {
     /// The playing song on the listener's Discord profile, through the Discord app on the Mac.
     var sharesOnDiscord: Bool { didSet { defaults.set(sharesOnDiscord, forKey: Keys.discordPresence) } }
     var mode: Mode { didSet { defaults.set(mode.rawValue, forKey: Keys.mode) } }
-    /// The tallest picture a video plays at, in lines (720, 1080…); 0 lets it follow the connection.
+    /// The tallest picture a video starts at, in lines (720, 1080…); 0 lets it follow the
+    /// connection. 1080p unless chosen otherwise.
     var videoQuality: Int { didSet { defaults.set(videoQuality, forKey: Keys.videoQuality) } }
+    /// Every quality Settings offers, tallest first; 0 is Auto. A video offering less plays its best.
+    static let videoQualities = [0, 2160, 1440, 1080, 720, 480, 360, 240, 144]
+    /// The Mac's watch page in theater mode: the video across the whole page on black, the
+    /// details and Up Next under it; off, Up Next sits beside the video. Kept, as YouTube keeps it.
+    var videoTheater: Bool { didSet { defaults.set(videoTheater, forKey: Keys.videoTheater) } }
     /// At a video's end, the next in Up Next starts after a short countdown.
     var autoplaysVideos: Bool { didSet { defaults.set(autoplaysVideos, forKey: Keys.videoAutoplay) } }
     /// Touching and holding a video plays it at 2× until the finger lifts.
@@ -130,6 +136,7 @@ final class AppSettings {
         static let mode = "koda.mode"
         static let videoQuality = "koda.video.quality"
         static let videoAutoplay = "koda.video.autoplay"
+        static let videoTheater = "koda.video.theater"
         static let videoHoldSpeed = "koda.video.holdSpeed"
         static let videoBrightness = "koda.video.brightnessSwipe"
     }
@@ -154,8 +161,9 @@ final class AppSettings {
         sharesOnDiscord = d.object(forKey: Keys.discordPresence) as? Bool ?? false
         hasSeenOnboarding = d.bool(forKey: Keys.onboarding)
         mode = d.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .music
-        videoQuality = d.integer(forKey: Keys.videoQuality)
+        videoQuality = d.object(forKey: Keys.videoQuality) as? Int ?? 1080
         autoplaysVideos = d.object(forKey: Keys.videoAutoplay) as? Bool ?? true
+        videoTheater = d.bool(forKey: Keys.videoTheater)
         holdsToSpeedUp = d.object(forKey: Keys.videoHoldSpeed) as? Bool ?? true
         swipesForBrightness = d.object(forKey: Keys.videoBrightness) as? Bool ?? true
     }

@@ -23,10 +23,13 @@ final class VideoPlayback {
     private(set) var presentationSize: CGSize = .zero
     /// The video is floating in picture in picture: leaving its page doesn't pause it.
     private(set) var isInPictureInPicture = false
-    var isFullScreen = false
+    var isFullScreen = false {
+        didSet { if isFullScreen != oldValue { choosePictureInPictureSurface() } }
+    }
     /// The heights this video comes in, tallest first.
     private(set) var qualities: [Int] = []
-    /// The tallest picture allowed, in lines; 0 follows the connection. Kept between videos.
+    /// The tallest picture allowed for this video, in lines; 0 follows the connection. Each
+    /// video starts at the default quality (Settings); the player's menu changes only this one.
     private(set) var quality = 0
     /// Kept between videos, as YouTube keeps it.
     private(set) var speed: Float = 1
@@ -63,6 +66,12 @@ final class VideoPlayback {
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var pictureInPicture: AVPictureInPictureController?
     @ObservationIgnored private var pictureInPictureDelegate: PictureInPictureDelegate?
+    /// The layer picture in picture was last set up for. Kept here rather than read back from
+    /// the controller, whose `playerLayer` on the Mac isn't the layer it was made with: comparing
+    /// against that made a new controller (a slow call into the system) on every redraw.
+    @ObservationIgnored private weak var pictureInPictureLayer: AVPlayerLayer?
+    /// Each place the picture is drawn, by role; the one in front is picture in picture's.
+    @ObservationIgnored private var surfaces: [SurfaceRole: WeakLayer] = [:]
     /// Where the current watched span began (seeks end one), for the account's history.
     @ObservationIgnored private var spanStart: TimeInterval = 0
     /// Seconds really played of this video, so a glance never counts as a watch.
@@ -72,8 +81,8 @@ final class VideoPlayback {
     /// Told when a video starts, for the profile's watched list.
     @ObservationIgnored var onWatch: ((Video) -> Void)?
     @ObservationIgnored var pauseMusic: (() -> Void)?
-    /// Where the quality choice is kept (AppSettings).
-    @ObservationIgnored var onQualityChange: ((Int) -> Void)?
+    /// The quality each video starts at (AppSettings.videoQuality).
+    @ObservationIgnored var defaultQuality: () -> Int = { 0 }
     /// Where a video was left, to start it there again (the Library's progress).
     @ObservationIgnored var resumePosition: ((String) -> TimeInterval?)?
     /// How far a video has got: id, position, duration.
@@ -134,9 +143,10 @@ final class VideoPlayback {
         }
         if wasPlaying, !playing {
             reportSpan(final: true)
-        } else if playing, Date().timeIntervalSince(lastSpanReport) >= 30 {
+        } else if playing, Date().timeIntervalSince(lastSpanReport) >= 60 {
             // The first report files the video in history as soon as the watch counts; after
-            // that, every half minute says how far it has got.
+            // that, once a minute says how far it has got (and every pause, seek and end), which
+            // keeps YouTube's red bar right without pinging it more than needed.
             reportSpan(final: false)
         }
     }
@@ -180,6 +190,7 @@ final class VideoPlayback {
         captions = []
         caption = nil
         legible = nil
+        quality = defaultQuality()
         spanStart = 0
         playedSeconds = 0
         lastSpanReport = .distantPast
@@ -324,10 +335,12 @@ final class VideoPlayback {
     /// The watch page showing `id` is on screen, or went away.
     func pageAppeared(_ id: String) {
         pageOnScreen = id
+        choosePictureInPictureSurface()
     }
 
     func pageDisappeared(_ id: String) {
         if pageOnScreen == id { pageOnScreen = nil }
+        choosePictureInPictureSurface()
     }
 
     /// The playing video's own page is showing: no mini player.
@@ -380,15 +393,10 @@ final class VideoPlayback {
 
     // MARK: Settings
 
+    /// This video's quality, from the player's menu.
     func setQuality(_ lines: Int) {
         quality = lines
         player.currentItem?.preferredMaximumResolution = Self.limit(for: lines)
-        onQualityChange?(lines)
-    }
-
-    /// The saved choice, applied from the next video on.
-    func restoreQuality(_ lines: Int) {
-        quality = lines
     }
 
     func setSpeed(_ rate: Float) {
@@ -413,9 +421,37 @@ final class VideoPlayback {
 
     // MARK: Picture in picture
 
-    /// The inline picture's layer floats into picture in picture, by the button or on leaving the app.
-    func attach(_ layer: AVPlayerLayer) {
-        guard AVPictureInPictureController.isPictureInPictureSupported(), pictureInPicture?.playerLayer !== layer else { return }
+    /// Where the picture can be drawn: the watch page, full screen, or the mini player.
+    enum SurfaceRole {
+        case page, fullScreen, mini
+    }
+
+    private struct WeakLayer {
+        weak var layer: AVPlayerLayer?
+    }
+
+    /// A surface says where it draws. Cheap when nothing changed: it's called on every redraw.
+    func register(_ layer: AVPlayerLayer, as role: SurfaceRole) {
+        guard surfaces[role]?.layer !== layer else { return }
+        surfaces[role] = WeakLayer(layer: layer)
+        choosePictureInPictureSurface()
+    }
+
+    /// Picture in picture floats the surface in front: full screen, else the page, else the mini
+    /// player. One rule here rather than each surface claiming it: two surfaces both claiming it
+    /// took it from each other on every redraw, each time building a new controller.
+    private func choosePictureInPictureSurface() {
+        let front: SurfaceRole = isFullScreen ? .fullScreen : isOnItsPage ? .page : .mini
+        guard let layer = surfaces[front]?.layer ?? surfaces[.page]?.layer else { return }
+        // Never pull the source from under a floating video.
+        guard pictureInPicture?.isPictureInPictureActive != true else { return }
+        attach(layer)
+    }
+
+    /// The front picture's layer floats into picture in picture, by the button or on leaving the app.
+    private func attach(_ layer: AVPlayerLayer) {
+        guard AVPictureInPictureController.isPictureInPictureSupported(), pictureInPictureLayer !== layer else { return }
+        pictureInPictureLayer = layer
         let controller = AVPictureInPictureController(playerLayer: layer)
         controller?.canStartPictureInPictureAutomaticallyFromInline = true
         let delegate = PictureInPictureDelegate { [weak self] active in self?.isInPictureInPicture = active }

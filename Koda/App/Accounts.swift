@@ -277,7 +277,11 @@ extension AppModel {
                 return false
             }
         }) ?? false
-        if sent, roster.activeID == id { subscriptions[channelId] = on }
+        if sent, roster.activeID == id {
+            subscriptions[channelId] = on
+            // The sidebar's list is YouTube's; ask again (the guide was cached as it was before).
+            subscribedChannels = nil
+        }
         return sent
     }
 

@@ -9,9 +9,16 @@ enum MacSection: Hashable {
     case userPlaylist(UUID)
     /// YouTube: the Home feed, the subscriptions feed, and search results.
     case videos, subscriptions, watched, videoSearch
+    /// YouTube: Watch Later or Liked Videos, a subscribed channel, a topic, every channel.
+    case videoPlaylist(String), channel(String), explore(ExploreTopic), channels
 
     /// Video mode's places: the toolbar's search finds videos while one is open.
-    var isVideo: Bool { self == .videos || self == .subscriptions || self == .watched || self == .videoSearch }
+    var isVideo: Bool {
+        switch self {
+        case .videos, .subscriptions, .watched, .videoSearch, .videoPlaylist, .channel, .explore, .channels: true
+        default: false
+        }
+    }
 }
 
 /// Koda on the Mac: a sidebar of everything there is to go to, the page on the right, and the
@@ -37,6 +44,16 @@ struct MacRootView: View {
 
     var body: some View {
         dialogs(nowPlayingLayer(routing(searching(splitView))))
+            // A full-screen video covers the whole window, sidebar and all, as the window goes
+            // into macOS full screen with its toolbar hidden: in the view tree rather than
+            // presented, so nothing about the window's toolbar or split view changes under it.
+            .overlay {
+                if model.videos.isFullScreen, let video = model.videos.current {
+                    FullScreenVideoView(playback: model.videos, video: video)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.smooth(duration: 0.25), value: model.videos.isFullScreen)
     }
 
     private var splitView: some View {
@@ -229,8 +246,15 @@ struct MacRootView: View {
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity)
         }
+        // The channels under Subscriptions: one call (YouTube's sidebar), when video mode shows.
+        .task(id: "\(model.roster.activeID)|\(model.settings.mode)|\(model.subscribedChannels == nil)") {
+            if model.settings.mode == .video, model.subscribedChannels == nil { await model.loadSubscribedChannels() }
+        }
         // A launch in video mode opens on its Home.
-        .onAppear { if model.settings.mode == .video, !(section ?? .home).isVideo { section = .videos } }
+        .onAppear {
+            MacWindow.hideToolbarInFullScreen()
+            if model.settings.mode == .video, !(section ?? .home).isVideo { section = .videos }
+        }
         .onChange(of: model.settings.mode) { _, mode in
             closeNowPlaying()
             if (section ?? .home).isVideo != (mode == .video) { section = mode == .music ? .home : .videos }
@@ -242,16 +266,42 @@ struct MacRootView: View {
         }
     }
 
+    /// YouTube's own sidebar, the Mac's way: the feeds, what's yours (signed in, Watch Later and
+    /// Liked Videos too), the channels you follow, then topics anyone can browse.
     @ViewBuilder
     private var videoSidebar: some View {
+        let signedIn = model.roster.active.isSignedIn && !model.roster.active.isExpired
         Section {
             sidebarRow("Home", "play.rectangle", .videos)
-            if model.roster.active.isSignedIn {
+            if signedIn {
                 sidebarRow("Subscriptions", "person.2.crop.square.stack", .subscriptions)
             }
-            sidebarRow("Watched", "clock.arrow.circlepath", .watched)
             if videoSearch.submitted != nil {
                 sidebarRow("Search Results", "magnifyingglass", .videoSearch)
+            }
+        }
+        Section("You") {
+            sidebarRow("History", "clock.arrow.circlepath", .watched)
+            if signedIn {
+                sidebarRow("Watch Later", "clock", .videoPlaylist("WL"))
+                sidebarRow("Liked Videos", "hand.thumbsup", .videoPlaylist("LL"))
+            }
+        }
+        if signedIn, let channels = model.subscribedChannels, !channels.isEmpty {
+            Section("Subscriptions") {
+                ForEach(channels.prefix(12), id: \.id) { channel in
+                    if let id = channel.id {
+                        sidebarRow(channel.name, "person.crop.circle", .channel(id), avatar: channel.avatar)
+                    }
+                }
+                if channels.count > 12 {
+                    sidebarRow("All Channels", "chevron.down.circle", .channels, count: channels.count)
+                }
+            }
+        }
+        Section("Explore") {
+            ForEach(ExploreTopic.allCases) { topic in
+                sidebarRow(topic.title, topic.systemImage, .explore(topic))
             }
         }
     }
@@ -317,7 +367,8 @@ struct MacRootView: View {
 
     /// A Mac sidebar row: 13-point text, the symbol in the accent colour, and when selected the
     /// soft rounded fill the Mac's own sidebars use, rather than Catalyst's iPad-sized row.
-    private func sidebarRow(_ title: String, _ systemImage: String, _ target: MacSection, count: Int = 0) -> some View {
+    private func sidebarRow(_ title: String, _ systemImage: String, _ target: MacSection, count: Int = 0,
+                            avatar: Artwork? = nil) -> some View {
         Button {
             // A click in the sidebar always lands on its page, closing Now Playing if it's open;
             // clicking the section you're in goes back to its first page, as Music's sidebar does.
@@ -330,7 +381,7 @@ struct MacRootView: View {
                 section = target
             }
         } label: {
-            MacSidebarLabel(title: title, systemImage: systemImage, isSelected: section == target, count: count)
+            MacSidebarLabel(title: title, systemImage: systemImage, isSelected: section == target, count: count, avatar: avatar)
         }
         .buttonStyle(.plain)
         .listRowInsets(MacSidebarLabel.insets)
@@ -404,9 +455,14 @@ struct MacRootView: View {
         case .history: HistoryView()
         case .lastFM: MacLastFMView()
         case .userPlaylist(let id): UserPlaylistView(id: id).id(id)
-        case .videos: VideoHomeView(kind: .home).id(model.roster.activeID)
-        case .subscriptions: VideoHomeView(kind: .subscriptions).id(model.roster.activeID)
+        case .videos: VideoHomeView(feed: model.videoFeed(.home)).id(model.roster.activeID)
+        case .subscriptions: VideoHomeView(feed: model.videoFeed(.subscriptions)).id(model.roster.activeID)
         case .watched: VideoLibraryView()
+        case .videoPlaylist(let id): VideoPlaylistView(playlistId: id, title: id == "WL" ? "Watch Later" : "Liked Videos").id(id)
+        case .channel(let id):
+            ChannelView(channelId: id, name: model.subscribedChannels?.first { $0.id == id }?.name ?? "").id(id)
+        case .explore(let topic): ExploreView(topic: topic).id(topic)
+        case .channels: SubscribedChannelsView()
         case .videoSearch:
             MacPage {
                 MacPageTitle(title: videoSearch.submitted ?? "Search", subtitle: "YouTube")
@@ -482,6 +538,8 @@ struct MacSidebarLabel: View {
     let isSelected: Bool
     var count = 0
     var dimmed = false
+    /// A channel's picture in place of the symbol.
+    var avatar: Artwork?
     @State private var hovering = false
 
     /// None of its own: the sidebar list already keeps rows off its edges, as the Mac's do.
@@ -489,10 +547,14 @@ struct MacSidebarLabel: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(dimmed ? Color.secondary : Color.accentColor)
-                .frame(width: 18)
+            if let avatar {
+                ChannelAvatar(avatar: avatar, size: 18)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(dimmed ? Color.secondary : Color.accentColor)
+                    .frame(width: 18)
+            }
             Text(title)
                 .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(dimmed ? Color.secondary : Color.primary)

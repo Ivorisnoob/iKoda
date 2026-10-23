@@ -76,7 +76,7 @@ struct VideoMiniPlayer: View {
     @ViewBuilder
     private func picture(_ video: Video) -> some View {
         if playback.player.currentItem != nil {
-            VideoSurface(player: playback.player, drivesPictureInPicture: !playback.isOnItsPage, attach: playback.attach)
+            VideoSurface(player: playback.player, role: .mini, register: playback.register)
         } else {
             VideoThumbnail(video: video, cornerRadius: 0, width: 120, showsProgress: false)
         }
@@ -104,7 +104,7 @@ struct MacVideoBar: View {
                     HStack(spacing: 12) {
                         Group {
                             if playback.player.currentItem != nil {
-                                VideoSurface(player: playback.player, drivesPictureInPicture: !playback.isOnItsPage, attach: playback.attach)
+                                VideoSurface(player: playback.player, role: .mini, register: playback.register)
                             } else {
                                 VideoThumbnail(video: video, cornerRadius: 0, width: 160, showsProgress: false)
                             }

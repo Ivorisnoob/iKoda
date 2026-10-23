@@ -1,16 +1,14 @@
 import KodaCore
 import SwiftUI
 
-/// Video mode's Home (the profile's feed, and what was watched lately) or Subscriptions. The
+/// Video mode's Home (the profile's feed: just the feed, as YouTube's is; what was watched is in
+/// Library, and the Search tab offers it before a search) or Subscriptions. The
 /// iPhone shows full-width cards; the Mac a grid. Search is a tab (iPhone) or the toolbar (Mac).
 struct VideoHomeView: View {
+    /// Kept by the app per profile (`AppModel.videoFeed`), so it outlives this view.
+    let feed: VideoFeedModel
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
-    @State private var feed: VideoFeedModel
-
-    init(kind: VideoFeedModel.Kind = .home) {
-        _feed = State(initialValue: VideoFeedModel(kind: kind))
-    }
 
     var body: some View {
         if Platform.isMac { macBody } else { phoneBody }
@@ -23,16 +21,13 @@ struct VideoHomeView: View {
     private var phoneBody: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 26) {
-                if feed.kind == .home, !library.watched.isEmpty {
-                    RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
-                }
                 feedList(feed)
             }
             .padding(.vertical, 8)
         }
         .navigationTitle(feed.kind == .subscriptions ? "Subscriptions" : "Videos")
         .refreshable { await load(feed) }
-        .task { if feed.state.value == nil { await load(feed) } }
+        .task { if feed.needsLoad { await load(feed) } }
         .toolbar {
             if feed.kind == .home {
                 ToolbarItem(placement: .topBarLeading) { ModeToggle() }
@@ -90,13 +85,10 @@ struct VideoHomeView: View {
                     .labelStyle(.iconOnly)
                     .keyboardShortcut("r", modifiers: .command)
             }
-            if feed.kind == .home, !library.watched.isEmpty {
-                RecentlyWatchedShelf(videos: Array(library.watched.prefix(12)))
-            }
             VideoGrid(model: feed) { await load(feed) }
         }
         .navigationTitle(feed.kind == .subscriptions ? "Subscriptions" : "Videos")
-        .task { if feed.state.value == nil { await load(feed) } }
+        .task { if feed.needsLoad { await load(feed) } }
     }
 
     private func load(_ model: VideoFeedModel) async {

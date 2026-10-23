@@ -58,8 +58,8 @@ struct VideoPlayerView: View {
         ZStack {
             Color.black
             if hasPicture {
-                VideoSurface(player: playback.player, drivesPictureInPicture: isFullScreen || !playback.isFullScreen,
-                             fills: isFullScreen && fillsScreen, attach: playback.attach)
+                VideoSurface(player: playback.player, role: isFullScreen ? .fullScreen : .page,
+                             fills: isFullScreen && fillsScreen, register: playback.register)
             } else {
                 VideoThumbnail(video: video, cornerRadius: 0, width: 800, showsProgress: false)
             }
@@ -169,8 +169,20 @@ struct VideoPlayerView: View {
                     }
                 }
                 VideoSettingsMenu(playback: playback) { poke() }
+                if Platform.isMac, !isFullScreen {
+                    ControlButton(systemImage: app.settings.videoTheater ? "rectangle.inset.filled" : "rectangle.ratio.16.to.9",
+                                  label: app.settings.videoTheater ? "Default View" : "Theater Mode") {
+                        poke()
+                        toggleTheater()
+                    }
+                    .help(app.settings.videoTheater ? "Default View (T)" : "Theater Mode (T)")
+                }
             }
         }
+    }
+
+    private func toggleTheater() {
+        withAnimation(.smooth(duration: 0.3)) { app.settings.videoTheater.toggle() }
     }
 
     @ViewBuilder
@@ -470,7 +482,7 @@ struct VideoPlayerView: View {
     }
 
     /// YouTube's keys on the Mac: Space and K play/pause, J and L skip 10 s, ← and → skip 5,
-    /// F full screen, M mute.
+    /// F full screen, T theater mode, M mute.
     private var keyboardShortcuts: some View {
         Group {
             Button("Play/Pause") { playback.togglePlay() }.keyboardShortcut(.space, modifiers: [])
@@ -480,6 +492,7 @@ struct VideoPlayerView: View {
             Button("Back 5 Seconds") { playback.skip(by: -5) }.keyboardShortcut(.leftArrow, modifiers: [])
             Button("Forward 5 Seconds") { playback.skip(by: 5) }.keyboardShortcut(.rightArrow, modifiers: [])
             Button("Full Screen") { playback.isFullScreen.toggle() }.keyboardShortcut("f", modifiers: [])
+            Button("Theater Mode") { toggleTheater() }.keyboardShortcut("t", modifiers: [])
             Button("Mute") {
                 playback.isMuted.toggle()
                 note = playback.isMuted ? "Muted" : "Sound On"
@@ -681,6 +694,10 @@ private struct VideoSettingsMenu: View {
                 ForEach(playback.qualities, id: \.self) { lines in
                     Text(Self.qualityName(lines)).tag(lines)
                 }
+                // The default may be one this video doesn't come in; it still shows as chosen.
+                if playback.quality != 0, !playback.qualities.contains(playback.quality) {
+                    Text(Self.qualityName(playback.quality)).tag(playback.quality)
+                }
             } label: {
                 Label("Quality", systemImage: "dial.medium")
                 Text(playback.quality == 0 ? "Auto" : Self.qualityName(playback.quality))
@@ -724,11 +741,7 @@ private struct VideoSettingsMenu: View {
     }
 
     static func qualityName(_ lines: Int) -> String {
-        switch lines {
-        case 2160...: "4K"
-        case 1440...: "1440p"
-        default: "\(lines)p"
-        }
+        VideoQualityName.short(lines)
     }
 
     static func speedName(_ rate: Float) -> String {
@@ -796,14 +809,14 @@ struct VideoScrubber: View {
     }
 }
 
-/// The picture: an AVPlayerLayer. The surface in front drives picture in picture, so it can
-/// start from full screen as from the page.
+/// The picture: an AVPlayerLayer, registered with the player under its role so picture in
+/// picture can float whichever is in front.
 struct VideoSurface: UIViewRepresentable {
     let player: AVPlayer
-    let drivesPictureInPicture: Bool
+    let role: VideoPlayback.SurfaceRole
     /// Cropped to fill the frame rather than fitted inside it.
     var fills = false
-    let attach: (AVPlayerLayer) -> Void
+    let register: (AVPlayerLayer, VideoPlayback.SurfaceRole) -> Void
 
     func makeUIView(context: Context) -> PlayerLayerView {
         let view = PlayerLayerView()
@@ -822,7 +835,7 @@ struct VideoSurface: UIViewRepresentable {
             view.playerLayer.videoGravity = gravity
             CATransaction.commit()
         }
-        if drivesPictureInPicture { attach(view.playerLayer) }
+        register(view.playerLayer, role)
     }
 }
 
@@ -866,6 +879,9 @@ struct FullScreenVideoView: View {
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 // On the Mac full screen means the screen, not the window: the cover fills the
                 // window and the window goes full screen, as QuickTime's and TV's videos do.
+                // Nothing but the picture: in macOS full screen the window's toolbar (sidebar
+                // button, search) is hidden until the pointer reaches the top, as in TV
+                // (`MacWindow.hideToolbarInFullScreen`, set once at launch).
                 if Platform.isMac, !MacWindow.isFullScreen {
                     tookWindowFullScreen = true
                     MacWindow.toggleFullScreen()
@@ -911,6 +927,21 @@ enum MacWindow {
 
     static func toggleFullScreen() {
         keyWindow?.perform(NSSelectorFromString("toggleFullScreen:"), with: nil)
+    }
+
+    /// Catalyst's own switch for a full-screen window's toolbar: hidden until the pointer reaches
+    /// the top, so a full-screen video is nothing but the picture. Set once as the window first
+    /// appears and never changed: flipping it around a video's full screen left the sidebar
+    /// button in the wrong place until clicked, as other runtime toolbar changes did (docs/mac.md).
+    static func hideToolbarInFullScreen() {
+        #if targetEnvironment(macCatalyst)
+        activeScene?.titlebar?.autoHidesToolbarInFullScreen = true
+        #endif
+    }
+
+    private static var activeScene: UIWindowScene? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     }
 }
 
@@ -962,6 +993,28 @@ struct InteractivePopEnabler: UIViewControllerRepresentable {
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             (navigationController?.viewControllers.count ?? 0) > 1
+        }
+    }
+}
+
+/// What a quality is called: "1080p", "4K"; Settings adds what the tall ones are known as.
+enum VideoQualityName {
+    static func short(_ lines: Int) -> String {
+        switch lines {
+        case 0: "Auto"
+        case 2160...: "4K"
+        default: "\(lines)p"
+        }
+    }
+
+    static func long(_ lines: Int) -> String {
+        switch lines {
+        case 0: "Auto"
+        case 2160...: "4K (2160p)"
+        case 1440: "1440p (2K)"
+        case 1080: "1080p (Full HD)"
+        case 720: "720p (HD)"
+        default: "\(lines)p"
         }
     }
 }

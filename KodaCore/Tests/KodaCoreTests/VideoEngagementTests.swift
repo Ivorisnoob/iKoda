@@ -129,3 +129,44 @@ import Testing
         #expect(library.videoProgress["a"] == nil)
     }
 }
+
+/// Explore, playlists and the guide, from WEB responses captured signed out on 23 October 2026.
+@Suite struct VideoBrowseTests {
+    @Test func topicPagesReadTheirShelves() throws {
+        let music = VideoPages.shelves(try fixture("web-topic-music"))
+        // The first two shelves are stations (mixes), not videos: left out.
+        #expect(music.count >= 3)
+        #expect(music.first?.title == "Artist On The Rise Trending")
+        #expect(music.allSatisfy { !$0.videos.isEmpty })
+        let news = VideoPages.shelves(try fixture("web-topic-news"))
+        // "Latest news posts" holds posts, not videos: left out.
+        #expect(!news.contains { $0.title == "Latest news posts" })
+        #expect(news.count >= 3)
+    }
+
+    @Test func playlistsReadTheirVideosAndTheNewContinuation() throws {
+        let page = try #require(VideoPages.playlist(try fixture("web-playlist")))
+        #expect(page.title == "Popular Music Videos")
+        #expect(page.videos.videos.count == 100)
+        #expect(page.videos.videos.allSatisfy { $0.channel != nil })
+        #expect(page.videos.continuation != nil)
+    }
+
+    @Test func theGuideListsSubscribedChannelsOnly() throws {
+        // The guide's shape for a signed-in account, cut down: the Explore section's Music
+        // entry is a channel too, and isn't a subscription.
+        let root = JSON(try JSONSerialization.jsonObject(with: Data(#"""
+        {"items":[
+          {"guideSectionRenderer":{"items":[{"guideEntryRenderer":{"formattedTitle":{"simpleText":"Music"},
+            "navigationEndpoint":{"browseEndpoint":{"browseId":"UC-9-kyTW8ZkZNDHQJ6FgpwQ"}}}}]}},
+          {"guideSubscriptionsSectionRenderer":{"items":[
+            {"guideEntryRenderer":{"formattedTitle":{"simpleText":"Marques Brownlee"},
+              "navigationEndpoint":{"browseEndpoint":{"browseId":"UCBJycsmduvYEL83R_U4JriQ"}},
+              "thumbnail":{"thumbnails":[{"url":"https://yt3.ggpht.com/a=s88","width":88,"height":88}]}}},
+            {"guideEntryRenderer":{"formattedTitle":{"simpleText":"Show more"}}}]}}]}
+        """#.utf8)))
+        let channels = VideoPages.subscriptions(root)
+        #expect(channels.map(\.name) == ["Marques Brownlee"])
+        #expect(channels.first?.avatar != nil)
+    }
+}

@@ -55,6 +55,11 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker(selection: $settings.videoQuality) {
+                        ForEach(AppSettings.videoQualities, id: \.self) { Text(VideoQualityName.long($0)).tag($0) }
+                    } label: {
+                        SettingLabel("Default Quality", systemImage: "sparkles.tv.fill", tint: .purple)
+                    }
                     Toggle(isOn: $settings.autoplaysVideos) {
                         SettingLabel("Autoplay Next Video", systemImage: "play.square.stack.fill", tint: .red)
                     }
@@ -67,7 +72,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Videos")
                 } footer: {
-                    Text("Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
+                    Text("Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
                 }
 
                 Section {

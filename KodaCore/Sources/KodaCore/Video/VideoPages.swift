@@ -264,14 +264,55 @@ enum VideoPages {
         return VideoPage(videos: videos.filter { seen.insert($0.id).inserted }, continuation: token(list))
     }
 
-    /// The continuation at the end of a list (wrapped lists keep it at their own end).
+    /// The continuation at the end of a list (wrapped lists keep it at their own end). Older
+    /// lists end with a `continuationItemRenderer`, playlists now with a `continuationItemViewModel`
+    /// whose token sits in a command nested in a command [verified October 2026].
     static func token(_ list: JSON) -> String? {
         for item in list.array.reversed() {
             if let token = item["continuationItemRenderer"]["continuationEndpoint"].first("continuationCommand")["token"].nonEmpty {
                 return token
             }
+            if let token = item["continuationItemViewModel"]["continuationCommand"]["innertubeCommand"]
+                .first("continuationCommand")["token"].nonEmpty {
+                return token
+            }
         }
         return nil
+    }
+
+    /// A topic page (Music, News, Live…): its shelves of videos, each with its title, in order.
+    /// Shelves with no videos (news posts, Shorts) are left out.
+    static func shelves(_ root: JSON) -> [VideoShelf] {
+        (root.objects("richShelfRenderer") + root.objects("shelfRenderer")).compactMap { shelf in
+            let title = shelf["title"].text
+            let videos = page(shelf["contents"].exists ? shelf["contents"] : shelf["content"]).videos
+            guard !title.isEmpty, !videos.isEmpty else { return nil }
+            return VideoShelf(title: title, videos: videos)
+        }
+    }
+
+    /// A playlist's page (Watch Later, Liked videos, any other): its title and videos, which are
+    /// lockups like Up Next's, in the first section's list.
+    static func playlist(_ root: JSON) -> VideoPlaylistPage? {
+        let header = root.first("pageHeaderViewModel")
+        let title = header["title"].strings("content").first ?? root.first("playlistMetadataRenderer")["title"].string ?? ""
+        let sections = root.first("sectionListRenderer")["contents"]
+        let list = sections[0]["itemSectionRenderer"]["contents"]
+        guard !title.isEmpty || list.exists else { return nil }
+        var videos = page(list)
+        // The first page's continuation sits beside the list, not at its end.
+        videos.continuation = videos.continuation ?? token(sections)
+        return VideoPlaylistPage(title: title, videos: videos)
+    }
+
+    /// The channels the account subscribes to, as YouTube's own sidebar lists them (most
+    /// recently active first), from the guide. Signed out there are none.
+    static func subscriptions(_ root: JSON) -> [ChannelRef] {
+        root.objects("guideSubscriptionsSectionRenderer").flatMap { $0.objects("guideEntryRenderer") }.compactMap { entry in
+            guard let id = entry["navigationEndpoint"]["browseEndpoint"]["browseId"].nonEmpty, id.hasPrefix("UC"),
+                  let name = entry["formattedTitle"]["simpleText"].nonEmpty ?? entry["title"].nonEmpty else { return nil }
+            return ChannelRef(id: id, name: name, avatar: entry["thumbnail"].bestThumbnail)
+        }
     }
 
     private static func channels(_ list: JSON) -> [ChannelSummary] {

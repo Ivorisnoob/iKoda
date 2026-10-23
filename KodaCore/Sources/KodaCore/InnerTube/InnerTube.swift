@@ -159,7 +159,7 @@ public final class YouTubeMusic: Sendable {
 
     /// A cached page, kept per profile: signed in, pages carry the account's state
     /// (saved, subscribed), so one profile's are never shown to another.
-    private func page<T: Sendable>(_ key: String, load: @Sendable () async throws -> T) async throws -> T {
+    func page<T: Sendable>(_ key: String, load: @Sendable () async throws -> T) async throws -> T {
         let scope = await accounts.cacheScope
         return try await pages.value(scope + "|" + key, load: load)
     }

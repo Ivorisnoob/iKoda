@@ -19,8 +19,10 @@ struct VideoWatchView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var video: Video
     @State private var watch: WatchModel
-    @State private var width: CGFloat = 0
+    @State private var size: CGSize = .zero
     @State private var showsComments = false
+    /// The video's comments, made when its page loads and shared by the card and the sheet.
+    @State private var comments: CommentsModel?
 
     init(video: Video) {
         _video = State(initialValue: video)
@@ -37,23 +39,29 @@ struct VideoWatchView: View {
             if Platform.isMac { macBody } else { phoneBody }
         }
         .navigationTitle(Platform.isMac ? shown.title : "")
-        .fullScreenCover(isPresented: $playback.isFullScreen) {
+        // On the iPhone full screen is a cover; the Mac draws it over the whole window instead
+        // (MacRootView), since a cover presented while the window goes full screen got lost.
+        .fullScreenCover(isPresented: Platform.isMac ? .constant(false) : $playback.isFullScreen) {
             FullScreenVideoView(playback: playback, video: shown)
                 .appEnvironment(app)
         }
         .sheet(isPresented: $showsComments) {
-            if let page = watch.state.value, let token = page.commentsToken {
-                CommentsSheet(token: token, count: page.commentCount)
+            if let comments {
+                CommentsSheet(model: comments, count: watch.state.value?.commentCount)
                     .appEnvironment(app)
             }
         }
         .task(id: video.id) {
             playback.play(video)
-            if watch.videoId != video.id { watch = WatchModel(videoId: video.id) }
+            if watch.videoId != video.id {
+                watch = WatchModel(videoId: video.id)
+                comments = nil
+            }
             await watch.load(music: app.music)
             if let page = watch.state.value {
                 playback.update(page.video.merged(over: video))
                 playback.setUpNext(page.next, after: video.id)
+                comments = page.commentsToken.map(CommentsModel.init(token:))
             }
         }
         .onAppear { playback.pageAppeared(video.id) }
@@ -104,9 +112,11 @@ struct VideoWatchView: View {
     // MARK: Mac
 
     private var macBody: some View {
-        let wide = width >= 1020
+        let wide = size.width >= 1020
         return Group {
-            if wide {
+            if app.settings.videoTheater {
+                theaterBody(wide: wide)
+            } else if wide {
                 HStack(alignment: .top, spacing: 28) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
@@ -136,11 +146,35 @@ struct VideoWatchView: View {
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: video.watchURL, subject: Text(shown.title)) { Label("Share", systemImage: "square.and.arrow.up") }
             }
+        }
+    }
+
+    /// Theater mode, as YouTube's site has it: the video across the page on black, as tall as
+    /// the window allows while leaving the title in sight; the details and Up Next under it,
+    /// side by side in a wide window.
+    private func theaterBody(wide: Bool) -> some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ZStack {
+                    Color.black
+                    VideoPlayerView(playback: playback, video: shown)
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                }
+                .frame(height: max(240, min(size.width * 9 / 16, size.height * 0.78)))
+                let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 28)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
+                layout {
+                    details.frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    upNext.frame(width: wide ? 380 : nil)
+                }
+                .padding(.horizontal, MacMetrics.gutter)
+                .padding(.vertical, 20)
+            }
+            .frame(minWidth: 0, maxWidth: .infinity)
         }
     }
 
@@ -163,8 +197,8 @@ struct VideoWatchView: View {
                 ChannelLine(channel: shown.channel, subscribers: page.subscribers, pageSubscribed: page.isSubscribed)
                 actions(page)
                 VideoDescription(page: page)
-                if let token = page.commentsToken {
-                    CommentsCard(token: token, count: page.commentCount) { showsComments = true }
+                if let comments {
+                    CommentsCard(model: comments, count: page.commentCount) { showsComments = true }
                 }
             case .failed(let message):
                 ContentUnavailableView {
@@ -463,11 +497,12 @@ private struct VideoDescription: View {
 /// The comments under the description, as YouTube's app shows them: the count and the top
 /// comment, opening all of them.
 private struct CommentsCard: View {
-    let token: String
+    let model: CommentsModel
     let count: String?
     let open: () -> Void
     @Environment(AppModel.self) private var app
-    @State private var top: VideoComment?
+
+    private var top: VideoComment? { model.state.value?.first }
 
     var body: some View {
         Button(action: open) {
@@ -494,21 +529,17 @@ private struct CommentsCard: View {
             .contentShape(.rect(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .task(id: token) { top = try? await app.music.comments(token).comments.first }
+        // One request per video; the sheet shows the same page and only asks for more.
+        .task(id: model.token) { await model.loadIfNeeded(music: app.music) }
     }
 }
 
 /// All of a video's comments, top first, paging as they're scrolled.
 struct CommentsSheet: View {
+    let model: CommentsModel
     let count: String?
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @State private var model: CommentsModel
-
-    init(token: String, count: String?) {
-        self.count = count
-        _model = State(initialValue: CommentsModel(token: token))
-    }
 
     var body: some View {
         NavigationStack {
@@ -542,7 +573,7 @@ struct CommentsSheet: View {
         .presentationDetents(Platform.isMac ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .frame(minWidth: Platform.isMac ? 520 : nil, minHeight: Platform.isMac ? 620 : nil)
-        .task { if model.state.value == nil { await model.load(music: app.music) } }
+        .task { await model.loadIfNeeded(music: app.music) }
     }
 
     private func list(_ comments: [VideoComment]) -> some View {

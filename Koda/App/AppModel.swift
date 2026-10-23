@@ -72,6 +72,7 @@ final class AppModel {
     /// The channels the active account subscribes to (the Mac's sidebar, the iPhone's Library);
     /// nil until asked for, empty signed out.
     var subscribedChannels: [ChannelRef]?
+    var channelsByUpload: [ChannelRef] = []
     /// The active profile's video feeds, kept while the app runs: switching modes or sidebar
     /// places shows them at once instead of asking YouTube again.
     @ObservationIgnored private var videoFeeds: [VideoFeedModel.Kind: VideoFeedModel] = [:]
@@ -212,19 +213,33 @@ final class AppModel {
         return feed
     }
 
-    /// The channels the account subscribes to, from YouTube's sidebar; none signed out.
+    /// The channels the account subscribes to, from YouTube's sidebar (A to Z); none signed out.
+    /// `channelsByUpload` is the same list with those that posted lately first, for the Mac sidebar.
     func loadSubscribedChannels() async {
         let profile = roster.active
-        guard profile.isSignedIn, !profile.isExpired else { return subscribedChannels = [] }
+        guard profile.isSignedIn, !profile.isExpired else {
+            channelsByUpload = []
+            return subscribedChannels = []
+        }
         await accountWork?.value
-        let channels = (try? await music.subscribedChannels()) ?? subscribedChannels ?? []
-        if roster.activeID == profile.id { subscribedChannels = channels }
+        // The Subscriptions page's feed when it's loaded, so opening it costs nothing more.
+        let shown = videoFeeds[.subscriptions]?.videos ?? []
+        async let guide = try? music.subscribedChannels()
+        async let fetched = shown.isEmpty ? try? music.videoSubscriptions() : nil
+        let found = await guide
+        let channels = found ?? subscribedChannels ?? []
+        let page = await fetched
+        let feed = shown.isEmpty ? page?.videos ?? [] : shown
+        guard roster.activeID == profile.id else { return }
+        subscribedChannels = channels
+        channelsByUpload = ChannelRef.byLatestUpload(channels, feed: feed)
     }
 
     /// Another profile's feeds, subscriptions and ratings aren't this one's.
     private func forgetVideoState() {
         videoFeeds = [:]
         subscribedChannels = nil
+        channelsByUpload = []
         subscriptions = [:]
         videoRatings = [:]
     }

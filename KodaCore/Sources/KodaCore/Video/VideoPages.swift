@@ -308,8 +308,8 @@ enum VideoPages {
         return VideoPlaylistPage(title: title, videos: videos)
     }
 
-    /// The channels the account subscribes to, as YouTube's own sidebar lists them (most
-    /// recently active first), from the guide. Signed out there are none.
+    /// The channels the account subscribes to, as YouTube's own sidebar lists them (A to Z), from
+    /// the guide. Signed out there are none.
     static func subscriptions(_ root: JSON) -> [ChannelRef] {
         root.objects("guideSubscriptionsSectionRenderer").flatMap { $0.objects("guideEntryRenderer") }.compactMap { entry in
             guard let id = entry["navigationEndpoint"]["browseEndpoint"]["browseId"].nonEmpty, id.hasPrefix("UC"),

@@ -168,6 +168,16 @@ import Testing
         #expect(page.videos.continuation == "WL-NEXT-PAGE")
     }
 
+    @Test func sidebarChannelsLeadWithTheLatestUploads() {
+        // The guide is A to Z; the feed is newest first, a channel at most once in the order.
+        let a = ChannelRef(id: "UCa", name: "Apple"), b = ChannelRef(id: "UCb", name: "Billie"),
+            c = ChannelRef(id: "UCc", name: "Cats"), d = ChannelRef(id: "UCd", name: "Dune")
+        let feed = [Video(id: "1", title: "", channel: c), Video(id: "2", title: "", channel: a),
+                    Video(id: "3", title: "", channel: c), Video(id: "4", title: "", channel: ChannelRef(id: nil, name: "Dune"))]
+        #expect(ChannelRef.byLatestUpload([a, b, c, d], feed: feed).map(\.name) == ["Cats", "Apple", "Dune", "Billie"])
+        #expect(ChannelRef.byLatestUpload([a, b], feed: []).map(\.name) == ["Apple", "Billie"])
+    }
+
     @Test func theGuideListsSubscribedChannelsOnly() throws {
         // The guide's shape for a signed-in account, cut down: the Explore section's Music
         // entry is a channel too, and isn't a subscription.

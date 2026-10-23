@@ -289,7 +289,8 @@ struct MacRootView: View {
         }
         if signedIn, let channels = model.subscribedChannels, !channels.isEmpty {
             Section("Subscriptions") {
-                ForEach(channels.prefix(12), id: \.id) { channel in
+                // Those that posted lately, as YouTube's own sidebar shows them; All Channels is A to Z.
+                ForEach((model.channelsByUpload.isEmpty ? channels : model.channelsByUpload).prefix(12), id: \.id) { channel in
                     if let id = channel.id {
                         sidebarRow(channel.name, "person.crop.circle", .channel(id), avatar: channel.avatar)
                     }

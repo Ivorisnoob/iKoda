@@ -49,6 +49,27 @@ public struct ChannelRef: Hashable, Codable, Sendable {
         self.name = name
         self.avatar = avatar
     }
+
+    /// Subscribed channels, those that posted most recently first: in the order they first appear
+    /// in the subscriptions feed (newest uploads first), then the rest as given. YouTube's own list
+    /// (the guide) is alphabetical, with no dates.
+    public static func byLatestUpload(_ channels: [ChannelRef], feed: [Video]) -> [ChannelRef] {
+        var rank: [String: Int] = [:]
+        for video in feed {
+            guard let channel = video.channel else { continue }
+            let key = channel.id ?? channel.name
+            if rank[key] == nil { rank[key] = rank.count }
+        }
+        let ranked = channels.enumerated().map { (offset: $0.offset, channel: $0.element, rank: rank[$0.element.id ?? ""] ?? rank[$0.element.name]) }
+        return ranked.sorted { a, b in
+            switch (a.rank, b.rank) {
+            case let (x?, y?): x < y
+            case (_?, nil): true
+            case (nil, _?): false
+            case (nil, nil): a.offset < b.offset
+            }
+        }.map(\.channel)
+    }
 }
 
 /// A channel as search lists it.

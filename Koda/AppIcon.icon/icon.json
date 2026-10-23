@@ -1,0 +1,145 @@
+{
+  "fill": "automatic",
+  "groups": [
+    {
+      "blur-material": null,
+      "layers": [
+        {
+          "image-name": "icon 1 (3).svg",
+          "name": "icon 1 (3)",
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting": "combined",
+      "position": {
+        "scale": 1.88,
+        "translation-in-points": [
+          0,
+          0
+        ]
+      },
+      "refractivity": {
+        "depth": 0.1872265625,
+        "enabled": true,
+        "strength": 0.3126953125
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.6
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.62
+      }
+    },
+    {
+      "blur-material": 0.19,
+      "layers": [
+        {
+          "image-name": "icon 1 (2).svg",
+          "name": "icon 1 (2)",
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting": "combined",
+      "position": {
+        "scale": 1.88,
+        "translation-in-points": [
+          0,
+          0
+        ]
+      },
+      "refractivity": {
+        "depth": 0.2553125,
+        "enabled": true,
+        "strength": 0.2509765625
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0
+      }
+    },
+    {
+      "blur-material": 0.1,
+      "layers": [
+        {
+          "image-name": "icon 1 (1).svg",
+          "name": "icon 1 (1)",
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting": "combined",
+      "position": {
+        "scale": 1.88,
+        "translation-in-points": [
+          0,
+          0
+        ]
+      },
+      "refractivity": {
+        "depth": 0.299375,
+        "enabled": true,
+        "strength": 0.270625
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.53
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "icon 1.svg",
+          "name": "icon 1"
+        }
+      ],
+      "position": {
+        "scale": 1.88,
+        "translation-in-points": [
+          0,
+          0
+        ]
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.4
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.45
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

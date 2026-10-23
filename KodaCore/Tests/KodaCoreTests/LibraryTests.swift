@@ -18,12 +18,84 @@ import Testing
         library.recordPlay(song)
         library.toggleSave(AlbumSummary(id: "MPRE1", title: "Album", artistLine: "X"))
         library.recordSearch("weeknd")
+        // Writes happen in the background; the app flushes as it leaves the screen.
+        library.flush()
 
         let reopened = Library(directory: dir)
         #expect(reopened.isLiked(song))
         #expect(reopened.recent.first?.id == "a")
+        #expect(reopened.history.map(\.song.id) == ["a"])
         #expect(reopened.isSaved(album: "MPRE1"))
         #expect(reopened.searches == ["weeknd"])
+    }
+
+    @Test func backgroundSavesReachTheDisk() async throws {
+        let dir = try tempDirectory()
+        let library = Library(directory: dir)
+        library.toggleLike(Song(id: "a", title: "A", artistLine: "X"))
+        try await Task.sleep(for: .seconds(1.5))
+        #expect(Library(directory: dir).liked.map(\.id) == ["a"])
+    }
+
+    @Test func eachProfileFolderKeepsItsOwnLibrary() throws {
+        let first = try tempDirectory(), second = try tempDirectory()
+        let library = Library(directory: first)
+        let song = Song(id: "a", title: "A", artistLine: "X")
+        library.toggleLike(song)
+        library.recordPlay(song)
+        library.open(directory: second)
+        #expect(library.liked.isEmpty)
+        #expect(library.history.isEmpty)
+        library.recordSearch("other")
+        library.open(directory: first)
+        #expect(library.isLiked(song))
+        #expect(library.history.count == 1)
+        #expect(library.searches.isEmpty)
+    }
+
+    @Test func historyKeepsEveryPlayAndForgetsOne() {
+        let library = Library(directory: nil)
+        let a = Song(id: "a", title: "A", artistLine: ""), b = Song(id: "b", title: "B", artistLine: "")
+        library.recordPlay(a)
+        library.recordPlay(b)
+        library.recordPlay(a)
+        #expect(library.history.map(\.song.id) == ["a", "b", "a"])
+        library.removeFromHistory(library.history[1].id)
+        #expect(library.history.map(\.song.id) == ["a", "a"])
+        // No play of b is left, so it leaves Recently Played too; a still has plays.
+        #expect(library.recent.map(\.id) == ["a"])
+        library.clearHistory()
+        #expect(library.history.isEmpty && library.recent.isEmpty)
+    }
+
+    @Test func notInterestedHidesSongsAndArtistsFromWhatIsOffered() {
+        let library = Library(directory: nil)
+        let artist = ArtistRef(id: "UC1", name: "Band")
+        let byBand = Song(id: "a", title: "A", artistLine: "Band & Friend", artists: [artist, ArtistRef(id: "UC2", name: "Friend")])
+        let unlinked = Song(id: "b", title: "B", artistLine: "Band")
+        let other = Song(id: "c", title: "C", artistLine: "Someone", artists: [ArtistRef(id: "UC3", name: "Someone")])
+        library.hide(other)
+        #expect(library.offerable([byBand, unlinked, other]).map(\.id) == ["a", "b"])
+        library.hide(artist: artist)
+        #expect(library.offerable([byBand, unlinked, other]).isEmpty)
+        library.unhide(artist: ArtistRef(id: "UC1", name: "Renamed"))
+        library.unhide(other)
+        #expect(library.offerable([byBand, unlinked, other]).count == 3)
+    }
+
+    @Test func accountMergeAddsWithoutTellingAndDropsWhenMirrored() {
+        let library = Library(directory: nil)
+        var told: [String] = []
+        library.onChange = { change in
+            if case .liked(let song, _) = change { told.append(song.id) }
+        }
+        let mine = Song(id: "mine", title: "M", artistLine: ""), theirs = Song(id: "theirs", title: "T", artistLine: "")
+        library.toggleLike(mine)
+        library.mergeAccount(liked: [theirs], albums: [], playlists: [], artists: [])
+        #expect(library.liked.map(\.id) == ["theirs", "mine"])
+        #expect(told == ["mine"])
+        library.dropMissing(liked: ["theirs"], albums: nil, playlists: nil, artists: nil)
+        #expect(library.liked.map(\.id) == ["theirs"])
     }
 
     @Test func recentKeepsOneEntryPerSongNewestFirst() {
@@ -127,6 +199,7 @@ import Testing
         #expect(target.userPlaylist(playlist.id)?.songs.map(\.id) == ["a"])
         #expect(target.songStats["a"]?.seconds == 42)
         #expect(target.lyricsOffset(for: "a") == 0.4)
+        #expect(target.history.map(\.song.id) == ["a"])
     }
 
     @Test func refusesFilesThatAreNotBackups() {
@@ -158,8 +231,34 @@ import Testing
         #expect(taste.seeds.map(\.id) == ["new", "old"])
     }
 
+    @Test func leavesOutArtistsTheListenerHid() {
+        let library = Library(directory: nil)
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        library.recordPlay(song("a", "Kept"), at: now)
+        library.recordPlay(song("b", "Hidden"), at: now)
+        library.hide(artist: ArtistRef(id: "UCHidden", name: "Hidden"))
+        #expect(Taste(library: library, now: now).artists == ["Kept"])
+    }
+
     @Test func emptyWithoutListening() {
         #expect(Taste(library: Library(directory: nil)).isEmpty)
+    }
+
+    @Test func withNothingPlayedLikedSongsSeedIt() {
+        let library = Library(directory: nil)
+        // Liked oldest to newest; the library keeps them newest first.
+        for s in [song("a1", "A"), song("b1", "B"), song("a2", "A"), song("c1", "C"), song("h1", "Hidden")] { library.toggleLike(s) }
+        library.hide(artist: ArtistRef(id: "UCHidden", name: "Hidden"))
+        let taste = Taste(library: library)
+        #expect(taste.artists == ["A", "C", "B"])
+        #expect(taste.seeds.map(\.id) == ["a2", "c1", "b1"])
+    }
+
+    @Test func playsOutrankLikes() {
+        let library = Library(directory: nil)
+        library.toggleLike(song("liked", "Liked Band"))
+        library.recordPlay(song("played", "Played Band"))
+        #expect(Taste(library: library).artists == ["Played Band"])
     }
 
     @Test func weavesRadiosWithoutRepeats() {

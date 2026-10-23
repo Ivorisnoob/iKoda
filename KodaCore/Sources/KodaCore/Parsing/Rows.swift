@@ -54,6 +54,14 @@ enum Rows {
         return result.filter { !$0.isEmpty }
     }
 
+    /// A row's columns after the title as one run list, with a "•" between columns. A column
+    /// boundary separates fields as the dot does: an artist page's songs read "The Weeknd" |
+    /// "3.3B plays" | "After Hours" with no dot, which flattened as is ran into one byline.
+    static func metaRuns(_ columns: [JSON]) -> [JSON] {
+        let separator = JSON(["text": " • "] as [String: Any])
+        return Array(columns.dropFirst().map(\.runs).filter { !$0.isEmpty }.joined(separator: [separator]))
+    }
+
     static func plainText(_ runs: [JSON]) -> String {
         runs.compactMap { $0["text"].string }.joined().trimmingCharacters(in: .whitespaces)
     }
@@ -133,7 +141,7 @@ enum Rows {
     static func item(listRow row: JSON, fallbackArtist: (line: String, artists: [ArtistRef])? = nil) -> MusicItem? {
         let cols = columns(row)
         guard let title = cols.first.map({ $0.text.trimmingCharacters(in: .whitespaces) }), !title.isEmpty else { return nil }
-        let meta = cols.dropFirst().flatMap(\.runs)
+        let meta = metaRuns(cols)
         let artwork = row["thumbnail"].bestThumbnail
 
         if let target = row.link {
@@ -144,7 +152,7 @@ enum Rows {
                                            year: year(meta), kind: kind(meta), artwork: artwork))
             }
             if target.isArtist {
-                let audience = segments(cols.dropFirst().flatMap(\.runs)).last.map(plainText)
+                let audience = segments(meta).last.map(plainText)
                 return .artist(ArtistSummary(id: target.id, name: title, subtitle: audience.flatMap { $0 == "Artist" ? nil : $0 }, artwork: artwork))
             }
             if target.isPlaylist {

@@ -2,15 +2,23 @@ import KodaCore
 import SwiftUI
 
 /// An album, playlist or song as a square card in a shelf.
-struct CoverCard: View {
-    let artwork: Artwork?
+struct CoverCard<Cover: View>: View {
     let title: String
     let subtitle: String?
-    var width: CGFloat = 156
+    var width: CGFloat
+    let cover: Cover
+
+    /// A card with a cover drawn by the caller, such as a playlist's mosaic, at `width` square.
+    init(title: String, subtitle: String?, width: CGFloat = 156, @ViewBuilder cover: () -> Cover) {
+        self.title = title
+        self.subtitle = subtitle
+        self.width = width
+        self.cover = cover()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ArtworkView(artwork: artwork, size: width, cornerRadius: 10)
+            cover
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
@@ -26,6 +34,14 @@ struct CoverCard: View {
         }
         .frame(width: width, alignment: .leading)
         .contentShape(.rect)
+    }
+}
+
+extension CoverCard where Cover == ArtworkView {
+    init(artwork: Artwork?, title: String, subtitle: String?, width: CGFloat = 156) {
+        self.init(title: title, subtitle: subtitle, width: width) {
+            ArtworkView(artwork: artwork, size: width, cornerRadius: 10)
+        }
     }
 }
 

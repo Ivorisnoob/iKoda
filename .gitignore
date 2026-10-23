@@ -6,3 +6,6 @@ DerivedData/
 build/
 .probe/
 *.ipa
+
+# Scratch work: drafts, artwork, probes. Never committed.
+.scratchpad/

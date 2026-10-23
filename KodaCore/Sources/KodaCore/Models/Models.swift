@@ -173,7 +173,7 @@ public enum MusicItem: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
-public struct Shelf: Identifiable, Hashable, Sendable {
+public struct Shelf: Identifiable, Hashable, Codable, Sendable {
     public var id: String { title + ":" + (items.first?.id ?? "") }
     public var title: String
     /// The small line YouTube puts above some titles ("FOR FEELING GOOD").
@@ -208,6 +208,26 @@ public struct ShelfPage: Sendable {
     public init(shelves: [Shelf], moods: [Mood]) {
         self.shelves = shelves
         self.moods = moods
+    }
+
+    /// Every artist on the page, in shelf order, each once: a chart's "Top artists".
+    public var artists: [ArtistSummary] {
+        var seen = Set<String>()
+        return shelves.flatMap(\.items).compactMap { item in
+            guard case .artist(let artist) = item, seen.insert(artist.id).inserted else { return nil }
+            return artist
+        }
+    }
+
+    /// Every song on the page, in shelf order, each once: signed in, YouTube Music's Home leads
+    /// with the account's Quick picks, which is what Koda for Android takes for its own.
+    public var songs: [Song] {
+        var seen = Set<String>()
+        return shelves.flatMap(\.items).compactMap { item in
+            guard case .song(let song) = item, !song.title.trimmingCharacters(in: .whitespaces).isEmpty,
+                  seen.insert(song.id).inserted else { return nil }
+            return song
+        }
     }
 }
 

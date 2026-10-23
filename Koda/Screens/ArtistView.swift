@@ -17,6 +17,134 @@ struct ArtistView: View {
     @ScaledMetric(relativeTo: .subheadline) private var audienceLineHeight: CGFloat = 20
 
     var body: some View {
+        if Platform.isMac { macBody } else { phoneBody }
+    }
+
+    /// The Mac's artist page: a wide banner with the name and what to do over it, top songs in
+    /// two columns, then their records, appearances and similar artists as shelves.
+    private var macBody: some View {
+        let name = state.value?.artist.name ?? summary.name
+        return ScrollView {
+            VStack(alignment: .leading, spacing: MacMetrics.sectionSpacing) {
+                macHero(name: name)
+                AsyncContent(state: state, retry: load, placeholder: .placeholder(summary)) { page in
+                    macContent(page)
+                }
+            }
+            .padding(.bottom, 40)
+        }
+        .ignoresSafeArea(edges: .top)
+        .navigationTitle(name)
+        .task { await palette.load(summary.artwork) }
+        .task { if state.value == nil { await load() } }
+    }
+
+    /// The Mac's artist header. YouTube's banner is a wide image with the portrait pillarboxed
+    /// inside, which shows its bars across a wide window; so the Mac draws the artist's own
+    /// photo twice instead: blurred into a field of their colours that fills any width and
+    /// fades into the page, and sharp, round, beside their name and what to play.
+    private func macHero(name: String) -> some View {
+        let portrait = state.value?.artist.artwork ?? summary.artwork
+        let shape = Circle()
+        return ZStack(alignment: .bottomLeading) {
+            MacArtistAmbience(artwork: portrait, tint: palette.palette.mesh[4])
+            HStack(alignment: .bottom, spacing: 28) {
+                ArtworkView(artwork: portrait, size: 196, circle: true)
+                    .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.3), radius: 24, y: 12)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Artist")
+                        .font(.caption.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 2)
+                    if name.isEmpty {
+                        Capsule().fill(.primary.opacity(0.12)).frame(width: 260, height: 44).shimmer()
+                    } else {
+                        Text(name)
+                            .font(.system(size: 46, weight: .heavy))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
+                            .textSelection(.enabled)
+                    }
+                    Text(state.value?.artist.subtitle ?? " ")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.top, 2)
+                    HStack(spacing: 10) {
+                        let topSongs = state.value?.topSongs ?? []
+                        MacPlayButtons(shuffleTitle: "Radio",
+                                       play: { if !topSongs.isEmpty { player.play(topSongs) } },
+                                       shuffle: { if let first = topSongs.first { player.startRadio(from: first) } })
+                            .disabled(topSongs.isEmpty)
+                        let saved = library.isSaved(artist: summary.id)
+                        Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+                            library.toggleSave(state.value?.artist ?? summary)
+                        }
+                        .buttonStyle(MacIconButtonStyle())
+                        .help(saved ? "Remove from Library" : "Add to Library")
+                        MacMoreMenu {
+                            ShareLink(item: URL(string: "https://music.youtube.com/channel/\(summary.id)")!) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    }
+                    .padding(.top, 16)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, MacMetrics.gutter)
+            .padding(.bottom, 8)
+        }
+        .frame(height: 340)
+    }
+
+    @ViewBuilder
+    private func macContent(_ page: ArtistPage) -> some View {
+        if !page.topSongs.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                MacSectionTitle(title: "Top songs",
+                                seeAll: page.allSongsPlaylistId.map { .playlist(PlaylistSummary(id: $0, title: "\(page.artist.name): Songs", artwork: page.banner)) })
+                    .padding(.leading, 6)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 8, alignment: .top)], spacing: 2) {
+                    ForEach(Array(page.topSongs.enumerated()), id: \.element.id) { index, song in
+                        MacSongTile(song: song) { player.play(page.topSongs, startAt: index) }
+                    }
+                }
+            }
+            .padding(.horizontal, MacMetrics.gutter)
+        }
+        if !page.albums.isEmpty {
+            MacShelf(title: "Albums") { ForEach(page.albums) { MacItemCard(item: .album($0)) } }
+        }
+        if !page.singles.isEmpty {
+            MacShelf(title: "Singles & EPs") { ForEach(page.singles) { MacItemCard(item: .album($0)) } }
+        }
+        if !page.featuredOn.isEmpty {
+            MacShelf(title: "Featured on") { ForEach(page.featuredOn) { MacItemCard(item: .playlist($0)) } }
+        }
+        if !page.similar.isEmpty {
+            MacShelf(title: "Fans also like") { ForEach(page.similar) { MacArtistCard(artist: $0) } }
+        }
+        if let about = page.description {
+            VStack(alignment: .leading, spacing: 10) {
+                MacSectionTitle(title: "About")
+                Text(about)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(aboutExpanded ? nil : 5)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 720, alignment: .leading)
+                Button(aboutExpanded ? "Less" : "More") { withAnimation(.snappy) { aboutExpanded.toggle() } }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.horizontal, MacMetrics.gutter)
+        }
+    }
+
+    private var phoneBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 hero
@@ -61,7 +189,7 @@ struct ArtistView: View {
                     if name.isEmpty {
                         // Opened from a link, the name comes with the page.
                         Capsule().fill(.white.opacity(0.25)).frame(width: 180, height: 34)
-                            .placeholderPulse()
+                            .shimmer()
                     } else {
                         Text(name)
                             .font(.system(size: 40, weight: .bold))
@@ -217,7 +345,7 @@ private struct ArtistHeroImage: View {
             }
         }
         .frame(width: width, height: height)
-        .placeholderPulse(image == nil && previewImage == nil)
+        .shimmer(image == nil && previewImage == nil)
         .clipped()
         .task(id: preview?.url) {
             guard let url = preview?.url(pixels: 120), image == nil else { return }
@@ -236,6 +364,35 @@ private struct ArtistHeroImage: View {
             let loaded = await ImagePipeline.shared.image(url, pixels: pixels)
             withAnimation(.easeOut(duration: 0.25)) { image = loaded }
         }
+        .accessibilityHidden(true)
+    }
+}
+
+/// An artist's photo as a field of their colours: enlarged and blurred far past its edges so
+/// it fills any width without bars, softened, and faded into the page at the bottom.
+private struct MacArtistAmbience: View {
+    let artwork: Artwork?
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                tint.opacity(0.5)
+                ArtworkView(artwork: artwork, size: 160, cornerRadius: 0, fillsFrame: true)
+                    .frame(width: geometry.size.width * 1.2, height: geometry.size.height * 1.6)
+                    .blur(radius: 70, opaque: true)
+                    .saturation(1.3)
+                    .opacity(colorScheme == .dark ? 0.75 : 0.6)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+            }
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55),
+                                         .init(color: .clear, location: 1)],
+                                 startPoint: .top, endPoint: .bottom))
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }

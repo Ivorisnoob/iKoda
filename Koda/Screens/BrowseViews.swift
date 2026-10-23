@@ -9,6 +9,21 @@ struct MoodView: View {
     @State private var state: LoadState<[Shelf]> = .loading
 
     var body: some View {
+        if Platform.isMac {
+            MacPage {
+                MacPageTitle(title: mood.title, subtitle: "Browse")
+                AsyncContent(state: state, retry: load) { shelves in
+                    ForEach(shelves) { MacItemShelf(shelf: $0) }
+                }
+            }
+            .navigationTitle(mood.title)
+            .task { if state.value == nil { await load() } }
+        } else {
+            phoneBody
+        }
+    }
+
+    private var phoneBody: some View {
         ScrollView {
             AsyncContent(state: state, retry: load) { shelves in
                 LazyVStack(alignment: .leading, spacing: 28) {
@@ -39,15 +54,23 @@ struct ShelfGridView: View {
     @Environment(Player.self) private var player
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 16, alignment: .top)], spacing: 20) {
-                ForEach(shelf.items) { item in
-                    ItemCard(item: item, width: 160) { player.startRadio(from: $0) }
-                }
+        if Platform.isMac {
+            MacPage(spacing: 24) {
+                MacPageTitle(title: shelf.title, subtitle: shelf.strapline)
+                MacGrid(items: shelf.items) { item, side in MacItemCard(item: item, width: side) }
             }
-            .padding(20)
+            .navigationTitle(shelf.title)
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 16, alignment: .top)], spacing: 20) {
+                    ForEach(shelf.items) { item in
+                        ItemCard(item: item, width: 160) { player.startRadio(from: $0) }
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle(shelf.title)
         }
-        .navigationTitle(shelf.title)
     }
 }
 
@@ -57,10 +80,17 @@ struct SavedSongsView: View {
     let source: Route.SongSource
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
+    @Environment(Downloads.self) private var downloads
     @AppStorage("koda.likedSort") private var sort: SongSort = .recent
 
     private var songs: [Song] {
-        guard source == .liked else { return library.recent }
+        switch source {
+        case .recent: return library.recent
+        case .downloaded: return downloads.songs
+        // Read when the page draws; downloads finishing redraw it.
+        case .offline: return downloads.store.completeSongs
+        case .liked: break
+        }
         let liked = library.liked
         switch sort {
         case .recent: return liked
@@ -76,6 +106,86 @@ struct SavedSongsView: View {
     }
 
     var body: some View {
+        if Platform.isMac { macBody } else { phoneBody }
+    }
+
+    private var symbol: (String, Color) {
+        switch source {
+        case .liked: ("heart.fill", .pink)
+        case .recent: ("clock.fill", .orange)
+        case .downloaded: ("arrow.down.circle.fill", .blue)
+        case .offline: ("airplane.circle.fill", .green)
+        }
+    }
+
+    /// The Mac's list: a symbol cover beside the title and count, then the songs in columns.
+    private var macBody: some View {
+        let songs = songs
+        return MacPage(spacing: 28) {
+            MacCollectionHeader(
+                kind: "Library",
+                title: title,
+                detail: songs.isEmpty ? nil : songListDetail(songs),
+                canPlay: !songs.isEmpty,
+                play: { player.play(songs) },
+                shuffle: { player.play(songs, startAt: Int.random(in: 0..<max(songs.count, 1)), shuffled: true) }
+            ) {
+                MacSymbolCover(systemImage: symbol.0, tint: symbol.1)
+            } actions: {
+                if source == .liked, !songs.isEmpty {
+                    DownloadButton(songs: songs).buttonStyle(MacIconButtonStyle())
+                }
+                if source == .liked, songs.count > 1 {
+                    Picker("Sort By", selection: $sort) {
+                        ForEach(SongSort.allCases) { Text($0.title).tag($0) }
+                    }
+                    .fixedSize()
+                }
+                if source == .recent, !songs.isEmpty {
+                    Button("Clear History", role: .destructive) { library.clearHistory() }
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                }
+            }
+            if songs.isEmpty {
+                emptyState.frame(maxWidth: .infinity, minHeight: 300)
+            } else {
+                MacTrackList(songs: songs, play: { player.play(songs, startAt: $0) }, rowMenu: { index in
+                    let song = songs[index]
+                    switch source {
+                    case .liked:
+                        return AnyView(Button("Remove from Liked", systemImage: "heart.slash", role: .destructive) { library.toggleLike(song) })
+                    case .downloaded:
+                        return AnyView(Button("Remove Download", systemImage: "trash", role: .destructive) { downloads.remove([song]) })
+                    case .recent, .offline:
+                        return AnyView(EmptyView())
+                    }
+                })
+            }
+        }
+        .navigationTitle(title)
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        switch source {
+        case .liked:
+            ContentUnavailableView("No Liked Songs", systemImage: "heart", description: Text("Songs you like appear here."))
+        case .recent:
+            ContentUnavailableView("Nothing Played Yet", systemImage: "clock", description: Text("Songs you play appear here."))
+        case .downloaded:
+            ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle",
+                                   description: Text("Download songs, albums and playlists to play them without a connection."))
+        case .offline:
+            ContentUnavailableView("Nothing Ready Offline", systemImage: "airplane",
+                                   description: Text(SavedSongsView.offlineNote))
+        }
+    }
+
+    /// What Ready Offline holds, said where the list is.
+    static let offlineNote = "Songs you download, and songs you play all the way through while Keep Songs You Play is on, are kept on this device and play without a connection."
+
+    private var phoneBody: some View {
         List {
             if !songs.isEmpty {
                 PlayShuffleButtons(play: { player.play(songs) }, shuffle: {
@@ -92,9 +202,12 @@ struct SavedSongsView: View {
                             .tint(.indigo)
                     }
                     .swipeActions(edge: .trailing) {
-                        if source == .liked {
+                        switch source {
+                        case .liked:
                             Button("Unlike", systemImage: "heart.slash", role: .destructive) { library.toggleLike(song) }
-                        } else {
+                        case .downloaded:
+                            Button("Remove Download", systemImage: "trash", role: .destructive) { downloads.remove([song]) }
+                        case .recent, .offline:
                             Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue([song]) }
                                 .tint(.orange)
                         }
@@ -104,14 +217,26 @@ struct SavedSongsView: View {
         .listStyle(.plain)
         .overlay {
             if songs.isEmpty {
-                ContentUnavailableView(source == .liked ? "No Liked Songs" : "Nothing Played Yet",
-                                       systemImage: source == .liked ? "heart" : "clock",
-                                       description: Text(source == .liked ? "Songs you like appear here." : "Songs you play appear here."))
+                switch source {
+                case .liked:
+                    ContentUnavailableView("No Liked Songs", systemImage: "heart", description: Text("Songs you like appear here."))
+                case .recent:
+                    ContentUnavailableView("Nothing Played Yet", systemImage: "clock", description: Text("Songs you play appear here."))
+                case .downloaded:
+                    ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle",
+                                           description: Text("Download songs, albums and playlists to play them without a connection."))
+                case .offline:
+                    ContentUnavailableView("Nothing Ready Offline", systemImage: "airplane",
+                                           description: Text(SavedSongsView.offlineNote))
+                }
             }
         }
         .toolbar {
             if source == .recent, !songs.isEmpty {
                 Button("Clear", role: .destructive) { library.clearHistory() }
+            }
+            if source == .liked, !songs.isEmpty {
+                DownloadButton(songs: songs)
             }
             if source == .liked, songs.count > 1 {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {
@@ -161,6 +286,32 @@ struct SongListView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        if Platform.isMac {
+            MacPage(spacing: 28) {
+                MacCollectionHeader(
+                    kind: "Mix",
+                    title: title,
+                    detail: [subtitle, songs.isEmpty ? nil : songListDetail(songs)].compactMap { $0 }.joined(separator: " · "),
+                    canPlay: !songs.isEmpty,
+                    play: { player.play(songs) },
+                    shuffle: { player.play(songs, startAt: Int.random(in: 0..<max(songs.count, 1)), shuffled: true) }
+                ) {
+                    PlaylistMosaic(songs: songs, size: 232, cornerRadius: 12)
+                } actions: {
+                    MacMoreMenu {
+                        Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
+                        AddToPlaylistMenu(songs: songs)
+                    }
+                }
+                MacTrackList(songs: songs) { player.play(songs, startAt: $0) }
+            }
+            .navigationTitle(title)
+        } else {
+            phoneBody
+        }
+    }
+
+    private var phoneBody: some View {
         List {
             VStack(alignment: .leading, spacing: 14) {
                 if let subtitle {
@@ -190,8 +341,16 @@ struct SongListView: View {
         .toolbar {
             Menu("More", systemImage: "ellipsis") {
                 Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
-                Button("Add to Playlist…", systemImage: "text.badge.plus") { app.addToPlaylist(songs) }
+                AddToPlaylistMenu(songs: songs)
             }
         }
     }
+}
+
+/// "42 songs · 2 hr 31 min", under a list's title on the Mac.
+func songListDetail(_ songs: [Song]) -> String {
+    var parts = [songs.count == 1 ? "1 song" : "\(songs.count) songs"]
+    let minutes = Int(songs.compactMap(\.duration).reduce(0, +) / 60)
+    if minutes > 0 { parts.append(minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min") }
+    return parts.joined(separator: " · ")
 }

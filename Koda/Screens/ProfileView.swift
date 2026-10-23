@@ -74,9 +74,7 @@ struct ProfileView: View {
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
-    @State private var photo: PhotosPickerItem?
-    @State private var editingName = false
-    @State private var draftName = ""
+    @State private var editing = false
     @State private var showsSettings = false
 
     var body: some View {
@@ -85,6 +83,11 @@ struct ProfileView: View {
             ScrollView {
                 VStack(spacing: 28) {
                     header(summary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "Profiles")
+                        ProfilesGrid()
+                    }
+                    .padding(.horizontal, 20)
                     tiles(summary)
                     WeekChart(days: summary.days)
                         .padding(.horizontal, 20)
@@ -114,34 +117,20 @@ struct ProfileView: View {
                     Button("Done", systemImage: "checkmark") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showsSettings) { SettingsView() }
-            .alert("Your Name", isPresented: $editingName) {
-                TextField("Name", text: $draftName)
-                    .textContentType(.givenName)
-                Button("Cancel", role: .cancel) {}
-                Button("Save") { app.profile.name = draftName.trimmingCharacters(in: .whitespacesAndNewlines) }
-            } message: {
-                Text("Shown on your profile and the playlists you make. It stays on this iPhone.")
-            }
-            .onChange(of: photo) { _, item in
-                guard let item else { return }
-                Task {
-                    let data = try? await item.loadTransferable(type: Data.self)
-                    app.profile.setAvatar(data)
-                    photo = nil
-                }
-            }
+            .sheet(isPresented: $showsSettings) { SettingsView().appEnvironment(app) }
+            .sheet(isPresented: $editing) { ProfileEditorView(profileID: app.roster.activeID).appEnvironment(app) }
         }
     }
 
     // MARK: Header
 
     private func header(_ summary: ListeningSummary) -> some View {
-        VStack(spacing: 12) {
-            PhotosPicker(selection: $photo, matching: .images) {
-                AvatarView(size: 112)
+        let profile = app.roster.active
+        return VStack(spacing: 12) {
+            Button { editing = true } label: {
+                ProfileAvatar(profile: profile, size: 112)
                     .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "camera.fill")
+                        Image(systemName: "pencil")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.primary)
                             .frame(width: 32, height: 32)
@@ -150,24 +139,14 @@ struct ProfileView: View {
                     .shadow(color: .black.opacity(0.2), radius: 16, y: 8)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Change Photo")
-            .contextMenu {
-                if app.profile.avatar != nil {
-                    Button("Remove Photo", systemImage: "trash", role: .destructive) { app.profile.setAvatar(nil) }
-                }
-            }
+            .accessibilityLabel("Edit Profile")
 
-            Button {
-                draftName = app.profile.name
-                editingName = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(app.profile.displayName).font(.title.bold())
-                    Image(systemName: "pencil").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                }
+            VStack(spacing: 2) {
+                Text(profile.displayName).font(.title.bold())
+                Text(profile.subtitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(profile.isExpired ? .red : .secondary)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Edit your name")
 
             if let first = summary.firstPlayed {
                 Text("Listening since \(first.formatted(.dateTime.month(.wide).year()))")
@@ -395,8 +374,87 @@ struct StatsView: View {
     @State private var confirmReset = false
 
     var body: some View {
+        if Platform.isMac { macBody } else { phoneBody }
+    }
+
+    /// The Mac's stats as a dashboard: totals and the chart across the top, then top songs and
+    /// top artists side by side.
+    private var macBody: some View {
         let summary = ListeningSummary(library: library, days: range.days)
-        ScrollView {
+        return MacPage(spacing: 28) {
+            MacPageTitle(title: "Listening Stats", subtitle: "Library") {
+                Picker("Range", selection: $range) {
+                    ForEach(Span.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                if !library.songStats.isEmpty {
+                    Button("Reset…", role: .destructive) { confirmReset = true }
+                        .buttonStyle(.glass)
+                }
+            }
+            if summary.topSongs.isEmpty {
+                ContentUnavailableView("No Listening Yet", systemImage: "chart.bar",
+                                       description: Text("Your stats fill in as you play music."))
+                    .frame(maxWidth: .infinity, minHeight: 360)
+            } else {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(spacing: 16) {
+                        StatTile(title: "Listened", value: summary.totalSeconds.listeningText, systemImage: "headphones", tint: .accentColor)
+                        StatTile(title: "Day streak", value: summary.streak == 1 ? "1 day" : "\(summary.streak) days", systemImage: "flame.fill", tint: .orange)
+                    }
+                    .frame(width: 240)
+                    if range != .year {
+                        WeekChart(days: summary.days, title: range == .week ? "Last 7 days" : "Last 30 days")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, MacMetrics.gutter)
+                HStack(alignment: .top, spacing: 40) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        MacSectionTitle(title: "Top songs", subtitle: "All time")
+                        TopSongsList(stats: Array(summary.topSongs.prefix(25)))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    if !summary.topArtists.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            MacSectionTitle(title: "Top artists", subtitle: "All time")
+                            ForEach(Array(summary.topArtists.prefix(10).enumerated()), id: \.element.id) { index, artist in
+                                HStack(spacing: 12) {
+                                    Text("\(index + 1)")
+                                        .font(.callout.monospacedDigit().weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24)
+                                    ArtworkView(artwork: artist.artwork, size: 40, circle: true)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(artist.name).font(.callout.weight(.medium)).lineLimit(1)
+                                        Text("\(artist.seconds.listeningText) · \(artist.plays == 1 ? "1 play" : "\(artist.plays) plays")")
+                                            .font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.vertical, 3)
+                            }
+                        }
+                        .frame(width: 340, alignment: .topLeading)
+                    }
+                }
+                .padding(.horizontal, MacMetrics.gutter)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: range)
+        .navigationTitle("Listening Stats")
+        .confirmationDialog("Reset your listening stats?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset Stats", role: .destructive) { library.clearStats() }
+        } message: {
+            Text("Play counts and listening time start over. Liked songs and history stay.")
+        }
+    }
+
+    private var phoneBody: some View {
+        let summary = ListeningSummary(library: library, days: range.days)
+        return ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Picker("Range", selection: $range) {
                     ForEach(Span.allCases) { Text($0.rawValue).tag($0) }

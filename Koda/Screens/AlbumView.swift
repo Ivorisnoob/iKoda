@@ -13,6 +13,72 @@ struct AlbumView: View {
     private var album: AlbumSummary { state.value?.album ?? summary }
 
     var body: some View {
+        if Platform.isMac { macBody } else { phoneBody }
+    }
+
+    /// The Mac's album: the cover beside its details, buttons at their own size, and the
+    /// tracks as a list with columns, numbered as on the record.
+    private var macBody: some View {
+        MacPage(spacing: 28) {
+            MacCollectionHeader(
+                kind: [album.kind?.rawValue ?? "Album", album.year.map(String.init)].compactMap { $0 }.joined(separator: " · "),
+                title: album.title,
+                byline: album.artistLine,
+                bylineArtists: album.artists,
+                openArtist: { app.open(.artist($0)) },
+                detail: state.value?.detailLine,
+                description: state.value?.description,
+                accent: palette.palette.accent,
+                canPlay: !(state.value?.songs.isEmpty ?? true),
+                play: { play(shuffled: false) },
+                shuffle: { play(shuffled: true) }
+            ) {
+                ArtworkView(artwork: album.artwork ?? summary.artwork, size: 232, cornerRadius: 12)
+            } actions: {
+                macActions
+            }
+            AsyncContent(state: state, retry: load, placeholder: .placeholder(summary)) { page in
+                VStack(alignment: .leading, spacing: 36) {
+                    MacTrackList(songs: page.songs, numbered: true,
+                                 showsArtist: page.songs.contains { $0.artistLine != page.album.artistLine },
+                                 showsAlbum: false) { player.play(page.songs, startAt: $0) }
+                    if !page.otherVersions.isEmpty {
+                        MacShelf(title: "Other versions") {
+                            ForEach(page.otherVersions) { MacItemCard(item: .album($0)) }
+                        }
+                    }
+                }
+            }
+        }
+        .background { ArtworkGlow(palette: palette.palette) }
+        .navigationTitle(album.title)
+        .task { await palette.load(summary.artwork) }
+        .task { if state.value == nil { await load() } }
+    }
+
+    @ViewBuilder
+    private var macActions: some View {
+        let saved = library.isSaved(album: summary.id)
+        Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+            library.toggleSave(album)
+        }
+        .buttonStyle(MacIconButtonStyle())
+        .help(saved ? "Remove from Library" : "Add to Library")
+        if let songs = state.value?.songs, !songs.isEmpty {
+            DownloadButton(songs: songs)
+                .buttonStyle(MacIconButtonStyle())
+            MacMoreMenu {
+                Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(songs) }
+                Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
+                AddToPlaylistMenu(songs: songs)
+                ShareLink(item: URL(string: "https://music.youtube.com/browse/\(summary.id)")!) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+            }
+        }
+    }
+
+    private var phoneBody: some View {
         ScrollView {
             VStack(spacing: 24) {
                 CollectionHeader(
@@ -74,12 +140,17 @@ struct AlbumView: View {
                 }
                 .sensoryFeedback(.success, trigger: saved)
             }
+            if let songs = state.value?.songs, !songs.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    DownloadButton(songs: songs)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("More", systemImage: "ellipsis") {
                     if let songs = state.value?.songs, !songs.isEmpty {
                         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(songs) }
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
-                        Button("Add to Playlist…", systemImage: "text.badge.plus") { app.addToPlaylist(songs) }
+                        AddToPlaylistMenu(songs: songs)
                     }
                     ShareLink(item: URL(string: "https://music.youtube.com/browse/\(summary.id)")!) {
                         Label("Share", systemImage: "square.and.arrow.up")

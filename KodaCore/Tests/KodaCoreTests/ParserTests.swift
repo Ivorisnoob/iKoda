@@ -19,6 +19,22 @@ func fixture(_ name: String) throws -> JSON {
         #expect(page.moods.contains { $0.title == "Feel good" && $0.params != nil })
     }
 
+    @Test func homeQuickPicksAreSongs() throws {
+        let page = Pages.shelves(try fixture("home-quick-picks"))
+        #expect(page.shelves.first?.title == "Quick picks")
+        let songs = page.songs
+        #expect(songs.count == 20)
+        #expect(songs.allSatisfy { !$0.id.isEmpty && !$0.title.isEmpty && !$0.artistLine.isEmpty })
+        #expect(Set(songs.map(\.id)).count == songs.count)
+    }
+
+    @Test func chartTopArtistsAreArtists() throws {
+        let page = Pages.shelves(try fixture("charts-top-artists"))
+        let artists = page.artists
+        #expect(artists.count == 40)
+        #expect(artists.allSatisfy { $0.id.hasPrefix("UC") && !$0.name.isEmpty && $0.artwork != nil })
+    }
+
     @Test func exploreHasNewReleasesAsAlbums() throws {
         let page = Pages.shelves(try fixture("explore"))
         let releases = try #require(page.shelves.first { $0.title == "New albums & singles" })
@@ -84,6 +100,10 @@ func fixture(_ name: String) throws -> JSON {
         #expect(page.artist.name == "The Weeknd")
         #expect(page.artist.subtitle == "238M monthly audience")
         #expect(page.topSongs.count == 5)
+        // Artist, plays and album sit in separate columns with no dot between them.
+        #expect(page.topSongs[0].artistLine == "The Weeknd, JENNIE & Lily Rose Depp")
+        #expect(page.topSongs[1].artistLine == "The Weeknd")
+        #expect(page.topSongs[1].album?.title == "After Hours")
         #expect(page.allSongsPlaylistId?.hasPrefix("OLAK5uy_") == true)
         #expect(page.albums.first?.title == "Hurry Up Tomorrow")
         #expect(page.albums.allSatisfy { $0.kind == .album && $0.artistLine == "The Weeknd" })

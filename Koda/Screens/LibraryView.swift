@@ -26,7 +26,9 @@ enum LibrarySort: String, CaseIterable, Identifiable {
 
 /// What the listener saved on this phone.
 struct LibraryView: View {
+    @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
+    @Environment(Downloads.self) private var downloads
     @AppStorage("koda.library.sort") private var sort: LibrarySort = .recent
     @State private var showsProfile = false
 
@@ -42,8 +44,16 @@ struct LibraryView: View {
                     LibraryLink(title: "Liked Songs", systemImage: "heart.fill", tint: .pink, count: library.liked.count,
                                 route: .songs(title: "Liked Songs", source: .liked))
                     Divider().padding(.leading, 56)
+                    LibraryLink(title: "Downloads", systemImage: "arrow.down.circle.fill", tint: .blue, count: downloads.songs.count,
+                                route: .songs(title: "Downloads", source: .downloaded))
+                    Divider().padding(.leading, 56)
+                    LibraryLink(title: "Ready Offline", systemImage: "airplane", tint: .green, count: 0,
+                                route: .songs(title: "Ready Offline", source: .offline))
+                    Divider().padding(.leading, 56)
                     LibraryLink(title: "Recently Played", systemImage: "clock.fill", tint: .orange, count: library.recent.count,
                                 route: .songs(title: "Recently Played", source: .recent))
+                    Divider().padding(.leading, 56)
+                    LibraryLink(title: "History", systemImage: "clock.arrow.circlepath", tint: .orange, count: 0, route: .history)
                     Divider().padding(.leading, 56)
                     LibraryLink(title: "Listening Stats", systemImage: "chart.bar.fill", tint: .teal, count: 0, route: .stats)
                 }
@@ -74,6 +84,8 @@ struct LibraryView: View {
             .padding(.vertical, 12)
         }
         .navigationTitle("Library")
+        // A signed-in profile's pull brings in what changed on the account elsewhere.
+        .refreshable { if app.roster.active.isSignedIn { await app.refreshAccount() } }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {
@@ -86,11 +98,10 @@ struct LibraryView: View {
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showsProfile = true } label: { AvatarView(size: 32) }
-                    .accessibilityLabel("Profile and Settings")
+                ProfileToolbarButton { showsProfile = true }
             }
         }
-        .sheet(isPresented: $showsProfile) { ProfileView() }
+        .sheet(isPresented: $showsProfile) { ProfileView().appEnvironment(app) }
     }
 
     // MARK: Your playlists

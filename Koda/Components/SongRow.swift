@@ -28,6 +28,7 @@ struct SongRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                DownloadIndicator(song: song)
                 if song.isVideo {
                     Image(systemName: "play.rectangle")
                         .font(.caption)

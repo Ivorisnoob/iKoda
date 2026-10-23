@@ -32,6 +32,7 @@ actor StreamResolver {
     private let identity: VisitorIdentity
     private var cache: [String: ResolvedStream] = [:]
     private var inFlight: [String: Task<ResolvedStream, Error>] = [:]
+    private var videoCache: [String: VideoStream] = [:]
 
     init(session: URLSession, identity: VisitorIdentity) {
         self.session = session
@@ -48,6 +49,41 @@ actor StreamResolver {
         cache[videoId] = stream
         if cache.count > 200 { cache = cache.filter { $0.value.isFresh() } }
         return stream
+    }
+
+    // MARK: Video
+
+    /// A video's HLS manifest, from the same `/player` call: under the same bot check, so the same
+    /// one replacement of a refused token. Cached until shortly before googlevideo stops honouring it.
+    func resolveVideo(_ videoId: String) async throws -> VideoStream {
+        if let cached = videoCache[videoId], cached.isFresh() { return cached }
+        guard let token = await identity.current() else { throw MusicError.network }
+        var stream = try await videoAttempt(videoId, token: token)
+        if stream == nil {
+            guard let fresh = await identity.replace(token), fresh != token else { throw MusicError.botCheck }
+            stream = try await videoAttempt(videoId, token: fresh)
+        }
+        guard var stream else { throw MusicError.botCheck }
+        // The manifest is a few KB; reading it names the qualities on offer.
+        if let (data, response) = try? await session.data(from: stream.url), (response as? HTTPURLResponse)?.statusCode == 200 {
+            stream.qualities = VideoStream.qualities(inMaster: String(decoding: data, as: UTF8.self))
+        }
+        videoCache[videoId] = stream
+        if videoCache.count > 100 { videoCache = videoCache.filter { $0.value.isFresh() } }
+        return stream
+    }
+
+    /// Nil for the bot check's two signatures: LOGIN_REQUIRED, and OK with nothing to stream.
+    private func videoAttempt(_ videoId: String, token: String) async throws -> VideoStream? {
+        let root = try await player(videoId, token: token)
+        let status = root["playabilityStatus"]["status"].string ?? ""
+        if status == "LOGIN_REQUIRED" { return nil }
+        if !status.isEmpty, status != "OK" {
+            throw MusicError.unplayable(root["playabilityStatus"]["reason"].nonEmpty)
+        }
+        guard let url = root["streamingData"]["hlsManifestUrl"].string.flatMap(URL.init(string:)) else { return nil }
+        let expires = root["streamingData"]["expiresInSeconds"].double.map { Date().addingTimeInterval($0) }
+        return VideoStream(videoId: videoId, url: url, isLive: root["videoDetails"]["isLive"].bool ?? false, expiresAt: expires)
     }
 
     func invalidate(_ videoId: String, refusedIdentity: Bool) async {

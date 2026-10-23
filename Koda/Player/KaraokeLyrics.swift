@@ -10,9 +10,13 @@ import SwiftUI
 /// few times a second, when the line changes.
 struct SyncedLyrics: View {
     let lines: [LyricLine]
+    @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
     @State private var userScrolled = false
+    /// How far the lines have scrolled up, up to `topFadeHeight`: the top fade grows with it.
+    @State private var topFade: CGFloat = 0
+    static let topFadeHeight: CGFloat = 56
     @State private var shareFrom: ShareStart?
 
     private struct ShareStart: Identifiable {
@@ -44,7 +48,7 @@ struct SyncedLyrics: View {
                         ForEach(lines) { line in
                             let isCurrent = line.id == current && interlude == nil
                             LyricRow(line: line, isCurrent: isCurrent, distance: current.map { abs(line.id - $0) } ?? line.id + 1,
-                                     hasDuet: hasDuet, offset: offset)
+                                     hasDuet: hasDuet, offset: offset, style: LyricsStyle(app.settings), player: player)
                                 .id(line.id)
                                 .contentShape(.rect)
                                 .onTapGesture {
@@ -76,6 +80,9 @@ struct SyncedLyrics: View {
                     .animation(.spring(response: 0.45, dampingFraction: 0.8), value: interlude?.after)
                 }
                 .scrollIndicators(.hidden)
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, scrolled in
+                    topFade = min(max(scrolled, 0), Self.topFadeHeight)
+                }
                 .onScrollPhaseChange { _, phase in
                     if phase == .interacting { userScrolled = true }
                 }
@@ -92,9 +99,16 @@ struct SyncedLyrics: View {
                 }
             }
         }
-        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.12),
-                                     .init(color: .black, location: 0.85), .init(color: .clear, location: 1)],
-                             startPoint: .top, endPoint: .bottom))
+        // Lines fade as they pass under the song, but only once there are lines up there: at the
+        // top a fixed fade washed out the first line, which rests right under the title.
+        .mask {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                    .frame(height: topFade)
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.83), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+        }
         // The lyrics run out to the screen edges, padded back in line with the rest of the
         // player, so a glowing or swelling word at either edge is not cut off by the scroll view.
         .padding(.horizontal, -Self.bleed)
@@ -111,6 +125,7 @@ struct SyncedLyrics: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: userScrolled)
         .sheet(item: $shareFrom) { start in
             LyricsShareSheet(lines: lines, song: start.song, startingAt: start.line)
+                .appEnvironment(app)
                 .environment(\.colorScheme, .dark)
         }
     }
@@ -176,11 +191,12 @@ struct LyricRow: View {
     let distance: Int
     let hasDuet: Bool
     let offset: TimeInterval
-
-    @Environment(AppModel.self) private var app
+    /// Passed in rather than read from the environment: the Mac draws a row's context-menu
+    /// preview outside the window, where the app's environment objects don't reach.
+    let style: LyricsStyle
+    let player: Player
 
     nonisolated static let defaultFontSize: CGFloat = 30
-    private var style: LyricsStyle { LyricsStyle(app.settings) }
     /// Where the line sits: every line on the left unless Duet Sides is on.
     private var voice: LyricVoice { style.duetSides && line.voice == .duet ? .duet : .lead }
 
@@ -204,7 +220,7 @@ struct LyricRow: View {
         VStack(alignment: alignment, spacing: 6) {
             if line.isWordTimed {
                 if isCurrent {
-                    KaraokeLine(line: line, offset: offset, alignment: alignment, style: style)
+                    KaraokeLine(line: line, offset: offset, alignment: alignment, style: style, player: player)
                 } else {
                     WordFlow(alignment: alignment, spacing: style.spacing) {
                         ForEach(Array(line.words.enumerated()), id: \.offset) { _, word in
@@ -248,7 +264,7 @@ private struct KaraokeLine: View {
     let offset: TimeInterval
     let alignment: HorizontalAlignment
     let style: LyricsStyle
-    @Environment(Player.self) private var player
+    let player: Player
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var motion: Bool { style.motion && !reduceMotion }
@@ -414,7 +430,7 @@ struct LyricsLoading: View {
             }
         }
         .padding(.top, 16)
-        .placeholderPulse()
+        .shimmer()
         .frame(maxHeight: .infinity, alignment: .top)
         .accessibilityLabel("Loading lyrics")
     }

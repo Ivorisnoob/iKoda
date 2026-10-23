@@ -4,25 +4,26 @@ import SwiftUI
 @MainActor
 @Observable
 final class HomeModel {
-    struct Content {
+    nonisolated struct Content: Codable, Sendable {
         var quickPicks: [Song] = []
         var quickPicksTitle = "Quick picks"
         var shelves: [Shelf] = []
-        var newReleases: Shelf?
-        var chartArtists: [ArtistSummary] = []
+        /// YouTube Music's chart playlists: global, the listener's region, then its genres or languages.
+        /// The one row on Home that isn't built from the listener's own listening.
+        var charts: [PlaylistSummary] = []
         var trending: [Song] = []
 
         /// The shape of a loaded Home, for drawing it redacted while the real one loads.
         static let placeholder: Content = {
             var content = Content()
             content.quickPicks = Song.placeholders(8)
-            content.shelves = [Shelf(title: "Shelf title", items: (0..<6).map { .album(AlbumSummary.placeholder($0)) })]
+            content.charts = (0..<6).map { PlaylistSummary(id: "placeholder-\($0)", title: "Top 100 Chart") }
             return content
         }()
     }
 
     /// Songs woven from the radios of what the listener plays most.
-    struct Mix: Equatable {
+    nonisolated struct Mix: Equatable, Codable, Sendable {
         var artists: [String]
         var songs: [Song]
         /// Built from listening; otherwise trending songs for someone new.
@@ -37,31 +38,73 @@ final class HomeModel {
     private(set) var mixPending = true
     /// Portraits for the listener's top artists, by channel id; fetched after the page shows.
     private(set) var artistPhotos: [String: Artwork] = [:]
+    /// The listener's most-played artists, as of the last load.
+    private(set) var yourArtists: [ArtistRef] = []
+    /// When Home last loaded, so a window coming back to it after a long while can refresh it.
+    private(set) var loadedAt: Date?
+    /// What's shown came from the last launch's snapshot and hasn't been refreshed yet.
+    private(set) var isFromSnapshot = false
 
-    func load(music: YouTubeMusic, library: Library) async {
+    /// Home as it was last shown, saved to disk so a cold launch opens on it.
+    nonisolated private struct Saved: Codable, Sendable {
+        var content: Content
+        var mix: Mix?
+        var artistPhotos: [String: Artwork]
+        var loadedAt: Date
+    }
+
+    /// Whose Home this is: each profile's is its own, and so is its snapshot.
+    let profile: UUID
+    private var snapshotName: String { "home-\(profile.uuidString)" }
+
+    init(profile: UUID) {
+        self.profile = profile
+        guard let saved = Snapshot.load(Saved.self, "home-\(profile.uuidString)") else { return }
+        state = .loaded(saved.content)
+        mix = saved.mix
+        mixPending = saved.mix == nil
+        artistPhotos = saved.artistPhotos
+        loadedAt = saved.loadedAt
+        isFromSnapshot = true
+    }
+
+    /// Nothing shown yet, only last launch's Home, or a Home half an hour old: load it again,
+    /// in place, over what's on screen.
+    var needsRefresh: Bool {
+        state.value == nil || isFromSnapshot || loadedAt.map { Date().timeIntervalSince($0) > 1800 } == true
+    }
+
+    /// `signedIn`: the profile has a YouTube Music account, whose own Home then gives Quick picks.
+    func load(music: YouTubeMusic, library: Library, signedIn: Bool) async {
+        // Worked out here, not in the view's body: the body is drawn again every few seconds
+        // while music plays, as listening time is added, and this ranks every song ever played.
+        yourArtists = topArtists(library)
         if state.value == nil { state = .loading }
         if mix == nil { mixPending = true }
         let recent = library.recent
         let taste = Taste(library: library)
-        async let home = music.home()
-        async let explore = try? music.explore()
-        async let charts = try? music.charts()
-        async let picks = quickPicks(music: music, recent: recent)
+        // What the listener asked not to be offered stays out of everything Home suggests.
+        let hidden = library.notInterested
+        // Liked first, then what was kept in taste setup: Quick picks' seed when nothing's been played.
+        let liked = library.liked + library.taste.songs
+        let pickedArtists = library.taste.artists
+        // Home is the listener's own: Your Mix, Quick picks, what they go back to and play. From
+        // YouTube it takes the charts, as one row, trending songs for someone new, and signed in,
+        // the account's own Quick picks.
+        async let explore = music.explore()
+        async let charts = try? music.chartPlaylists()
+        async let picks = quickPicks(music: music, recent: recent, liked: liked, signedIn: signedIn)
         do {
-            let homePage = try await home
             var content = Content()
-            content.shelves = homePage.shelves
-            let explorePage = await explore
-            content.newReleases = explorePage?.shelves.first { $0.title == "New albums & singles" }
-            content.trending = trending(explorePage)
-            content.chartArtists = (await charts)?.shelves.first { $0.title == "Top artists" }?.items.compactMap {
-                if case .artist(let a) = $0 { return a }
-                return nil
-            } ?? []
+            let explorePage = try await explore
+            content.trending = trending(explorePage).filter { !hidden.hides($0) }
+            content.charts = await charts ?? []
             let (title, songs) = await picks
             content.quickPicksTitle = title
-            content.quickPicks = songs.isEmpty ? content.trending : songs
+            let offered = songs.filter { !hidden.hides($0) }
+            content.quickPicks = offered.isEmpty ? content.trending : offered
             state = .loaded(content)
+            loadedAt = Date()
             if mix == nil, taste.isEmpty, !content.trending.isEmpty {
                 mix = Mix(artists: Array(Set(content.trending.map(Taste.leadArtist))).sorted().prefix(3).map { $0 },
                           songs: content.trending, isPersonal: false)
@@ -70,7 +113,7 @@ final class HomeModel {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.buildMix(music: music, taste: taste, recent: recent) }
+            group.addTask { await self.buildMix(music: music, taste: taste, picks: pickedArtists, recent: recent, hidden: hidden) }
             group.addTask { await self.loadArtistPhotos(music: music, library: library) }
         }
         // Radios that all failed still leave a card: trending songs, as for someone new.
@@ -78,10 +121,28 @@ final class HomeModel {
             mix = Mix(artists: Array(Set(trending.map(Taste.leadArtist))).sorted().prefix(3).map { $0 }, songs: trending, isPersonal: false)
         }
         withAnimation(.smooth) { mixPending = false }
+        if let content = state.value, let loadedAt {
+            isFromSnapshot = false
+            Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt), snapshotName)
+        }
     }
 
     /// Your Mix: a radio from each top artist's favourite song, woven together.
-    private func buildMix(music: YouTubeMusic, taste: Taste, recent: [Song]) async {
+    private func buildMix(music: YouTubeMusic, taste: Taste, picks: [ArtistSummary], recent: [Song], hidden: NotInterested) async {
+        var taste = taste
+        if taste.isEmpty, !picks.isEmpty {
+            // Nothing played, liked or kept yet: start from the artists picked in taste setup.
+            let chosen = Array(picks.filter { $0.id.hasPrefix("UC") }.prefix(4))
+            let tops = await withTaskGroup(of: (Int, Song?).self) { group in
+                for (index, artist) in chosen.enumerated() {
+                    group.addTask { (index, try? await music.artist(artist.id).topSongs.first(where: { !hidden.hides($0) })) }
+                }
+                var byIndex: [Int: Song] = [:]
+                for await (index, song) in group { if let song { byIndex[index] = song } }
+                return chosen.indices.compactMap { byIndex[$0] }
+            }
+            taste = Taste(artists: chosen.map(\.name), seeds: tops)
+        }
         guard !taste.isEmpty else { return }
         let radios = await withTaskGroup(of: (Int, [Song]).self) { group in
             for (index, seed) in taste.seeds.enumerated() {
@@ -93,13 +154,13 @@ final class HomeModel {
         }
         // The seeds and the last few songs played are left out, so the mix is something to go on to.
         let skip = Set(taste.seeds.map(\.id) + recent.prefix(10).map(\.id))
-        let songs = Taste.weave(radios, excluding: skip)
+        let songs = Taste.weave(radios.map { $0.filter { !hidden.hides($0) } }, excluding: skip)
         guard !songs.isEmpty else { return }
         withAnimation(.smooth) { mix = Mix(artists: Array(taste.artists.prefix(3)), songs: songs, isPersonal: true) }
     }
 
     private func loadArtistPhotos(music: YouTubeMusic, library: Library) async {
-        let ids = topArtists(library).compactMap(\.id).filter { artistPhotos[$0] == nil }
+        let ids = yourArtists.compactMap(\.id).filter { artistPhotos[$0] == nil }
         guard !ids.isEmpty else { return }
         let found = await withTaskGroup(of: (String, Artwork?).self) { group in
             for id in ids {
@@ -122,9 +183,15 @@ final class HomeModel {
         return taste.artists.compactMap { refs[$0] }.prefix(limit).map { $0 }
     }
 
-    /// Songs like the last one played; with no history yet, nothing (trending fills in).
-    private func quickPicks(music: YouTubeMusic, recent: [Song]) async -> (String, [Song]) {
-        guard let seed = recent.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", []) }
+    /// Signed in, the account's Quick picks from YouTube Music's own Home, as Koda for Android
+    /// takes them. Otherwise, or when that comes back short, songs like the last one played or,
+    /// with nothing played yet, the newest liked; with neither, nothing (trending fills in).
+    private func quickPicks(music: YouTubeMusic, recent: [Song], liked: [Song], signedIn: Bool) async -> (String, [Song]) {
+        if signedIn, let home = try? await music.home() {
+            let songs = home.songs
+            if songs.count >= 3 { return ("Quick picks", Array(songs.prefix(20))) }
+        }
+        guard let seed = recent.first ?? liked.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", []) }
         let songs = Array(radio.songs.filter { $0.id != seed.id }.prefix(20))
         return ("Quick picks", songs)
     }
@@ -141,8 +208,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
-    @State private var model = HomeModel()
-    @State private var showsProfile = false
+    private var model: HomeModel { app.home }
 
     var body: some View {
         ScrollView {
@@ -180,14 +246,17 @@ struct HomeView: View {
         }
         .navigationTitle(greeting)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { ModeToggle() }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showsProfile = true } label: { AvatarView(size: 32) }
-                    .accessibilityLabel("Profile and Settings")
+                ProfileToolbarButton { app.isProfilePresented = true }
             }
         }
-        .sheet(isPresented: $showsProfile) { ProfileView() }
-        .refreshable { await load() }
-        .task { if model.state.value == nil { await load() } }
+        .refreshable {
+            await app.music.clearPageCache()
+            await load()
+        }
+        // A snapshot from the last launch shows at once; the fresh Home replaces it in place.
+        .task { if model.needsRefresh { await load() } }
     }
 
     @ViewBuilder
@@ -205,7 +274,7 @@ struct HomeView: View {
         JumpBackIn()
 
         if !content.quickPicks.isEmpty {
-            SongColumnsShelf(title: content.quickPicksTitle, strapline: library.recent.isEmpty ? "Trending now" : "Start with these", songs: content.quickPicks) { index in
+            SongColumnsShelf(title: content.quickPicksTitle, strapline: content.quickPicks == content.trending ? "Trending now" : "Start with these", songs: content.quickPicks) { index in
                 player.play(content.quickPicks, startAt: index)
             }
         }
@@ -220,10 +289,7 @@ struct HomeView: View {
                 }
             }
         }
-        if let first = content.shelves.first {
-            ItemShelf(shelf: first, onPlay: play)
-        }
-        let yours = model.topArtists(library)
+        let yours = model.yourArtists
         if yours.count >= 3 {
             ShelfView(title: "Your top artists", strapline: "Based on your listening") {
                 ForEach(yours, id: \.name) { ref in
@@ -235,17 +301,13 @@ struct HomeView: View {
                 }
             }
         }
-        if let releases = content.newReleases {
-            ItemShelf(shelf: releases, onPlay: play)
-        }
-        ForEach(content.shelves.dropFirst()) { shelf in
-            ItemShelf(shelf: shelf, onPlay: play)
-        }
-        if !content.chartArtists.isEmpty {
-            ShelfView(title: "Top artists", strapline: "Charts") {
-                ForEach(content.chartArtists) { artist in
-                    NavigationLink(value: Route.artist(artist)) { ArtistCard(artist: artist) }
-                        .buttonStyle(.plain)
+        if !content.charts.isEmpty {
+            ShelfView(title: "Charts", strapline: "Global and near you") {
+                ForEach(content.charts) { chart in
+                    NavigationLink(value: Route.playlist(chart)) {
+                        CoverCard(artwork: chart.artwork, title: chart.title, subtitle: chart.subtitle)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -256,7 +318,7 @@ struct HomeView: View {
     }
 
     private func load() async {
-        await model.load(music: app.music, library: library)
+        await app.loadHome(model)
     }
 
     private var greeting: String {
@@ -271,16 +333,21 @@ struct HomeView: View {
 
 // MARK: - Your Mix
 
-/// The first thing on Home: the listener's mix as a large card in its covers' colours,
-/// with the covers fanned out and a play button that starts it.
-private struct MixHero: View {
+/// The first thing on Home: the listener's mix as a card in its covers' colours, three
+/// of its covers along the top and a button that plays it.
+struct MixHero: View {
     let mix: HomeModel.Mix
     @Environment(Player.self) private var player
-    /// One palette per fanned-out cover; the background weaves all three together.
+    /// One palette per cover; the background weaves all three together.
     @State private var palettes = [PaletteModel(), PaletteModel(), PaletteModel()]
-    @State private var appeared = false
     @State private var taps = 0
+    @State private var isPressed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .largeTitle) private var coverSize: CGFloat = 100
+
+    private static let cornerRadius: CGFloat = 26
+    private static let padding: CGFloat = 20
+    private static let playSize: CGFloat = 52
 
     private var covers: [Artwork] {
         var seen = Set<URL>()
@@ -311,99 +378,94 @@ private struct MixHero: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
         NavigationLink(value: Route.songList(title: title, subtitle: caption, songs: mix.songs)) {
-            ZStack(alignment: .bottomLeading) {
-                MixBackground(colors: meshColors, isAnimating: !reduceMotion)
-                LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
-
-                collage
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 22)
-                    .padding(.trailing, 18)
-
-                HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(mix.isPersonal ? "MADE FOR YOU" : "NEW HERE")
-                            .font(.caption.weight(.bold))
-                            .tracking(1.2)
-                            .foregroundStyle(.white.opacity(0.7))
-                        Text(title)
-                            .font(.system(size: 42, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        Text(caption)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.8))
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 0) {
+                coverRow
+                    .padding(.bottom, 24)
+                Text(mix.isPersonal ? "Made for you" : "New here")
+                    .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(title)
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                HStack(spacing: 16) {
+                    Text(caption)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     // Room for the play button, which sits over the card rather than inside the link.
-                    Color.clear.frame(width: 64, height: 64)
+                    Color.clear.frame(width: Self.playSize, height: Self.playSize)
                 }
-                .padding(22)
             }
-            .frame(height: 340)
-            .clipShape(.rect(cornerRadius: 32, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-            .shadow(color: meshColors[4].opacity(0.35), radius: 24, y: 12)
-            .contentShape(.rect(cornerRadius: 32, style: .continuous))
+            .padding(Self.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background { MixBackground(colors: meshColors, isAnimating: !reduceMotion) }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+            .contentShape(shape)
         }
-        .buttonStyle(HeroButtonStyle())
+        .buttonStyle(PressReporting(isPressed: $isPressed))
         .overlay(alignment: .bottomTrailing) {
             Button {
                 taps += 1
                 player.play(mix.songs)
             } label: {
                 Image(systemName: "play.fill")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 64, height: 64)
-                    .background(.white, in: .circle)
-                    .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
+                    .font(.title3.weight(.semibold))
+                    .frame(width: Self.playSize, height: Self.playSize)
             }
-            .buttonStyle(HeroButtonStyle())
-            .padding(22)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .padding(Self.padding)
             .accessibilityLabel("Play \(title)")
             .sensoryFeedback(.impact(weight: .medium), trigger: taps)
         }
+        // The card and its play button press down together, as one object.
+        .scaleEffect(isPressed ? 0.97 : 1)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: isPressed)
+        .environment(\.colorScheme, .dark)
         .task(id: covers) {
-            // The covers are already loaded for the collage, so these come from the cache.
+            // The covers are already loaded for the row, so these come from the cache.
             for (index, cover) in covers.enumerated() where index < palettes.count {
                 await palettes[index].load(cover)
             }
         }
-        .onAppear {
-            guard !appeared else { return }
-            withAnimation(reduceMotion ? nil : .spring(response: 0.7, dampingFraction: 0.72).delay(0.1)) { appeared = true }
-        }
         .accessibilityElement(children: .contain)
     }
 
-    /// Three covers fanned out: one large and tilted, two small circles tucked against it.
-    private var collage: some View {
+    /// Up to three covers overlapping left to right, the first on top; empty slots while
+    /// there are none, so the card keeps its height.
+    @ViewBuilder
+    private var coverRow: some View {
         let covers = covers
-        return ZStack(alignment: .topTrailing) {
-            if covers.count > 0 {
-                ArtworkView(artwork: covers[0], size: 150, cornerRadius: 22)
-                    .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
-                    .rotationEffect(.degrees(appeared ? 7 : 0))
-                    .offset(x: appeared ? -6 : 0, y: appeared ? 4 : 10)
-            }
-            if covers.count > 1 {
-                ArtworkView(artwork: covers[1], size: 78, circle: true)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 2))
-                    .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                    .offset(x: appeared ? -132 : -90, y: appeared ? 92 : 70)
-            }
-            if covers.count > 2 {
-                ArtworkView(artwork: covers[2], size: 58, circle: true)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 2))
-                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                    .offset(x: appeared ? -8 : -30, y: appeared ? 150 : 120)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        HStack(spacing: -coverSize * 0.3) {
+            if covers.isEmpty {
+                // One flat shape, each slot cut out of the one behind it, so the overlaps
+                // don't stack translucent grey and shadows into darker patches.
+                ForEach(0..<3, id: \.self) { index in
+                    shape.fill(.white)
+                        .frame(width: coverSize, height: coverSize)
+                        .background { shape.padding(-3).blendMode(.destinationOut) }
+                        .zIndex(Double(-index))
+                }
+            } else {
+                ForEach(covers.indices, id: \.self) { index in
+                    // Opaque under the image, so a cover still loading hides the one behind it.
+                    ArtworkView(artwork: covers[index], size: coverSize, cornerRadius: 12)
+                        .background(Color(white: 0.22), in: shape)
+                        .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+                        .zIndex(Double(-index))
+                }
             }
         }
-        .opacity(appeared ? 1 : 0)
+        .compositingGroup()
+        .opacity(covers.isEmpty ? 0.16 : 1)
         .accessibilityHidden(true)
     }
 }
@@ -427,20 +489,25 @@ private struct MixBackground: View {
     }
 }
 
-/// Presses down slightly, like a card being pushed.
-private struct HeroButtonStyle: ButtonStyle {
+/// Reports the press instead of drawing it, so a view around the button (the mix card
+/// with its play button) can press down as a whole.
+private struct PressReporting: ButtonStyle {
+    @Binding var isPressed: Bool
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in isPressed = pressed }
     }
 }
 
 // MARK: - Jump back in
 
-/// Up to six things the listener keeps going back to, as compact tiles in two columns.
-private struct JumpBackIn: View {
+/// Up to eight things the listener keeps going back to, as a row of covers.
+struct JumpBackIn: View {
     @Environment(Library.self) private var library
+
+    private static let limit = 8
+    private static let width: CGFloat = 156
 
     enum Item: Identifiable {
         case liked(count: Int, songs: [Song])
@@ -458,7 +525,11 @@ private struct JumpBackIn: View {
         }
     }
 
-    private var items: [Item] {
+    private var items: [Item] { Self.items(in: library) }
+
+    /// What the listener keeps going back to, for the phone's row and the Mac's shelf alike.
+    static func items(in library: Library) -> [Item] {
+        let limit = Self.limit
         var items: [Item] = []
         if !library.liked.isEmpty { items.append(.liked(count: library.liked.count, songs: library.liked)) }
         let playlists = library.userPlaylists.filter { !$0.songs.isEmpty }.sorted { $0.modified > $1.modified }
@@ -468,32 +539,28 @@ private struct JumpBackIn: View {
         for song in library.recent {
             guard let album = song.album, seenAlbums.insert(album.id).inserted else { continue }
             items.append(.album(AlbumSummary(id: album.id, title: album.title, artistLine: song.artistLine, artists: song.artists, artwork: song.artwork)))
-            if items.count >= 6 { break }
+            if items.count >= limit { break }
         }
-        for album in library.albums where items.count < 6 && seenAlbums.insert(album.id).inserted {
+        for album in library.albums where items.count < limit && seenAlbums.insert(album.id).inserted {
             items.append(.album(album))
         }
-        items += library.playlists.prefix(max(0, 6 - items.count)).map(Item.playlist)
-        return Array(items.prefix(6))
+        items += library.playlists.prefix(max(0, limit - items.count)).map(Item.playlist)
+        return Array(items.prefix(limit))
     }
 
     var body: some View {
         let items = items
         if items.count >= 2 {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Jump back in")
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(items) { item in
-                        NavigationLink(value: route(item)) { tile(item) }
-                            .buttonStyle(HeroButtonStyle())
-                    }
+            ShelfView(title: "Jump back in") {
+                ForEach(items) { item in
+                    NavigationLink(value: Self.route(item)) { card(item) }
+                        .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 20)
         }
     }
 
-    private func route(_ item: Item) -> Route {
+    static func route(_ item: Item) -> Route {
         switch item {
         case .liked: .songs(title: "Liked Songs", source: .liked)
         case .userPlaylist(let p): .userPlaylist(p.id)
@@ -502,50 +569,7 @@ private struct JumpBackIn: View {
         }
     }
 
-    private func tile(_ item: Item) -> some View {
-        HStack(spacing: 10) {
-            Group {
-                switch item {
-                case .liked(_, let songs):
-                    // The listener's own liked covers, marked with a heart, rather than a stock colour.
-                    PlaylistMosaic(songs: songs, size: 56, cornerRadius: 0)
-                        .overlay(alignment: .bottomTrailing) {
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 20)
-                                .background(.black.opacity(0.45), in: .circle)
-                                .padding(3)
-                        }
-                case .userPlaylist(let p):
-                    PlaylistMosaic(songs: p.songs, size: 56, cornerRadius: 0)
-                case .album(let a):
-                    ArtworkView(artwork: a.artwork, size: 56, cornerRadius: 0)
-                case .playlist(let p):
-                    ArtworkView(artwork: p.artwork, size: 56, cornerRadius: 0)
-                }
-            }
-            .frame(width: 56, height: 56)
-            .clipped()
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title(item))
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                if let subtitle = subtitle(item) {
-                    Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, 8)
-        }
-        .frame(height: 56)
-        .background(.fill.tertiary, in: .rect(cornerRadius: 10, style: .continuous))
-        .clipShape(.rect(cornerRadius: 10, style: .continuous))
-        .foregroundStyle(.primary)
-    }
-
-    private func title(_ item: Item) -> String {
+    static func title(_ item: Item) -> String {
         switch item {
         case .liked: "Liked Songs"
         case .userPlaylist(let p): p.name
@@ -554,13 +578,67 @@ private struct JumpBackIn: View {
         }
     }
 
-    private func subtitle(_ item: Item) -> String? {
+    static func subtitle(_ item: Item) -> String? {
         switch item {
-        case .liked(let count, _): count == 1 ? "1 song" : "\(count) songs"
-        case .userPlaylist(let p): p.songs.count == 1 ? "1 song" : "\(p.songs.count) songs"
+        case .liked(let count, _): songCount(count)
+        case .userPlaylist(let p): songCount(p.songs.count)
         case .album(let a): a.artistLine.isEmpty ? nil : a.artistLine
         case .playlist(let p): p.subtitle
         }
     }
-}
 
+    /// The item's cover alone, at `size`: liked songs and the listener's playlists as mosaics.
+    @ViewBuilder
+    static func cover(_ item: Item, size: CGFloat) -> some View {
+        switch item {
+        case .liked(_, let songs):
+            PlaylistMosaic(songs: songs, size: size)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(.black.opacity(0.45), in: .circle)
+                        .padding(8)
+                }
+        case .userPlaylist(let p):
+            PlaylistMosaic(songs: p.songs, size: size)
+        case .album(let a):
+            ArtworkView(artwork: a.artwork, size: size, cornerRadius: 10)
+        case .playlist(let p):
+            ArtworkView(artwork: p.artwork, size: size, cornerRadius: 10)
+        }
+    }
+
+    @ViewBuilder
+    private func card(_ item: Item) -> some View {
+        let width = Self.width
+        switch item {
+        case .liked(let count, let songs):
+            // The listener's own liked covers, marked with a heart, rather than a stock colour.
+            CoverCard(title: "Liked Songs", subtitle: Self.songCount(count), width: width) {
+                PlaylistMosaic(songs: songs, size: width)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(.black.opacity(0.45), in: .circle)
+                            .padding(8)
+                    }
+            }
+        case .userPlaylist(let p):
+            CoverCard(title: p.name, subtitle: Self.songCount(p.songs.count), width: width) {
+                PlaylistMosaic(songs: p.songs, size: width)
+            }
+        case .album(let a):
+            CoverCard(artwork: a.artwork, title: a.title, subtitle: a.artistLine.isEmpty ? nil : a.artistLine, width: width)
+        case .playlist(let p):
+            CoverCard(artwork: p.artwork, title: p.title, subtitle: p.subtitle, width: width)
+        }
+    }
+
+    private static func songCount(_ count: Int) -> String {
+        count == 1 ? "1 song" : "\(count) songs"
+    }
+}

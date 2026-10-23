@@ -45,6 +45,42 @@ struct LivePlayerTests {
         player.stop()
     }
 
+    @Test func crossfadesIntoTheNextSongExactlyOnce() async throws {
+        let (player, songs) = try await makePlayer()
+        player.crossfades = true
+        player.crossfadeDuration = 4
+        player.play(songs)
+        try await waitFor("preload") { player.phase == .ready && player.loadedItemCount == 2 }
+        // Just before the fade starts, so playback runs across it.
+        player.seek(to: player.duration - 7)
+        try await waitFor("crossfade starts", timeout: 15) { player.current?.id == songs[1].id }
+        #expect(player.isFadingOut, "the first song fades out on the side")
+        #expect(player.position() < 3, "the next song starts from its beginning")
+        try await Task.sleep(for: .seconds(6))
+        #expect(!player.isFadingOut, "the fade ends and lets the song go")
+        #expect(player.current?.id == songs[1].id, "advanced once, not twice")
+        #expect(player.queue.currentIndex == 1)
+        player.stop()
+    }
+
+    @Test func aSkipFadesTheOldSongOutQuickly() async throws {
+        let (player, songs) = try await makePlayer()
+        player.crossfades = true
+        player.play(songs)
+        try await waitFor("preload") { player.phase == .ready && player.loadedItemCount == 2 && player.timeAnchor.rate > 0 }
+        player.next()
+        #expect(player.isFadingOut)
+        try await waitFor("skip") { player.current?.id == songs[1].id && player.timeAnchor.rate > 0 }
+        try await Task.sleep(for: .seconds(1.5))
+        #expect(!player.isFadingOut)
+        // A skip to a song that isn't preloaded fades too, while the new one loads.
+        player.jump(to: player.queue.items[3].id)
+        #expect(player.isFadingOut)
+        try await waitFor("jump") { player.current?.id == songs[3].id && player.timeAnchor.rate > 0 }
+        player.stop()
+        #expect(!player.isFadingOut)
+    }
+
     @Test func skipUsesThePreloadedSongAndPreviousGoesBack() async throws {
         let (player, songs) = try await makePlayer()
         player.play(songs)
@@ -65,6 +101,25 @@ struct LivePlayerTests {
         player.seek(to: player.duration - 2)
         try await waitFor("the end to be reached", timeout: 15) { player.position() > player.duration - 1 }
         try await waitFor("the song to start again", timeout: 15) { player.position() < 6 && player.timeAnchor.rate > 0 }
+        #expect(player.current?.id == songs[0].id)
+        #expect(player.queue.currentIndex == 0)
+        player.stop()
+    }
+
+    @Test func repeatOneCrossfadesIntoItsOwnStartAndCountsAPlay() async throws {
+        let (player, songs) = try await makePlayer()
+        player.crossfades = true
+        player.crossfadeDuration = 4
+        player.setRepeat(.one)
+        var starts = 0
+        player.onItemStarted = { _ in starts += 1 }
+        player.play(songs)
+        try await waitFor("the song on standby") { player.phase == .ready && player.loadedItemCount == 2 && player.timeAnchor.rate > 0 }
+        #expect(starts == 1)
+        player.seek(to: player.duration - 7)
+        try await waitFor("the fade back to the start", timeout: 15) { player.isFadingOut }
+        #expect(player.position() < 3, "the same song starts again from its beginning")
+        try await waitFor("the repeat to count as a play") { starts == 2 }
         #expect(player.current?.id == songs[0].id)
         #expect(player.queue.currentIndex == 0)
         player.stop()

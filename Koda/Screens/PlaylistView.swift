@@ -14,6 +14,69 @@ struct PlaylistView: View {
     @State private var palette = PaletteModel()
 
     var body: some View {
+        if Platform.isMac { macBody } else { phoneBody }
+    }
+
+    /// The Mac's playlist: the cover beside its details, then songs with their artist and
+    /// album columns, loading the next page as the end comes into view.
+    private var macBody: some View {
+        let title = state.value?.playlist.title ?? summary.title
+        return MacPage(spacing: 28) {
+            MacCollectionHeader(
+                kind: "Playlist",
+                title: title,
+                byline: state.value?.author ?? summary.subtitle,
+                detail: state.value?.detailLine,
+                description: state.value?.description,
+                accent: palette.palette.accent,
+                canPlay: !songs.isEmpty,
+                play: { play(shuffled: false) },
+                shuffle: { play(shuffled: true) }
+            ) {
+                ArtworkView(artwork: state.value?.playlist.artwork ?? summary.artwork, size: 232, cornerRadius: 12)
+            } actions: {
+                macActions
+            }
+            AsyncContent(state: state, retry: load, placeholder: .placeholder(summary)) { page in
+                let rows = state.value == nil ? page.songs : songs
+                VStack(spacing: 12) {
+                    MacTrackList(songs: rows, play: { player.play(songs, startAt: $0) },
+                                 onRowAppear: { index in if index >= songs.count - 10 { Task { await loadMore() } } })
+                    if loadingMore { ProgressView().controlSize(.small) }
+                }
+            }
+        }
+        .background { ArtworkGlow(palette: palette.palette) }
+        .navigationTitle(title)
+        .task { await palette.load(summary.artwork) }
+        .task { if state.value == nil { await load() } }
+    }
+
+    @ViewBuilder
+    private var macActions: some View {
+        let saved = library.isSaved(playlist: summary.id)
+        Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+            library.toggleSave(state.value?.playlist ?? summary)
+        }
+        .buttonStyle(MacIconButtonStyle())
+        .help(saved ? "Remove from Library" : "Add to Library")
+        if !songs.isEmpty {
+            DownloadButton(songs: songs, allSongs: allSongs)
+                .buttonStyle(MacIconButtonStyle())
+        }
+        MacMoreMenu {
+            if !songs.isEmpty {
+                Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(songs) }
+                Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
+                AddToPlaylistMenu(songs: songs)
+            }
+            ShareLink(item: URL(string: "https://music.youtube.com/playlist?list=\(summary.id)")!) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+    }
+
+    private var phoneBody: some View {
         ScrollView {
             VStack(spacing: 24) {
                 CollectionHeader(
@@ -54,12 +117,17 @@ struct PlaylistView: View {
                 }
                 .sensoryFeedback(.success, trigger: saved)
             }
+            if !songs.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    DownloadButton(songs: songs, allSongs: allSongs)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("More", systemImage: "ellipsis") {
                     if !songs.isEmpty {
                         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(songs) }
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
-                        Button("Add to Playlist…", systemImage: "text.badge.plus") { app.addToPlaylist(songs) }
+                        AddToPlaylistMenu(songs: songs)
                     }
                     ShareLink(item: URL(string: "https://music.youtube.com/playlist?list=\(summary.id)")!) {
                         Label("Share", systemImage: "square.and.arrow.up")
@@ -87,6 +155,21 @@ struct PlaylistView: View {
         } catch {
             state = .failed(error.friendlyMessage)
         }
+    }
+
+    /// Every song, loading the pages not scrolled to yet, for downloading the whole playlist.
+    private func allSongs() async -> [Song] {
+        while continuation != nil {
+            if loadingMore {
+                try? await Task.sleep(for: .milliseconds(100))
+                continue
+            }
+            let before = songs.count
+            await loadMore()
+            // A page that failed to load: download what there is.
+            if songs.count == before { break }
+        }
+        return songs
     }
 
     private func loadMore() async {

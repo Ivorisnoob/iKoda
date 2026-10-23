@@ -36,6 +36,9 @@ struct LyricsShareSheet: View {
     @State private var limitHit = 0
     /// The card's natural height at preview width, measured as it lays out.
     @State private var cardHeight: CGFloat = 0
+    @State private var copied = 0
+    /// The line the sheet was opened from, which the list starts on.
+    private let startLine: Int
 
     static let maxLines = 6
 
@@ -43,12 +46,79 @@ struct LyricsShareSheet: View {
         // Lines with words only; the "♪" placeholders of instrumental gaps are not lyrics.
         self.lines = lines.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
         self.song = song
+        startLine = id
         _selected = State(initialValue: [id])
     }
 
     private var chosen: [LyricLine] { lines.filter { selected.contains($0.id) } }
 
     var body: some View {
+        Group {
+            if Platform.isMac { macBody } else { phoneBody }
+        }
+        .task {
+            if let url = song.artwork?.url(pixels: 600) { cover = await ImagePipeline.shared.image(url, pixels: 600) }
+            await palette.load(song.artwork)
+            render()
+        }
+        .onChange(of: selected) { render() }
+        .onChange(of: style) { render() }
+        .sensoryFeedback(.warning, trigger: limitHit)
+    }
+
+    private var hint: some View {
+        Text(selected.count >= Self.maxLines ? "Up to \(Self.maxLines) lines" : "Click lines to add or remove them")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(.white.opacity(0.65))
+            .contentTransition(.opacity)
+            .animation(.smooth, value: selected.count >= Self.maxLines)
+    }
+
+    /// The Mac's: the card and its style on the left, the song's lines on the right, and the
+    /// buttons along the foot as a Mac sheet has them.
+    private var macBody: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 22) {
+                preview(maxHeight: 430)
+                stylePicker
+            }
+            .frame(width: 400)
+            .frame(maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 6) {
+                hint.padding(.horizontal, 32).padding(.top, 18)
+                linePicker
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black.opacity(0.18))
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack(spacing: 12) {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Copy Image", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.image = rendered
+                    copied += 1
+                }
+                .disabled(rendered == nil)
+                .keyboardShortcut("c", modifiers: .command)
+                .sensoryFeedback(.success, trigger: copied)
+                shareButton
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.large)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(.ultraThinMaterial)
+        }
+        .background { backdrop }
+        .frame(minWidth: 820, idealWidth: 900, minHeight: 560, idealHeight: 640)
+        // Sized to the layout above rather than the standard form sheet, which is phone-narrow.
+        .presentationSizing(.fitted)
+    }
+
+    private var phoneBody: some View {
         NavigationStack {
             GeometryReader { geometry in
             VStack(spacing: 18) {
@@ -79,14 +149,6 @@ struct LyricsShareSheet: View {
         }
         .presentationDetents([.large])
         .presentationBackground(.clear)
-        .task {
-            if let url = song.artwork?.url(pixels: 600) { cover = await ImagePipeline.shared.image(url, pixels: 600) }
-            await palette.load(song.artwork)
-            render()
-        }
-        .onChange(of: selected) { render() }
-        .onChange(of: style) { render() }
-        .sensoryFeedback(.warning, trigger: limitHit)
     }
 
     // MARK: Parts
@@ -156,7 +218,8 @@ struct LyricsShareSheet: View {
         case .colors:
             LinearGradient(colors: [palette.palette.mesh[0], palette.palette.mesh[8]], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .cover:
-            if let cover { Image(uiImage: cover).resizable().scaledToFill() } else { Color.gray }
+            // Cropped in an overlay, so a wide video frame can't widen the swatch.
+            Color.gray.overlay { if let cover { Image(uiImage: cover).resizable().scaledToFill() } }.clipped()
         case .dark:
             Color(white: 0.1)
         }
@@ -164,6 +227,7 @@ struct LyricsShareSheet: View {
 
     /// The song's lines in the lyrics' own type; chosen lines sit on glass.
     private var linePicker: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             GlassEffectContainer(spacing: 4) {
                 LazyVStack(alignment: .leading, spacing: 4) {
@@ -185,11 +249,18 @@ struct LyricsShareSheet: View {
                         .glassEffect(isOn ? .regular.interactive() : .identity, in: .rect(cornerRadius: 18, style: .continuous))
                         .accessibilityAddTraits(isOn ? .isSelected : [])
                         .sensoryFeedback(.selection, trigger: isOn)
+                        .id(line.id)
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             }
+        }
+        // Opens on the line that was long-pressed, not the top of the song.
+        .task {
+            await Task.yield()
+            proxy.scrollTo(startLine, anchor: .center)
+        }
         }
         .scrollIndicators(.hidden)
         .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
@@ -202,9 +273,9 @@ struct LyricsShareSheet: View {
         if let rendered {
             let image = Image(uiImage: rendered)
             ShareLink(item: image, preview: SharePreview("\(song.title) · \(song.artistLine)", image: image)) {
-                Label("Share Card", systemImage: "square.and.arrow.up")
+                Label(Platform.isMac ? "Share…" : "Share Card", systemImage: "square.and.arrow.up")
                     .font(.body.weight(.semibold))
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Platform.isMac ? 0 : 24)
             }
         } else {
             ProgressView()
@@ -295,18 +366,19 @@ struct LyricsCard: View {
             ], colors: palette.mesh)
             .overlay(Color.black.opacity(0.12))
         case .cover:
-            ZStack {
-                Color.black
-                if let cover {
-                    Image(uiImage: cover)
-                        .resizable()
-                        .scaledToFill()
-                        .blur(radius: 28)
-                        .scaleEffect(1.3)
+            // The cover is an overlay, so its own size (wider for a video) never sizes the card.
+            Color.black
+                .overlay {
+                    if let cover {
+                        Image(uiImage: cover)
+                            .resizable()
+                            .scaledToFill()
+                            .blur(radius: 28)
+                            .scaleEffect(1.3)
+                    }
                 }
-                LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-            }
-            .clipped()
+                .overlay(LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.55)], startPoint: .top, endPoint: .bottom))
+                .clipped()
         case .dark:
             LinearGradient(colors: [Color(white: 0.13), Color(white: 0.04)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }

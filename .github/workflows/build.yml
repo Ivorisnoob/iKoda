@@ -12,7 +12,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    # Xcode 27 (preview image): the iOS 27 SDK has the audio schemas the new Siri uses
+    # (Koda/Intents/SiriSchemas.swift). Without it that file is left out and the app still builds.
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -33,7 +35,8 @@ jobs:
           xcodebuild -project Koda.xcodeproj -scheme Koda -configuration Release \
             -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tail -n 40
+            build 2>&1 | tee build.log | tail -n 40 \
+            || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
 
       # An unsigned .ipa: AltStore, SideStore and Sideloadly sign it with the installer's own Apple ID.
       - name: Package .ipa
@@ -47,4 +50,38 @@ jobs:
         with:
           name: Koda-${{ github.sha }}
           path: Koda.ipa
+          retention-days: 30
+
+  mac:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # One binary for Apple silicon and Intel. Ad-hoc signed: Apple silicon refuses to run
+      # unsigned code, and without a Developer ID there is nothing better to sign with.
+      - name: Build universal Mac app
+        run: |
+          set -o pipefail
+          xcodebuild -project Koda.xcodeproj -scheme Koda -configuration Release \
+            -destination 'generic/platform=macOS,variant=Mac Catalyst' -derivedDataPath build \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee build.log | tail -n 40 \
+            || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
+          lipo -info build/Build/Products/Release-maccatalyst/Koda.app/Contents/MacOS/Koda
+
+      # The usual disk image: Koda beside a link to Applications, to drag across.
+      - name: Package .dmg
+        run: |
+          mkdir dmg
+          cp -R build/Build/Products/Release-maccatalyst/Koda.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Koda -srcfolder dmg -fs APFS -format ULFO -ov Koda.dmg
+          ls -lh Koda.dmg
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Koda-mac-${{ github.sha }}
+          path: Koda.dmg
           retention-days: 30

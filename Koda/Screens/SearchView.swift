@@ -9,11 +9,19 @@ final class SearchModel {
     var filter: SearchFilter = .all
     private(set) var suggestions: [String] = []
     private(set) var results: LoadState<SearchResults>?
-    private(set) var moods: [Mood] = []
+    /// Last launch's moods first, so the tiles are there at once; refreshed once per model.
+    private(set) var moods: [Mood] = SearchModel.launchMoods
+    private var moodsFresh = false
+
+    private static let launchMoods = Snapshot.load([Mood].self, "moods") ?? []
 
     func loadMoods(music: YouTubeMusic) async {
-        guard moods.isEmpty, let explore = try? await music.explore() else { return }
-        moods = explore.moods.filter { $0.browseId != "FEmusic_home" }
+        guard !moodsFresh, let explore = try? await music.explore() else { return }
+        let fresh = explore.moods.filter { $0.browseId != "FEmusic_home" }
+        moodsFresh = true
+        guard !fresh.isEmpty else { return }
+        if fresh != moods { moods = fresh }
+        Snapshot.save(fresh, "moods")
     }
 
     func suggest(music: YouTubeMusic) async {
@@ -101,6 +109,7 @@ struct SearchView: View {
                 model.query = text
                 submit(text)
             }
+            .appEnvironment(app)
         }
         .task(id: model.query) { await model.suggest(music: app.music) }
         .task { await model.loadMoods(music: app.music) }

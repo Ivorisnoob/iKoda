@@ -16,7 +16,7 @@ struct UserPlaylistView: View {
 
     var body: some View {
         if let playlist = library.userPlaylist(id) {
-            content(playlist)
+            if Platform.isMac { macContent(playlist) } else { content(playlist) }
         } else {
             ContentUnavailableView("Playlist Deleted", systemImage: "music.note.list")
         }
@@ -69,6 +69,9 @@ struct UserPlaylistView: View {
                     }
                     .fontWeight(editMode.isEditing ? .semibold : .regular)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    DownloadButton(songs: playlist.songs)
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("More", systemImage: "ellipsis") {
@@ -99,6 +102,77 @@ struct UserPlaylistView: View {
         }
     }
 
+    /// The Mac's playlist page: the mosaic beside the name, songs in columns, and each song's
+    /// menu able to move it or take it out, where the phone drags and swipes.
+    private func macContent(_ playlist: UserPlaylist) -> some View {
+        MacPage(spacing: 28) {
+            MacCollectionHeader(
+                kind: "Your Playlist",
+                title: playlist.name,
+                byline: nil,
+                detail: detail(playlist),
+                canPlay: !playlist.songs.isEmpty,
+                play: { player.play(playlist.songs) },
+                shuffle: { player.play(playlist.songs, startAt: Int.random(in: 0..<max(playlist.songs.count, 1)), shuffled: true) }
+            ) {
+                PlaylistMosaic(songs: playlist.songs, size: 232, cornerRadius: 12)
+            } actions: {
+                if !playlist.songs.isEmpty {
+                    DownloadButton(songs: playlist.songs)
+                        .buttonStyle(MacIconButtonStyle())
+                }
+                MacMoreMenu {
+                    if !playlist.songs.isEmpty {
+                        Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(playlist.songs) }
+                        Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(playlist.songs) }
+                        Divider()
+                    }
+                    Button("Rename…", systemImage: "pencil") {
+                        draftName = playlist.name
+                        renaming = true
+                    }
+                    Button("Delete Playlist…", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                }
+            }
+            if playlist.songs.isEmpty {
+                ContentUnavailableView {
+                    Label("No Songs Yet", systemImage: "music.note.list")
+                } description: {
+                    Text("Right-click any song, or open its ••• menu, and choose Add to Playlist.")
+                }
+                .frame(maxWidth: .infinity, minHeight: 280)
+            } else {
+                MacTrackList(songs: playlist.songs, play: { player.play(playlist.songs, startAt: $0) }, rowMenu: { index in
+                    AnyView(Section {
+                        Button("Move Up", systemImage: "arrow.up") {
+                            library.moveSongs(fromOffsets: IndexSet(integer: index), toOffset: index - 1, inPlaylist: id)
+                        }
+                        .disabled(index == 0)
+                        Button("Move Down", systemImage: "arrow.down") {
+                            library.moveSongs(fromOffsets: IndexSet(integer: index), toOffset: index + 2, inPlaylist: id)
+                        }
+                        .disabled(index >= playlist.songs.count - 1)
+                        Button("Remove from Playlist", systemImage: "minus.circle", role: .destructive) {
+                            library.removeSongs(atOffsets: IndexSet(integer: index), fromPlaylist: id)
+                        }
+                    })
+                })
+            }
+        }
+        .background { PlaylistGlow(songs: playlist.songs) }
+        .navigationTitle(playlist.name)
+        .alert("Rename Playlist", isPresented: $renaming) {
+            TextField("Name", text: $draftName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { library.renamePlaylist(id, to: draftName) }
+        }
+        .confirmationDialog("Delete “\(playlist.name)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete Playlist", role: .destructive) { library.deletePlaylist(id) }
+        } message: {
+            Text("The songs stay wherever else you saved them.")
+        }
+    }
+
     private func header(_ playlist: UserPlaylist) -> some View {
         VStack(spacing: 14) {
             PlaylistMosaic(songs: playlist.songs, size: 232, cornerRadius: 16)
@@ -123,7 +197,7 @@ struct UserPlaylistView: View {
     }
 
     private func detail(_ playlist: UserPlaylist) -> String {
-        var parts = ["Made by \(app.profile.displayName)"]
+        var parts = ["Made by \(app.roster.active.displayName)"]
         parts.append(playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs")
         let minutes = Int(playlist.duration / 60)
         if minutes > 0 { parts.append(minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min") }
@@ -282,8 +356,91 @@ private struct PlaylistPickerModifier: ViewModifier {
         content.sheet(item: Binding(
             get: { isOnTop ? app.playlistTarget : nil },
             set: { if isOnTop { app.playlistTarget = $0 } })) { target in
-            AddToPlaylistSheet(target: target)
+            Group {
+                if Platform.isMac { MacNewPlaylistSheet(target: target) } else { AddToPlaylistSheet(target: target) }
+            }
+            .appEnvironment(app)
         }
     }
 }
 
+
+/// "Add to Playlist" in a song's or a collection's menu. On the Mac it is a submenu of the
+/// listener's playlists, as Music's is, with New Playlist… first; on the iPhone it opens the sheet.
+struct AddToPlaylistMenu: View {
+    let songs: [Song]
+    @Environment(AppModel.self) private var app
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        if Platform.isMac {
+            Menu("Add to Playlist", systemImage: "text.badge.plus") {
+                Button("New Playlist…", systemImage: "plus") { app.addToPlaylist(songs) }
+                if !library.userPlaylists.isEmpty {
+                    Divider()
+                    ForEach(library.userPlaylists) { playlist in
+                        let containsAll = Set(songs.map(\.id)).isSubset(of: Set(playlist.songs.map(\.id)))
+                        Button(playlist.name, systemImage: containsAll ? "checkmark" : "music.note.list") {
+                            library.add(songs, toPlaylist: playlist.id)
+                        }
+                        .disabled(containsAll)
+                    }
+                }
+            }
+        } else {
+            Button("Add to Playlist…", systemImage: "text.badge.plus") { app.addToPlaylist(songs) }
+        }
+    }
+}
+
+/// A new playlist from songs on the Mac: a small sheet asking only for its name.
+struct MacNewPlaylistSheet: View {
+    let target: AppModel.PlaylistTarget
+    @Environment(AppModel.self) private var app
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                PlaylistMosaic(songs: target.songs, size: 64, cornerRadius: 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New Playlist").font(.headline)
+                    Text(target.songs.count == 1 ? "With “\(target.songs[0].title)”" : "With these \(target.songs.count) songs")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                .onSubmit(create)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create Playlist", action: create)
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .onAppear {
+            name = "Playlist \(library.userPlaylists.count + 1)"
+            focused = true
+        }
+    }
+
+    private func create() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let playlist = library.createPlaylist(named: trimmed, songs: target.songs)
+        dismiss()
+        app.requestedMacSection = .userPlaylist(playlist.id)
+    }
+}

@@ -20,66 +20,57 @@ struct BufferingRing: View {
     }
 }
 
-/// A band of light that sweeps across the content while something loads.
-struct Sheen: ViewModifier {
-    var isActive: Bool
-    var period: Double = 1.6
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        content.overlay {
-            if isActive {
-                GeometryReader { geometry in
-                    TimelineView(.animation(paused: reduceMotion)) { context in
-                        let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
-                        let width = geometry.size.width
-                        LinearGradient(stops: [.init(color: .white.opacity(0), location: 0),
-                                               .init(color: .white.opacity(reduceMotion ? 0.08 : 0.22), location: 0.5),
-                                               .init(color: .white.opacity(0), location: 1)],
-                                       startPoint: .leading, endPoint: .trailing)
-                            .frame(width: width * 0.6)
-                            .rotationEffect(.degrees(20))
-                            .offset(x: -width * 0.8 + phase * width * 2.2)
-                            .frame(width: width, height: geometry.size.height, alignment: .leading)
-                            .blendMode(.plusLighter)
-                    }
-                }
-                .allowsHitTesting(false)
-                .transition(.opacity)
-            }
-        }
-    }
-}
-
-extension View {
-    func sheen(_ isActive: Bool, period: Double = 1.6) -> some View {
-        modifier(Sheen(isActive: isActive, period: period))
-    }
-}
-
-/// Placeholders breathe gently while content loads, the way the system's own
-/// apps show it; they hold still with Reduce Motion on.
-struct PlaceholderPulse: ViewModifier {
+/// A soft highlight drifting across content while it loads, as the system shimmers text
+/// that is still coming. It is masked to the content's own shapes, so only what is loading
+/// catches the light, never the space around it. Every shimmer reads one clock, so a
+/// loading page passes as one sweep rather than many blinking parts. It holds still with
+/// Reduce Motion on.
+struct Shimmer: ViewModifier {
     var isActive: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Seconds for the light to cross, then a rest before the next pass.
+    private static let sweep = 1.5
+    private static let rest = 0.9
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if isActive && !reduceMotion {
-            content.phaseAnimator([false, true]) { view, dim in
-                view.opacity(dim ? 0.5 : 1)
-            } animation: { _ in
-                .easeInOut(duration: 0.9)
+            content.overlay {
+                TimelineView(.animation) { context in
+                    let cycle = Self.sweep + Self.rest
+                    let progress = min(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle) / Self.sweep, 1)
+                    // The band is one view wide and its centre runs from half a width before the
+                    // leading edge to half a width past the trailing one: it enters and leaves unseen.
+                    let centre = -0.5 + progress * 2
+                    LinearGradient(stops: Self.stops(peak: colorScheme == .dark ? 0.1 : 0.4),
+                                   startPoint: UnitPoint(x: centre - 0.5, y: 0.5),
+                                   endPoint: UnitPoint(x: centre + 0.5, y: 0.5))
+                }
+                .mask { content }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         } else {
             content
         }
     }
+
+    /// A bell-shaped falloff, so the highlight has no edge anywhere.
+    private static func stops(peak: Double) -> [Gradient.Stop] {
+        [
+            .init(color: .white.opacity(0), location: 0),
+            .init(color: .white.opacity(peak * 0.3), location: 0.3),
+            .init(color: .white.opacity(peak), location: 0.5),
+            .init(color: .white.opacity(peak * 0.3), location: 0.7),
+            .init(color: .white.opacity(0), location: 1),
+        ]
+    }
 }
 
 extension View {
-    func placeholderPulse(_ isActive: Bool = true) -> some View {
-        modifier(PlaceholderPulse(isActive: isActive))
+    func shimmer(_ isActive: Bool = true) -> some View {
+        modifier(Shimmer(isActive: isActive))
     }
 }

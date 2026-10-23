@@ -6,7 +6,9 @@ import SwiftUI
 /// When the tab bar shrinks on scroll the system moves the accessory inline
 /// beside it, where there is room for less, so the subtitle and skip go.
 struct MiniPlayer: View {
-    @Environment(AppModel.self) private var model
+    /// Opens Now Playing. Set by the view that presents it: the zoom from here only runs
+    /// when that view's own state changes (see `RootView.showsNowPlaying`).
+    let open: () -> Void
     @Environment(Player.self) private var player
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
 
@@ -61,11 +63,11 @@ struct MiniPlayer: View {
         .contentShape(.rect)
         .onTapGesture {
             guard player.current != nil else { return }
-            model.isNowPlayingPresented = true
+            open()
         }
         .sensoryFeedback(.impact(weight: .light), trigger: skips)
         .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Open Now Playing") { model.isNowPlayingPresented = true }
+        .accessibilityAction(named: "Open Now Playing") { open() }
         .accessibilityAction(named: "Previous Song") { player.previous() }
         .accessibilityAction(named: "Next Song") { player.next() }
     }

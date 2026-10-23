@@ -63,6 +63,7 @@ struct VideoPlayerView: View {
             } else {
                 VideoThumbnail(video: video, cornerRadius: 0, width: 800, showsProgress: false)
             }
+            gestureLayer
             if isThis, let error = playback.error {
                 errorView(error)
             } else if counting, let next = playback.upNext {
@@ -74,13 +75,8 @@ struct VideoPlayerView: View {
                 feedback
             }
         }
-        .contentShape(.rect)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .offset(y: pullDown)
-        .gesture(taps)
-        .simultaneousGesture(hold, isEnabled: hasPicture && !Platform.isMac && app.settings.holdsToSpeedUp)
-        .simultaneousGesture(swipe, isEnabled: !Platform.isMac)
-        .simultaneousGesture(pinch, isEnabled: isFullScreen && hasPicture && !Platform.isMac)
         .onContinuousHover { phase in
             if case .active = phase { reveal() }
         }
@@ -300,6 +296,19 @@ struct VideoPlayerView: View {
     }
 
     // MARK: Gestures
+
+    /// The picture's own gestures, on a layer of their own under the controls rather than on the
+    /// view holding them: a double tap on a parent makes SwiftUI hold back its buttons' taps
+    /// (the controls stopped answering on the Mac). Here a click on a button is the button's, and
+    /// one anywhere else (the controls let it through) is the picture's.
+    private var gestureLayer: some View {
+        Color.clear
+            .contentShape(.rect)
+            .gesture(taps)
+            .simultaneousGesture(hold, isEnabled: hasPicture && !Platform.isMac && app.settings.holdsToSpeedUp)
+            .simultaneousGesture(swipe, isEnabled: !Platform.isMac)
+            .simultaneousGesture(pinch, isEnabled: isFullScreen && hasPicture && !Platform.isMac)
+    }
 
     /// One tap shows or hides the controls; two skip (iPhone) or go full screen (Mac). While a
     /// skip is showing, single taps on that side keep skipping, as on YouTube.

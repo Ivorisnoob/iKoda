@@ -29,7 +29,7 @@ struct VideoHomeView: View {
         .refreshable { await load(feed) }
         .task { if feed.needsLoad { await load(feed) } }
         .toolbar {
-            if feed.kind == .home {
+            if feed.kind == .home, app.settings.videoModeEnabled {
                 ToolbarItem(placement: .topBarLeading) { ModeToggle() }
             }
             ToolbarItem(placement: .topBarTrailing) {

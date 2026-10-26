@@ -100,6 +100,14 @@ final class AppSettings {
     /// The playing song on the listener's Discord profile, through the Discord app on the Mac.
     var sharesOnDiscord: Bool { didSet { defaults.set(sharesOnDiscord, forKey: Keys.discordPresence) } }
     var mode: Mode { didSet { defaults.set(mode.rawValue, forKey: Keys.mode) } }
+    /// Video mode (YouTube itself) and the Music/Video switch that leads to it. Off until turned
+    /// on in Settings or onboarding; turning it off goes back to music.
+    var videoModeEnabled: Bool {
+        didSet {
+            defaults.set(videoModeEnabled, forKey: Keys.videoModeEnabled)
+            if !videoModeEnabled, mode == .video { mode = .music }
+        }
+    }
     /// The tallest picture a video starts at, in lines (720, 1080…); 0 lets it follow the
     /// connection. 1080p unless chosen otherwise.
     var videoQuality: Int { didSet { defaults.set(videoQuality, forKey: Keys.videoQuality) } }
@@ -134,6 +142,7 @@ final class AppSettings {
         static let discordPresence = "koda.discord.presence"
         static let onboarding = "koda.onboarding.seen"
         static let mode = "koda.mode"
+        static let videoModeEnabled = "koda.video.enabled"
         static let videoQuality = "koda.video.quality"
         static let videoAutoplay = "koda.video.autoplay"
         static let videoTheater = "koda.video.theater"
@@ -160,7 +169,10 @@ final class AppSettings {
         skipInterval = (d.object(forKey: Keys.skipInterval) as? Int).flatMap(SkipInterval.init(rawValue:)) ?? .ten
         sharesOnDiscord = d.object(forKey: Keys.discordPresence) as? Bool ?? false
         hasSeenOnboarding = d.bool(forKey: Keys.onboarding)
-        mode = d.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .music
+        let savedMode = d.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .music
+        mode = savedMode
+        // Someone already in video mode keeps it.
+        videoModeEnabled = d.object(forKey: Keys.videoModeEnabled) as? Bool ?? (savedMode == .video)
         videoQuality = d.object(forKey: Keys.videoQuality) as? Int ?? 1080
         autoplaysVideos = d.object(forKey: Keys.videoAutoplay) as? Bool ?? true
         videoTheater = d.bool(forKey: Keys.videoTheater)

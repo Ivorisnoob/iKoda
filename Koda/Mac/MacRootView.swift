@@ -241,10 +241,12 @@ struct MacRootView: View {
         .environment(\.defaultMinListRowHeight, 28)
         // Music or Video at the head of the sidebar; what's under it follows.
         .safeAreaBar(edge: .top) {
-            ModeToggle()
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
+            if model.settings.videoModeEnabled {
+                ModeToggle()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+            }
         }
         // The channels under Subscriptions: one call (YouTube's sidebar), when video mode shows.
         .task(id: "\(model.roster.activeID)|\(model.settings.mode)|\(model.subscribedChannels == nil)") {

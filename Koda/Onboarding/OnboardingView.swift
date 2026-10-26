@@ -146,6 +146,7 @@ private struct OnboardingAccountPage: View {
 
     var body: some View {
         let profile = app.roster.active
+        @Bindable var settings = app.settings
         ScrollView {
             VStack(spacing: 22) {
                 Image(systemName: profile.isSignedIn ? "checkmark.circle.fill" : "music.note.house.fill")
@@ -190,6 +191,18 @@ private struct OnboardingAccountPage: View {
                     .background(.fill.quinary, in: .rect(cornerRadius: 24, style: .continuous))
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                 }
+
+                // Off unless chosen: Koda opens as a music app, and this is where videos are offered.
+                Toggle(isOn: $settings.videoModeEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Videos Too")
+                        Text("Add YouTube itself beside your music, with a Music and Video switch on Home. You can change this in Settings.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+                .background(.fill.quinary, in: .rect(cornerRadius: 24, style: .continuous))
             }
             .padding(.horizontal, 32)
             .frame(maxWidth: 520)

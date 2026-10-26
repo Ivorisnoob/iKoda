@@ -1169,7 +1169,15 @@ public final class Player {
         // A preloaded copy of the song already current is repeat one coming round again:
         // a new play for history, stats and Last.fm, though the queue stays where it is.
         let loops = startsFresh && queue.current?.id == id
-        if loops { startedReported = nil }
+        if loops {
+            startedReported = nil
+            // The same song again: iOS's Lock Screen keeps its own clock per song and, given the
+            // same song with a new elapsed time, can stay at its end (-0:00). A fresh entry
+            // makes it start over, as for a new song; `updateNowPlaying` below fills it.
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            nowPlayingArtworkFor = nil
+            AutoMixLog.note("repeat one came round: Now Playing restarted")
+        }
         trace("currentItemChanged fresh=\(startsFresh) loops=\(loops) queueMatches=\(queue.current?.id == id) t=\(avPlayer.currentTime().seconds)")
         let previous = lastAVItem
         lastAVItem = avPlayer.currentItem

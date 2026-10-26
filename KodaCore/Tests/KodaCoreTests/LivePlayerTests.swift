@@ -1,4 +1,5 @@
 import Foundation
+import MediaPlayer
 import Testing
 @testable import KodaCore
 
@@ -122,6 +123,42 @@ struct LivePlayerTests {
         try await waitFor("the repeat to count as a play") { starts == 2 }
         #expect(player.current?.id == songs[0].id)
         #expect(player.queue.currentIndex == 0)
+        player.stop()
+    }
+
+    /// What the Lock Screen was last told: its clock runs from this elapsed time at this rate.
+    func lockScreen() -> (elapsed: Double, rate: Double, duration: Double) {
+        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        return ((info[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double) ?? -1,
+                (info[MPNowPlayingInfoPropertyPlaybackRate] as? Double) ?? -1,
+                (info[MPMediaItemPropertyPlaybackDuration] as? Double) ?? -1)
+    }
+
+    /// Repeat one coming round must restart the Lock Screen's clock too, in every transition
+    /// mode, or it sits at the end (-0:00) while the song plays again.
+    @Test(arguments: [Player.Transitions.off, .crossfade, .autoMix])
+    func repeatOneRestartsTheLockScreenClock(_ transitions: Player.Transitions) async throws {
+        let (player, songs) = try await makePlayer()
+        player.transitions = transitions
+        player.crossfadeDuration = 4
+        player.setRepeat(.one)
+        player.play(songs)
+        try await waitFor("the song on standby", timeout: 30) { player.phase == .ready && player.loadedItemCount == 2 && player.timeAnchor.rate > 0 }
+        if transitions == .autoMix {
+            // Measuring both ends of the song first, so the handover is AutoMix's own.
+            try await Task.sleep(for: .seconds(25))
+            player.jumpToTransition(lead: 4)
+        } else {
+            player.seek(to: player.duration - 7)
+        }
+        let before = player.duration
+        try await waitFor("the song to come round", timeout: 40) { player.position() < 5 && player.timeAnchor.rate > 0 }
+        try await Task.sleep(for: .seconds(4))
+        let shown = lockScreen()
+        print("LOCKSCREEN \(transitions): elapsed \(shown.elapsed) rate \(shown.rate) duration \(shown.duration) app \(player.position()) of \(before)")
+        #expect(shown.rate > 0, "the Lock Screen clock is stopped")
+        #expect(shown.elapsed < 12, "the Lock Screen still shows the end of the last time round")
+        #expect(abs(shown.elapsed + shown.rate * 0 - player.position()) < 8)
         player.stop()
     }
 

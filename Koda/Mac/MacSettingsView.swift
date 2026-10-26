@@ -435,10 +435,17 @@ private struct MacPlaybackPane: View {
             MacSettingsToggle(title: "Normalize volume", detail: "Play loud masters at a similar level to everything else.",
                               isOn: $player.normalizesVolume)
         }
-        MacSettingsGroup(title: "Crossfade", footer: "Skipping a song with crossfade on fades it out quickly instead of cutting it off.") {
-            MacSettingsToggle(title: "Crossfade songs", detail: "The end of one song overlaps the start of the next.",
-                              isOn: $player.crossfades)
-            MacSettingsRow(title: "Overlap") {
+        MacSettingsGroup(title: "Song Transitions", footer: "With AutoMix or crossfade on, skipping a song fades it out quickly instead of cutting it off.") {
+            MacSettingsRow(title: "Transitions", detail: "AutoMix blends songs like a DJ, lining up beats and skipping silence. Crossfade overlaps the end of one song with the start of the next.") {
+                Picker("Transitions", selection: $player.transitions) {
+                    Text("AutoMix").tag(Player.Transitions.autoMix)
+                    Text("Crossfade").tag(Player.Transitions.crossfade)
+                    Text("Off").tag(Player.Transitions.off)
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            MacSettingsRow(title: "Crossfade overlap") {
                 HStack(spacing: 8) {
                     Slider(value: $player.crossfadeDuration, in: 1...12, step: 1)
                         .frame(width: 180)
@@ -449,7 +456,7 @@ private struct MacPlaybackPane: View {
                 }
                 .controlSize(.small)
             }
-            .disabled(!player.crossfades)
+            .disabled(player.transitions != .crossfade)
         }
         MacSettingsGroup(title: "Videos", footer: "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and M mutes. Double-click a video for full screen.") {
             MacSettingsRow(title: "Default quality", detail: "Videos start at this, or the best they have below it. Auto follows the connection.") {

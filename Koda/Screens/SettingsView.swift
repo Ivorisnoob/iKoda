@@ -21,10 +21,14 @@ struct SettingsView: View {
                     Toggle(isOn: $player.normalizesVolume) {
                         SettingLabel("Normalize Volume", systemImage: "speaker.wave.2.fill", tint: .pink)
                     }
-                    Toggle(isOn: $player.crossfades) {
-                        SettingLabel("Crossfade", systemImage: "wave.3.right", tint: .teal)
+                    Picker(selection: $player.transitions) {
+                        Text("AutoMix").tag(Player.Transitions.autoMix)
+                        Text("Crossfade").tag(Player.Transitions.crossfade)
+                        Text("Off").tag(Player.Transitions.off)
+                    } label: {
+                        SettingLabel("Song Transitions", systemImage: "wave.3.right", tint: .teal)
                     }
-                    if player.crossfades {
+                    if player.transitions == .crossfade {
                         VStack(alignment: .leading, spacing: 4) {
                             LabeledContent("Overlap", value: "\(Int(player.crossfadeDuration)) s")
                             Slider(value: $player.crossfadeDuration, in: 1...12, step: 1) {
@@ -51,7 +55,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("Autoplay keeps the music going with songs like the last one when the queue ends. Normalize Volume plays loud masters at a similar level to everything else. Crossfade overlaps the end of one song with the start of the next, and gives skips a short fade. Skip Buttons jump back or ahead within the song from Now Playing.")
+                    Text("Autoplay keeps the music going with songs like the last one when the queue ends. Normalize Volume plays loud masters at a similar level to everything else. AutoMix blends songs like a DJ, lining up beats and skipping silence; Crossfade overlaps the end of one song with the start of the next. Both give skips a short fade. Skip Buttons jump back or ahead within the song from Now Playing.")
                 }
 
                 Section {

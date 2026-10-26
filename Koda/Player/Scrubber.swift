@@ -15,14 +15,23 @@ struct Scrubber: View {
     @State private var dragStart: Double?
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.25)) { context in
+        // Four times a second is enough for a song's progress; through an AutoMix transition the
+        // outgoing song's bar fades smoothly, so the timeline runs at frame rate then.
+        TimelineView(.animation(minimumInterval: player.mixing == nil ? 0.25 : 1.0 / 30)) { context in
             let duration = max(player.duration, 1)
             let fraction = dragFraction ?? min(1, player.position(at: context.date) / duration)
+            let mixing = player.mixing
             VStack(spacing: 6) {
                 GeometryReader { geometry in
                     let width = geometry.size.width
                     ZStack(alignment: .leading) {
                         Capsule().fill(.white.opacity(0.25))
+                        // The old song's progress lingers and fades as the new one's grows from zero.
+                        if let mixing, dragFraction == nil {
+                            let progress = mixing.progress(at: context.date)
+                            Capsule().fill(.white.opacity(0.45 * (1 - progress)))
+                                .frame(width: max(0, width * mixing.outgoingFraction(at: context.date)))
+                        }
                         Capsule().fill(.white.opacity(dragFraction == nil ? 0.85 : 1))
                             .frame(width: max(0, width * fraction))
                     }
@@ -59,6 +68,15 @@ struct Scrubber: View {
                 }
                 .font(.caption.monospacedDigit().weight(.medium))
                 .foregroundStyle(.white.opacity(0.6))
+                // Where Music says it: under the bar, between the times.
+                .overlay {
+                    if let mixing {
+                        MixingBadge(mixing: mixing, compact: true, glass: false)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    }
+                }
+                .animation(.smooth(duration: 0.4), value: mixing)
             }
             .accessibilityElement()
             .accessibilityLabel("Position")

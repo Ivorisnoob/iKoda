@@ -62,8 +62,13 @@ struct MacPlayerBar: View {
                 }
                 .lineLimit(1)
                 .contentTransition(.opacity)
+                if let mixing = player.mixing {
+                    MixingBadge(mixing: mixing, compact: true)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
             }
             .contentShape(.rect)
+            .animation(.smooth(duration: 0.35), value: player.mixing)
         }
         .buttonStyle(BarButtonStyle(padding: 4))
         .disabled(player.current == nil)
@@ -282,6 +287,12 @@ struct KodaCommands: Commands {
             Button("Skip Back \(interval.rawValue) Seconds") { player.skip(by: -interval.seconds) }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                 .disabled(player.phase != .ready)
+            #if DEBUG
+            // For hearing transitions without waiting out each song; Debug builds only.
+            Button("Jump to Next Transition") { player.jumpToTransition() }
+                .keyboardShortcut("j", modifiers: [.command, .option])
+                .disabled(player.phase != .ready)
+            #endif
             Divider()
             Button("Increase Volume") { player.volume = min(1, player.volume + 0.1) }
                 .keyboardShortcut(.upArrow, modifiers: .command)

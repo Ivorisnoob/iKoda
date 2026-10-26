@@ -158,6 +158,9 @@ struct QueuePanel: View {
             toggle("Autoplay", systemImage: "infinity", isOn: player.autoplay) {
                 player.autoplay.toggle()
             }
+            toggle("AutoMix", systemImage: "waveform", isOn: player.autoMix) {
+                player.autoMix.toggle()
+            }
         }
     }
 

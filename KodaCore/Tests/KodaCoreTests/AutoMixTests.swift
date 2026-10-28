@@ -92,6 +92,7 @@ struct AutoMixTests {
         let plan = try #require(TransitionPlanner.plan(from: a, to: b, context: .init(outgoingEnd: a.duration, albumNeighbours: false)))
         #expect(plan.style == .quickBlend, "\(plan.summary)")
         #expect(plan.rate == 1)
+        #expect(plan.overlap >= 1.5, "a blend, not a cut: \(plan.summary)")
     }
 
     @Test func ridesAFadeOut() throws {
@@ -132,15 +133,74 @@ struct AutoMixTests {
         #expect(plan.outgoing.gain(at: plan.cue + plan.overlap) < 0.01)
     }
 
-    /// The same song on repeat one, with an outro section: mixed early, beats locked.
+    /// The same song on repeat one, with a short outro section: mixed early, beats locked.
     @Test func mixesASongIntoItselfAtItsOutro() throws {
+        var samples = Self.song(bpm: 120, length: 80, trail: 0)
+        samples += Self.song(bpm: 120, lead: 0, length: 14, trail: 2).map { $0 * 0.45 }
+        let a = TrackAnalyzer.analyze(samples)
+        let plan = try #require(TransitionPlanner.plan(from: a, to: a, context: .init(outgoingEnd: a.duration, albumNeighbours: false)))
+        #expect(plan.style == .beatMatch, "\(plan.summary) / \(a.summary)")
+        #expect(plan.reason.contains("outro section"), "\(plan.summary)")
+        #expect(plan.cue < a.musicEnd - 10, "\(plan.summary)")
+        #expect(abs(plan.rate - 1) < 0.005)
+    }
+
+    /// A long outro only a few dB under the song is still the song: an early mix would leave
+    /// most of it unheard, so the handover waits for the ending.
+    @Test func playsALongAudibleOutro() throws {
         var samples = Self.song(bpm: 120, length: 80, trail: 0)
         samples += Self.song(bpm: 120, lead: 0, length: 40, trail: 2).map { $0 * 0.45 }
         let a = TrackAnalyzer.analyze(samples)
         let plan = try #require(TransitionPlanner.plan(from: a, to: a, context: .init(outgoingEnd: a.duration, albumNeighbours: false)))
-        #expect(plan.style == .beatMatch, "\(plan.summary) / \(a.summary)")
-        #expect(plan.cue < a.musicEnd - 15, "\(plan.summary)")
-        #expect(abs(plan.rate - 1) < 0.005)
+        #expect(!plan.reason.contains("outro section"), "\(plan.summary)")
+        #expect(a.seconds(above: a.bodyDb - 20, from: plan.cue + plan.overlap, to: a.musicEnd) <= TransitionPlanner.maxLeftOut, "\(plan.summary)")
+    }
+
+    // MARK: Real songs, as measured from their audio
+
+    struct Measured: Decodable {
+        var duration: Double
+        var analysis: TrackAnalysis
+    }
+
+    static func measured() throws -> [String: Measured] {
+        let url = try #require(Bundle.module.url(forResource: "automix-songs", withExtension: "json", subdirectory: "Fixtures"))
+        return try JSONDecoder().decode([String: Measured].self, from: Data(contentsOf: url))
+    }
+
+    /// WILDFLOWER's quiet last section and Chemtrails' coda are heard out on repeat one;
+    /// OMG's short outro is still mixed early.
+    @Test func keepsRealSongsEndings() throws {
+        let songs = try Self.measured()
+        for name in ["wildflower", "chemtrails"] {
+            let song = try #require(songs[name])
+            let a = song.analysis
+            let plan = try #require(TransitionPlanner.plan(from: a, to: a, context: .init(outgoingEnd: song.duration, albumNeighbours: false)))
+            let leftOut = a.seconds(above: a.bodyDb - 20, from: plan.cue + plan.overlap, to: a.musicEnd)
+            #expect(leftOut <= TransitionPlanner.maxLeftOut, "\(name): \(leftOut) s left out, \(plan.summary)")
+        }
+        let omg = try #require(songs["omg"])
+        let plan = try #require(TransitionPlanner.plan(from: omg.analysis, to: omg.analysis, context: .init(outgoingEnd: omg.duration, albumNeighbours: false)))
+        #expect(plan.reason.contains("outro section"), "\(plan.summary)")
+    }
+
+    /// Cupid (120 bpm, hard stop) into BIRDS OF A FEATHER (105 bpm): too far apart to stretch,
+    /// so the next comes in on one of Cupid's beats seconds before the stop and takes the bass.
+    @Test func blendsAHardStopIntoAnotherTempo() throws {
+        let songs = try Self.measured()
+        let cupid = try #require(songs["cupid"]), birds = try #require(songs["birds"])
+        let a = cupid.analysis
+        let plan = try #require(TransitionPlanner.plan(from: a, to: birds.analysis, context: .init(outgoingEnd: cupid.duration, albumNeighbours: false)))
+        #expect(plan.style == .quickBlend, "\(plan.summary)")
+        #expect(plan.rate == 1)
+        #expect(plan.overlap >= 1.5 && plan.overlap <= 4.5, "\(plan.summary)")
+        let grid = try #require(a.grid(near: plan.cue))
+        let offBeat = abs(plan.cue - grid.beat(atOrBefore: plan.cue + grid.period / 2))
+        #expect(offBeat < 0.01, "cue \(plan.cue) is \(offBeat) s off Cupid's beat")
+        #expect(plan.outgoing.highPass(at: plan.cue + plan.overlap) > 250, "Cupid hands its bass over")
+        #expect(plan.outgoing.gain(at: plan.cue + plan.overlap) < 0.01)
+        #expect(plan.incoming.gain(at: plan.inStart) < 0.01)
+        #expect(plan.incoming.highPass(at: plan.inStart + 1) <= Automation.highPassOff, "BIRDS comes in with its bass")
     }
 
     @Test func leavesAlbumTracksGapless() throws {

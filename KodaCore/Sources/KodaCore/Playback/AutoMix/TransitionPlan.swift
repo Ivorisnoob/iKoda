@@ -124,6 +124,13 @@ public nonisolated enum TransitionPlanner {
     public static let longestBlend = 12.0
     /// An early mix into an outro section may run longer.
     public static let earlyBlend = 18.0
+    /// The most audible music (within 20 dB of the song's level) an early mix may leave out
+    /// after it. Over 66 real songs, outros worth skipping left out 5.5 s at most; a soft final
+    /// section only 4 to 12 dB under the song (WILDFLOWER's, Chemtrails' coda) left out 14.5 s
+    /// and more. Beat strength doesn't tell them apart: Chemtrails' coda keeps a strong beat.
+    public static let maxLeftOut = 8.0
+    /// How long before a hard stop the next song comes in when the beats can't be locked.
+    public static let hardStopBlend = 3.0
 
     public struct Context: Sendable {
         /// The outgoing song's playable end (YouTube's length).
@@ -155,7 +162,8 @@ public nonisolated enum TransitionPlanner {
         let quietTail = a.finalStretch(below: a.bodyDb - 10, notBefore: earliest)
         let outroSection = a.finalStretch(below: a.bodyDb - 4, notBefore: earliest)
         if let match, end - outroSection >= 8, outroSection < end - 12 || end - quietTail >= 12,
-           let blend = beatMatch(a, b, end: end, match: match, from: outroSection) {
+           let blend = beatMatch(a, b, end: end, match: match, from: outroSection),
+           a.seconds(above: a.bodyDb - 20, from: blend.cue + blend.overlap, to: end) <= maxLeftOut {
             // Tempos fit and the song settles into a quieter outro: mix there, beats locked,
             // as a DJ would, leaving the rest of the outro out.
             return blend
@@ -338,14 +346,23 @@ public nonisolated enum TransitionPlanner {
         return plan
     }
 
-    /// A hard stop the next can't be beat-matched to: let it land, with the next starting
-    /// just under its last moment so there is no gap.
+    /// A hard stop the next can't be beat-matched to: the next song comes in on one of the old
+    /// song's beats a few seconds before the stop and takes the bass at once, while the old one
+    /// loses its bass and fades under it, so two kicks at different tempos never run together.
+    /// Starting the next on the old song's last moment, as before, sounded like a cut.
     static func quickBlend(_ a: TrackAnalysis, _ b: TrackAnalysis, end: Double, entry: Double, quietIntro: Bool) -> TransitionPlan {
-        let cue = end - 0.35
-        var plan = TransitionPlan(style: .quickBlend, cue: cue, inStart: entry, overlap: 0.6, rate: 1,
-                                  reason: "outgoing ends hard; next starts on its last moment")
-        plan.outgoing.gain = Automation.ramp(cue, cue + 0.6, from: 1, to: 0, .cosineOut)
-        plan.incoming = entrance(plan, quietIntro: quietIntro, over: quietIntro ? 0.25 : 0.8)
+        var cue = end - hardStopBlend
+        if let grid = a.grid(near: cue), grid.strength >= gridStrength {
+            cue = grid.beat(atOrBefore: cue + grid.period / 2)
+        }
+        cue = min(max(cue, end - 4.5), end - 1.5)
+        let length = end - cue
+        var plan = TransitionPlan(style: .quickBlend, cue: cue, inStart: entry, overlap: length, rate: 1,
+                                  reason: "outgoing ends hard; next comes in on a beat \(length.s1) s before the stop")
+        plan.outgoing.gain = [.init(time: cue, value: 1)] + Automation.ramp(cue + 0.3 * length, end, from: 1, to: 0, .cosineOut)
+        plan.outgoing.highPass = Automation.ramp(cue, cue + 0.4 * length, from: Automation.highPassOff, to: 300, .smooth)
+        // Full-on, the next song arrives with its bass: the old one has just handed it over.
+        plan.incoming.gain = Automation.ramp(entry, entry + min(quietIntro ? 1.5 : 0.5 * length, length), from: 0, to: 1, .smooth)
         return plan
     }
 

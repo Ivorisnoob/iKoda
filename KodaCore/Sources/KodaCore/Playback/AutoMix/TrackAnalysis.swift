@@ -99,6 +99,14 @@ public nonisolated struct TrackAnalysis: Codable, Sendable, Equatable {
         return max(start, earliest)
     }
 
+    /// Seconds between `start` and `end` heard above `threshold` dB.
+    public func seconds(above threshold: Double, from start: Double, to end: Double) -> Double {
+        guard !envelope.isEmpty, end > start else { return 0 }
+        let first = max(0, Int(start / Self.envelopeStep)), last = min(envelope.count, Int(end / Self.envelopeStep))
+        guard first < last else { return 0 }
+        return Double(envelope[first..<last].count(where: { Double($0) > threshold })) * Self.envelopeStep
+    }
+
     /// The beat grid measured nearest `time`: the end grids, then the intro and outro ones.
     public func grid(near time: Double) -> BeatGrid? {
         let all = grids + [intro, outro].compactMap { $0 }

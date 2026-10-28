@@ -868,7 +868,8 @@ struct FullScreenVideoView: View {
 
     var body: some View {
         VideoPlayerView(playback: playback, video: playback.current ?? video, isFullScreen: true)
-            .ignoresSafeArea()
+            // Under the Mac's toolbar the player's own top bar couldn't be reached.
+            .ignoresSafeArea(edges: Platform.isMac ? [.horizontal, .bottom] : .all)
             .background(.black)
             .statusBarHidden()
             .persistentSystemOverlays(.hidden)
@@ -878,10 +879,9 @@ struct FullScreenVideoView: View {
                 // Its own claim on turning: the page under a cover counts as gone and lets go of its.
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 // On the Mac full screen means the screen, not the window: the cover fills the
-                // window and the window goes full screen, as QuickTime's and TV's videos do.
-                // Nothing but the picture: in macOS full screen the window's toolbar (sidebar
-                // button, search) is hidden until the pointer reaches the top, as in TV
-                // (`MacWindow.hideToolbarInFullScreen`, set once at launch).
+                // window and the window goes full screen, as QuickTime's and TV's videos do. The
+                // window's toolbar stays (back, search and the sidebar button are how the app is
+                // navigated in full screen too), so the player keeps below it.
                 if Platform.isMac, !MacWindow.isFullScreen {
                     tookWindowFullScreen = true
                     MacWindow.toggleFullScreen()
@@ -927,21 +927,6 @@ enum MacWindow {
 
     static func toggleFullScreen() {
         keyWindow?.perform(NSSelectorFromString("toggleFullScreen:"), with: nil)
-    }
-
-    /// Catalyst's own switch for a full-screen window's toolbar: hidden until the pointer reaches
-    /// the top, so a full-screen video is nothing but the picture. Set once as the window first
-    /// appears and never changed: flipping it around a video's full screen left the sidebar
-    /// button in the wrong place until clicked, as other runtime toolbar changes did (docs/mac.md).
-    static func hideToolbarInFullScreen() {
-        #if targetEnvironment(macCatalyst)
-        activeScene?.titlebar?.autoHidesToolbarInFullScreen = true
-        #endif
-    }
-
-    private static var activeScene: UIWindowScene? {
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
-            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     }
 }
 

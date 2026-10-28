@@ -372,6 +372,8 @@ struct StatsView: View {
     @Environment(Library.self) private var library
     @State private var range: Span = .week
     @State private var confirmReset = false
+    /// The Mac page's width: a narrow window stacks what a wide one puts side by side.
+    @State private var width: CGFloat = 900
 
     var body: some View {
         if Platform.isMac { macBody } else { phoneBody }
@@ -399,19 +401,27 @@ struct StatsView: View {
                                        description: Text("Your stats fill in as you play music."))
                     .frame(maxWidth: .infinity, minHeight: 360)
             } else {
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(spacing: 16) {
+                // Narrow, the tiles sit side by side over the chart, and the artists go under the songs.
+                let narrow = width < 640
+                let stacked = width < 760
+                let top = narrow ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                let tiles = narrow ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
+                let lists = stacked
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
+                    : AnyLayout(HStackLayout(alignment: .top, spacing: 40))
+                top {
+                    tiles {
                         StatTile(title: "Listened", value: summary.totalSeconds.listeningText, systemImage: "headphones", tint: .accentColor)
                         StatTile(title: "Day streak", value: summary.streak == 1 ? "1 day" : "\(summary.streak) days", systemImage: "flame.fill", tint: .orange)
                     }
-                    .frame(width: 240)
+                    .frame(width: narrow ? nil : 240)
                     if range != .year {
                         WeekChart(days: summary.days, title: range == .week ? "Last 7 days" : "Last 30 days")
                             .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, MacMetrics.gutter)
-                HStack(alignment: .top, spacing: 40) {
+                lists {
                     VStack(alignment: .leading, spacing: 8) {
                         MacSectionTitle(title: "Top songs", subtitle: "All time")
                         TopSongsList(stats: Array(summary.topSongs.prefix(25)))
@@ -437,12 +447,14 @@ struct StatsView: View {
                                 .padding(.vertical, 3)
                             }
                         }
-                        .frame(width: 340, alignment: .topLeading)
+                        .frame(width: stacked ? nil : 340, alignment: .topLeading)
+                        .frame(maxWidth: stacked ? .infinity : nil, alignment: .topLeading)
                     }
                 }
                 .padding(.horizontal, MacMetrics.gutter)
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .animation(.easeInOut(duration: 0.25), value: range)
         .navigationTitle("Listening Stats")
         .confirmationDialog("Reset your listening stats?", isPresented: $confirmReset, titleVisibility: .visible) {

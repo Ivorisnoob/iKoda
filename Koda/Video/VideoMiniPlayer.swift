@@ -96,6 +96,7 @@ struct VideoMiniPlayer: View {
 struct MacVideoBar: View {
     let playback: VideoPlayback
     let open: () -> Void
+    @State private var width: CGFloat = 900
 
     var body: some View {
         if let video = playback.current {
@@ -139,7 +140,8 @@ struct MacVideoBar: View {
                     }
                 }
 
-                if !playback.isLive, playback.duration > 0 {
+                // A narrow window gives the title the progress line's room.
+                if !playback.isLive, playback.duration > 0, width >= 560 {
                     ProgressView(value: min(playback.time, playback.duration), total: playback.duration)
                         .progressViewStyle(.linear)
                         .frame(width: 140)
@@ -151,6 +153,8 @@ struct MacVideoBar: View {
                     withAnimation(.smooth) { playback.stop() }
                 }
             }
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .padding(.horizontal, 12)
             .frame(height: 68)
             // The whole bar takes the click: glass alone doesn't, and a click between its

@@ -32,8 +32,8 @@ struct PlaylistView: View {
                 canPlay: !songs.isEmpty,
                 play: { play(shuffled: false) },
                 shuffle: { play(shuffled: true) }
-            ) {
-                ArtworkView(artwork: state.value?.playlist.artwork ?? summary.artwork, size: 232, cornerRadius: 12)
+            ) { side in
+                ArtworkView(artwork: state.value?.playlist.artwork ?? summary.artwork, size: side, cornerRadius: 12)
             } actions: {
                 macActions
             }

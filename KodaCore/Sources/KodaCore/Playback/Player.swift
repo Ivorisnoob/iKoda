@@ -329,8 +329,10 @@ public final class Player {
 
     // MARK: - Transport
 
-    public func togglePlayPause() {
-        wantsToPlay ? pause() : resume()
+    /// `source` names who asked, for the log: a pause nobody remembers asking for has to be traced.
+    public func togglePlayPause(from source: String = "unnamed caller") {
+        AutoMixLog.note("\(wantsToPlay ? "pause" : "play") asked by \(source)")
+        wantsToPlay ? pause(from: source) : resume()
     }
 
     public func resume() {
@@ -346,8 +348,8 @@ public final class Player {
         updateNowPlaying()
     }
 
-    public func pause() {
-        AutoMixLog.note("paused at \(position().s1) s")
+    public func pause(from source: String = "unnamed caller") {
+        AutoMixLog.note("paused at \(position().s1) s by \(source)")
         silentSince = nil
         wantsToPlay = false
         endTransition()
@@ -1089,7 +1091,7 @@ public final class Player {
     /// The queue ran out: append the radio of the last song and carry on.
     private func extendWithRadio(thenAdvance: Bool) {
         guard autoplay, !extendingWithRadio, let last = queue.items.last else {
-            if thenAdvance, queue.repeatMode == .off { seek(to: 0); pause() }
+            if thenAdvance, queue.repeatMode == .off { seek(to: 0); pause(from: "the queue ending") }
             return
         }
         extendingWithRadio = true
@@ -1097,7 +1099,7 @@ public final class Player {
         Task {
             defer { extendingWithRadio = false }
             guard let radio = try? await music.radio(for: last.song.id) else {
-                if thenAdvance { pause() }
+                if thenAdvance { pause(from: "the queue ending with no radio") }
                 return
             }
             guard queue.current?.id == anchor else { return }
@@ -1262,7 +1264,7 @@ public final class Player {
                 loadCurrent(at: 0)
             } else {
                 seek(to: 0)
-                pause()
+                pause(from: "the sleep timer's end of song")
             }
             return
         }
@@ -1427,7 +1429,7 @@ public final class Player {
                     self.avPlayer.pause()
                     self.sampleTime()
                 case .ended:
-                    if self.resumeAfterInterruption, options.contains(.shouldResume) { self.resume() } else if self.resumeAfterInterruption { self.pause() }
+                    if self.resumeAfterInterruption, options.contains(.shouldResume) { self.resume() } else if self.resumeAfterInterruption { self.pause(from: "an interruption ending without resume") }
                     self.resumeAfterInterruption = false
                 default: break
                 }
@@ -1439,7 +1441,7 @@ public final class Player {
             AutoMixLog.note("audio route changed, reason \(reason.map { String($0.rawValue) } ?? "?"), now \(outputs.joined(separator: ", "))")
             MainActor.assumeIsolated {
                 // Headphones out: stop rather than play out loud.
-                if reason == .oldDeviceUnavailable { self?.pause() }
+                if reason == .oldDeviceUnavailable { self?.pause(from: "headphones disconnecting") }
             }
         }
         #endif
@@ -1453,9 +1455,20 @@ public final class Player {
 
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { @Sendable [weak self] _ in Task { @MainActor in self?.resume() }; return .success }
-        center.pauseCommand.addTarget { @Sendable [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
-        center.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in Task { @MainActor in self?.togglePlayPause() }; return .success }
+        center.playCommand.addTarget { @Sendable [weak self] _ in
+            AutoMixLog.note("play asked by the system (Lock Screen, Control Center, headphones)")
+            Task { @MainActor in self?.resume() }
+            return .success
+        }
+        center.pauseCommand.addTarget { @Sendable [weak self] _ in
+            AutoMixLog.note("pause asked by the system (Lock Screen, Control Center, headphones)")
+            Task { @MainActor in self?.pause(from: "the system's pause command") }
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in
+            Task { @MainActor in self?.togglePlayPause(from: "the system (Lock Screen, Control Center, headphones)") }
+            return .success
+        }
         center.nextTrackCommand.addTarget { @Sendable [weak self] _ in Task { @MainActor in self?.next() }; return .success }
         center.previousTrackCommand.addTarget { @Sendable [weak self] _ in Task { @MainActor in self?.previous() }; return .success }
         center.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in

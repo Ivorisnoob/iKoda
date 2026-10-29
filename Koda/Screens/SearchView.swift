@@ -96,7 +96,7 @@ struct SearchView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search by Voice", systemImage: "mic") {
                     resumeAfterVoice = player.wantsToPlay
-                    if resumeAfterVoice { player.pause() }
+                    if resumeAfterVoice { player.pause(from: "voice search") }
                     listening = true
                 }
             }

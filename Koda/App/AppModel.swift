@@ -126,7 +126,7 @@ final class AppModel {
         videos.autoplays = { settings.autoplaysVideos }
         videos.defaultQuality = { settings.videoQuality }
         videos.pauseMusic = { [player] in
-            if player.wantsToPlay { player.togglePlayPause() }
+            if player.wantsToPlay { player.togglePlayPause(from: "a video starting") }
         }
         player.onListened = { [library] song, seconds in
             if settings.savesListeningHistory { library.addListening(seconds, to: song) }

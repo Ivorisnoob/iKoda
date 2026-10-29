@@ -282,7 +282,7 @@ struct KodaCommands: Commands {
         CommandMenu("Controls") {
             let player = model.player
             let hasSong = player.current != nil
-            Button(player.wantsToPlay ? "Pause" : "Play") { player.togglePlayPause() }
+            Button(player.wantsToPlay ? "Pause" : "Play") { player.togglePlayPause(from: "the menu bar") }
                 .keyboardShortcut(.space, modifiers: [])
                 .disabled(!hasSong)
             Button("Next") { player.next() }

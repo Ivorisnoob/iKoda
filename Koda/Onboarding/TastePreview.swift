@@ -27,7 +27,7 @@ final class TastePreview {
             playingID = nil
             return
         }
-        if appPlayer.wantsToPlay { appPlayer.togglePlayPause() }
+        if appPlayer.wantsToPlay { appPlayer.togglePlayPause(from: "a taste preview") }
         playingID = song.id
         isLoading = true
         loading = Task {

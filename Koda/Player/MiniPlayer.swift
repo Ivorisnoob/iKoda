@@ -111,7 +111,7 @@ struct PlayPauseButton: View {
     var body: some View {
         Button {
             taps += 1
-            player.togglePlayPause()
+            player.togglePlayPause(from: "the play button")
         } label: {
             ZStack {
                 Image(systemName: player.wantsToPlay ? "pause.fill" : "play.fill")

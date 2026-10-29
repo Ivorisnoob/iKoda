@@ -806,6 +806,7 @@ public final class Player {
             }
             if let hold { try? await Task.sleep(for: .seconds(max(0, hold - fade))) }
             guard !Task.isCancelled else { return }
+            if hold != nil { AutoMixLog.note("old song's player released") }
             self?.finishTail()
         }
     }
@@ -1024,8 +1025,24 @@ public final class Player {
         }
         guard !Task.isCancelled else { return }
         if mixing != nil { mixing = nil }
+        // The new song kept "playing" but went silent here on repeat one (Espresso, Oct 2026):
+        // what its channel and player do for a while after the blend shows which step did it.
+        Task { [weak self] in
+            for _ in 0..<16 {
+                guard let self, self.avPlayer === incoming else { return }
+                if let m = incomingDSP?.meter {
+                    AutoMixLog.note("  after: in t=\(m.time.s2) peak \(db(m.peak)) dB rms \(db(m.rms)) gain \(String(format: "%.2f", m.gain)) "
+                        + "hp \(Int(m.highPass)) lp \(Int(m.lowPass)) non-finite \(m.nonFinite) blocks \(m.blocks) | "
+                        + "player \(incoming.timeControlStatus.rawValue) rate \(String(format: "%.4f", incoming.rate)) item t=\(incomingItem.currentTime().seconds.s2)")
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
         // Open the channel so seeking back over the entry doesn't play the moves again.
-        if avPlayer === incoming { incomingDSP?.clear() }
+        if avPlayer === incoming {
+            incomingDSP?.clear()
+            AutoMixLog.note("channel opened at \(incomingItem.currentTime().seconds.s2)")
+        }
         incoming.automaticallyWaitsToMinimizeStalling = true
         // Ease a matched tempo back to the song's own over four seconds; steps this small aren't heard.
         if abs(plan.rate - 1) > 0.0005 {

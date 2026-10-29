@@ -20,6 +20,10 @@ final class TransitionDSP: @unchecked Sendable {
         var gain: Float = 1
         var highPass: Float = Automation.highPassOff
         var lowPass: Float = 20_000
+        /// Samples in the block that weren't numbers (an unstable filter), which play as silence.
+        var nonFinite = 0
+        /// Blocks processed so far: when this stops rising, the tap isn't being called.
+        var blocks = 0
     }
 
     private struct Shared {
@@ -43,6 +47,7 @@ final class TransitionDSP: @unchecked Sendable {
     private var lastHighPass: Float = 0
     private var lastLowPass: Float = 0
     private var formatNoted = false
+    private var blocksProcessed = 0
 
     init(label: String) {
         self.label = label
@@ -174,6 +179,8 @@ final class TransitionDSP: @unchecked Sendable {
         let step = range.duration.isValid && range.duration.seconds > 0 ? range.duration.seconds / Double(frames) : 1 / sampleRate
         var peak: Float = 0
         var sumSquares: Float = 0
+        var nonFinite = 0
+        blocksProcessed += 1
         let active = !automation.isEmpty || highPassOn || lowPassOn
 
         if active {
@@ -202,6 +209,7 @@ final class TransitionDSP: @unchecked Sendable {
                             let g = gainFrom + (gainTo - gainFrom) * Float(i) / Float(count)
                             x *= g
                             data[index] = x
+                            if !x.isFinite { nonFinite += 1 }
                             let m: Float = Swift.abs(x)
                             if m > peak { peak = m }
                             sumSquares += x * x
@@ -217,6 +225,7 @@ final class TransitionDSP: @unchecked Sendable {
                 let n = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
                 for i in 0..<n {
                     let sample: Float = data[i]
+                    if !sample.isFinite { nonFinite += 1 }
                     let m: Float = Swift.abs(sample)
                     if m > peak { peak = m }
                     sumSquares += sample * sample
@@ -228,7 +237,7 @@ final class TransitionDSP: @unchecked Sendable {
         samples = max(1, samples)
         let meter = Meter(peak: peak, rms: (sumSquares / Float(samples)).squareRoot(), time: start,
                           gain: automation.gain(at: start), highPass: highPassOn ? lastHighPass : Automation.highPassOff,
-                          lowPass: lowPassOn ? lastLowPass : 20_000)
+                          lowPass: lowPassOn ? lastLowPass : 20_000, nonFinite: nonFinite, blocks: blocksProcessed)
         _ = shared.withLockIfAvailable { $0.meter = meter }
     }
 

@@ -172,7 +172,8 @@ struct VolumeSlider: View {
 final class SystemVolume {
     private(set) var level: Float
     @ObservationIgnored private var observation: NSKeyValueObservation?
-    @ObservationIgnored weak var slider: UISlider?
+    @ObservationIgnored weak var volumeView: MPVolumeView?
+    @ObservationIgnored private var settle: Task<Void, Never>?
 
     init() {
         level = AVAudioSession.sharedInstance().outputVolume
@@ -182,10 +183,28 @@ final class SystemVolume {
     }
 
     func set(_ value: Float) {
+        // Found each time: a slider kept from earlier went stale with Bluetooth headphones (the
+        // volume view seems to build a new one when the route changes) and moved nothing.
+        guard let slider = volumeView.flatMap(Self.slider(in:)) else { return }
         level = value
-        guard let slider else { return }
         slider.value = value
         slider.sendActions(for: .valueChanged)
+        // Shown at once under the finger, then held to what the system really did, so the bar
+        // never claims a change the headphones didn't take.
+        settle?.cancel()
+        settle = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            self?.level = AVAudioSession.sharedInstance().outputVolume
+        }
+    }
+
+    private static func slider(in view: UIView) -> UISlider? {
+        for subview in view.subviews {
+            if let slider = subview as? UISlider { return slider }
+            if let slider = slider(in: subview) { return slider }
+        }
+        return nil
     }
 
     /// The observer runs on whatever thread the audio session reports from, so it is built
@@ -211,12 +230,7 @@ private struct HiddenSystemVolumeView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MPVolumeView, context: Context) {
-        if volume.slider == nil {
-            // The slider exists once the view has laid out.
-            Task { @MainActor in
-                volume.slider = view.subviews.compactMap { $0 as? UISlider }.first
-            }
-        }
+        volume.volumeView = view
     }
 }
 

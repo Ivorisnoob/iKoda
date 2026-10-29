@@ -335,6 +335,7 @@ public final class Player {
 
     public func resume() {
         guard queue.current != nil else { return }
+        AutoMixLog.note("play at \(position().s1) s")
         wantsToPlay = true
         activateAudioSession()
         if avPlayer.currentItem == nil || phase != .ready {
@@ -346,6 +347,8 @@ public final class Player {
     }
 
     public func pause() {
+        AutoMixLog.note("paused at \(position().s1) s")
+        silentSince = nil
         wantsToPlay = false
         endTransition()
         finishTail()
@@ -1158,6 +1161,10 @@ public final class Player {
             let ended = (note.object as? AVPlayerItem).map(ObjectIdentifier.init)
             MainActor.assumeIsolated { self?.itemEnded(ended) }
         }
+        center.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: nil, queue: .main) { note in
+            let at = (note.object as? AVPlayerItem)?.currentTime().seconds ?? .nan
+            AutoMixLog.note("an item ran out of audio at \(at.s1) s")
+        }
         observeAudioSession()
     }
 
@@ -1278,6 +1285,17 @@ public final class Player {
         trace("timeControl \(status.rawValue) t=\(avPlayer.currentTime().seconds)")
         // An AutoMix start scheduled on the clock waits by design, a moment; that isn't buffering.
         let awaitingStart = scheduledStart.map { Date() < $0.addingTimeInterval(0.25) } ?? false
+        // Stopped or stuck while the listener wants sound is what a silence is; the log says
+        // why, and for how long, since nothing on screen does.
+        if wantsToPlay, status != .playing, !awaitingStart, phase == .ready {
+            silentSince = silentSince ?? Date()
+            AutoMixLog.note("player \(status == .paused ? "stopped" : "waiting") while playing, at \(avPlayer.currentTime().seconds.s1) s: "
+                + "rate \(avPlayer.rate), waiting reason \(avPlayer.reasonForWaitingToPlay?.rawValue ?? "none"), "
+                + "item status \(avPlayer.currentItem?.status.rawValue ?? -1), likely to keep up \(avPlayer.currentItem?.isPlaybackLikelyToKeepUp ?? false)")
+        } else if status == .playing, let since = silentSince {
+            silentSince = nil
+            AutoMixLog.note("playing again after \(Date().timeIntervalSince(since).s1) s")
+        }
         isBuffering = wantsToPlay && !awaitingStart && (status == .waitingToPlayAtSpecifiedRate || phase == .loading)
         if !awaitingStart { armStallWatchdog(status) }
         if status == .playing { reportStart() }
@@ -1396,8 +1414,11 @@ public final class Player {
             let info = note.userInfo ?? [:]
             let type = (info[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
             let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init) ?? []
+            let reason = (info[AVAudioSessionInterruptionReasonKey] as? UInt).map(String.init) ?? "none"
             MainActor.assumeIsolated {
                 guard let self else { return }
+                AutoMixLog.note("audio interruption \(type == .began ? "began" : type == .ended ? "ended" : "?"), reason \(reason), "
+                    + "should resume \(options.contains(.shouldResume)), wanted to play \(self.wantsToPlay)")
                 switch type {
                 case .began:
                     // A call or another app took the audio; remember the intent so it can come back.
@@ -1414,6 +1435,8 @@ public final class Player {
         }
         center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
             let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(AVAudioSession.RouteChangeReason.init)
+            let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { "\($0.portType.rawValue) \($0.portName)" }
+            AutoMixLog.note("audio route changed, reason \(reason.map { String($0.rawValue) } ?? "?"), now \(outputs.joined(separator: ", "))")
             MainActor.assumeIsolated {
                 // Headphones out: stop rather than play out loud.
                 if reason == .oldDeviceUnavailable { self?.pause() }
@@ -1423,6 +1446,8 @@ public final class Player {
     }
 
     private var resumeAfterInterruption = false
+    /// When the player last stopped making sound while the listener wanted it, for the log.
+    private var silentSince: Date?
 
     // MARK: - Now Playing and remote commands
 

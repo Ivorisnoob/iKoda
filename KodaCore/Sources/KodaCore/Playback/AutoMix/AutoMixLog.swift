@@ -2,8 +2,11 @@ import Foundation
 import os
 
 /// AutoMix's diary: what each song measured, which transition was planned and why, and how
-/// the handover actually went. Always on, unlike `trace`, because tuning transitions means
-/// reading what happened after hearing it. Lines go to the unified log (subsystem Koda,
+/// the handover actually went, and every time the sound stops (a pause, an audio
+/// interruption, a route change, the player stopping or running out of audio while it
+/// should play), since a silence heard after a transition may have nothing to do with it.
+/// Always on, unlike `trace`, because tuning transitions means reading what happened after
+/// hearing it. Lines go to the unified log (subsystem Koda,
 /// category AutoMix), to standard output, and to `automix.log` beside the queue file.
 public enum AutoMixLog {
     private static let logger = Logger(subsystem: "Koda", category: "AutoMix")

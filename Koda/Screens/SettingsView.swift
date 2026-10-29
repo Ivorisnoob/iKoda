@@ -42,6 +42,12 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                         }
                     }
+                    if player.transitions == .autoMix {
+                        AutoMixLogShareLink {
+                            SettingLabel("Share AutoMix Log", systemImage: "doc.text.magnifyingglass", tint: .teal)
+                        }
+                        .foregroundStyle(.primary)
+                    }
                     Toggle(isOn: $settings.showsSkipButtons) {
                         SettingLabel("Skip Buttons", systemImage: settings.skipInterval.forwardSymbol, tint: .orange)
                     }
@@ -203,6 +209,24 @@ struct SettingsView: View {
 }
 
 /// A setting's name beside a coloured symbol tile, as the Settings app draws them.
+/// Shares AutoMix's log with the measurements of the songs it mentions, for reporting a
+/// transition that sounded wrong. Gathered off the main thread each time the row appears,
+/// so it holds the transitions heard since.
+struct AutoMixLogShareLink<Label: View>: View {
+    private let label: Label
+    @State private var files: [URL] = []
+
+    init(@ViewBuilder label: () -> Label) {
+        self.label = label()
+    }
+
+    var body: some View {
+        ShareLink(items: files) { label }
+            .disabled(files.isEmpty)
+            .task { files = await Task.detached { AutoMixLog.filesToShare() }.value }
+    }
+}
+
 struct SettingLabel: View {
     let title: String
     let systemImage: String

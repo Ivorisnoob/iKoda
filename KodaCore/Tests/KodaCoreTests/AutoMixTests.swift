@@ -31,6 +31,17 @@ struct AutoMixTests {
         return samples
     }
 
+    @Test func sharedLogNamesTheSongsItMeasured() {
+        let log = """
+        2026-10-29T10:00:00Z analysis Espresso [eVli-tstM5E] from disk: dur 175.0, music 0.05-174.90
+        2026-10-29T10:00:01Z plan Espresso → Espresso: beatMatch: cue 160.10
+        2026-10-29T10:00:02Z analysis Song [Live] [abcdefghijk] via cache (waited 0.0 s), decode 1.20 s
+        2026-10-29T10:03:00Z analysis Espresso [eVli-tstM5E] from disk: dur 175.0
+        2026-10-29T10:03:01Z analysis Broken [abcdefghijk] FAILED to decode: no track
+        """
+        #expect(AutoMixLog.measuredSongs(in: log) == ["eVli-tstM5E", "abcdefghijk"])
+    }
+
     @Test func findsWhereTheMusicIsAndAHardEnding() {
         let a = TrackAnalyzer.analyze(Self.song(bpm: 120))
         #expect(abs(a.musicStart - 1.5) < 0.1, "\(a.summary)")

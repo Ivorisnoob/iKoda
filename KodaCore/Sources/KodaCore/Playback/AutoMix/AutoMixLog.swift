@@ -14,6 +14,33 @@ public enum AutoMixLog {
     /// Where the log file is, once the player has a folder.
     public static var fileURL: URL? { queue.sync { file } }
 
+    /// The log and the saved measurements of the songs its recent lines name, for sending
+    /// when a transition sounded wrong: with the measurements the planner can be run again
+    /// on the same songs elsewhere. Waits for lines still being written.
+    public static func filesToShare() -> [URL] {
+        guard let log = fileURL, let handle = try? FileHandle(forReadingFrom: log) else { return [] }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > recentBytes ? size - recentBytes : 0)
+        let recent = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
+        let folder = log.deletingLastPathComponent().appending(path: "AutoMix")
+        let measurements = measuredSongs(in: recent).map { folder.appending(path: "\($0).json") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        return [log] + measurements
+    }
+
+    /// The video ids of the songs measured or loaded in `text`, which names them as
+    /// "analysis <title> [<video id>]", in order and once each.
+    static func measuredSongs(in text: String) -> [String] {
+        var seen = Set<String>()
+        return text.matches(of: /analysis .*? \[([A-Za-z0-9_-]{11})\]/)
+            .map { String($0.output.1) }
+            .filter { seen.insert($0).inserted }
+    }
+
+    /// How far back from the log's end `filesToShare` looks for songs.
+    private static let recentBytes: UInt64 = 300_000
+
     static func configure(directory: URL?) {
         guard let directory else { return }
         let url = directory.appending(path: "automix.log")

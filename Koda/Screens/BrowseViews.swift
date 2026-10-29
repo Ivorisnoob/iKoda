@@ -129,8 +129,8 @@ struct SavedSongsView: View {
                 canPlay: !songs.isEmpty,
                 play: { player.play(songs) },
                 shuffle: { player.play(songs, startAt: Int.random(in: 0..<max(songs.count, 1)), shuffled: true) }
-            ) {
-                MacSymbolCover(systemImage: symbol.0, tint: symbol.1)
+            ) { side in
+                MacSymbolCover(systemImage: symbol.0, tint: symbol.1, size: side)
             } actions: {
                 if source == .liked, !songs.isEmpty {
                     DownloadButton(songs: songs).buttonStyle(MacIconButtonStyle())
@@ -295,8 +295,8 @@ struct SongListView: View {
                     canPlay: !songs.isEmpty,
                     play: { player.play(songs) },
                     shuffle: { player.play(songs, startAt: Int.random(in: 0..<max(songs.count, 1)), shuffled: true) }
-                ) {
-                    PlaylistMosaic(songs: songs, size: 232, cornerRadius: 12)
+                ) { side in
+                    PlaylistMosaic(songs: songs, size: side, cornerRadius: 12)
                 } actions: {
                     MacMoreMenu {
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }

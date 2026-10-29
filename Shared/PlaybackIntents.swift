@@ -56,7 +56,7 @@ struct TogglePlaybackIntent: AudioPlaybackIntent {
     func perform() async throws -> some IntentResult {
         let player = app.player
         if player.current != nil {
-            player.togglePlayPause()
+            player.togglePlayPause(from: "a shortcut or widget")
         } else if !app.library.liked.isEmpty {
             let songs = app.library.liked
             player.play(songs, startAt: Int.random(in: 0..<songs.count), shuffled: true)

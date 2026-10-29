@@ -28,7 +28,9 @@ struct KodaApp: App {
                 // Spotlight and Siri learn the liked songs and playlists, and again when they change.
                 .task(id: IntentsIndexKey(model.library)) { IntentsIndex.update(model) }
         }
-        .defaultSize(width: 1180, height: 820)
+        // The root view's frame sets the smallest window and nothing sets a largest. No
+        // `defaultSize`: on Catalyst it pins the scene's maximum size to the default size, so the
+        // window could never grow past 1180×820; the first window is the system's own size.
         .windowResizability(.contentMinSize)
         .commands { KodaCommands(model: model) }
         .onChange(of: scenePhase) { _, phase in

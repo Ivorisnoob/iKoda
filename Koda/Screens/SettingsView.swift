@@ -21,10 +21,14 @@ struct SettingsView: View {
                     Toggle(isOn: $player.normalizesVolume) {
                         SettingLabel("Normalize Volume", systemImage: "speaker.wave.2.fill", tint: .pink)
                     }
-                    Toggle(isOn: $player.crossfades) {
-                        SettingLabel("Crossfade", systemImage: "wave.3.right", tint: .teal)
+                    Picker(selection: $player.transitions) {
+                        Text("AutoMix").tag(Player.Transitions.autoMix)
+                        Text("Crossfade").tag(Player.Transitions.crossfade)
+                        Text("Off").tag(Player.Transitions.off)
+                    } label: {
+                        SettingLabel("Song Transitions", systemImage: "wave.3.right", tint: .teal)
                     }
-                    if player.crossfades {
+                    if player.transitions == .crossfade {
                         VStack(alignment: .leading, spacing: 4) {
                             LabeledContent("Overlap", value: "\(Int(player.crossfadeDuration)) s")
                             Slider(value: $player.crossfadeDuration, in: 1...12, step: 1) {
@@ -51,28 +55,37 @@ struct SettingsView: View {
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("Autoplay keeps the music going with songs like the last one when the queue ends. Normalize Volume plays loud masters at a similar level to everything else. Crossfade overlaps the end of one song with the start of the next, and gives skips a short fade. Skip Buttons jump back or ahead within the song from Now Playing.")
+                    Text("Autoplay keeps the music going with songs like the last one when the queue ends. Normalize Volume plays loud masters at a similar level to everything else. AutoMix blends songs like a DJ, lining up beats and skipping silence; Crossfade overlaps the end of one song with the start of the next. Both give skips a short fade. Skip Buttons jump back or ahead within the song from Now Playing.")
                 }
 
                 Section {
-                    Picker(selection: $settings.videoQuality) {
-                        ForEach(AppSettings.videoQualities, id: \.self) { Text(VideoQualityName.long($0)).tag($0) }
-                    } label: {
-                        SettingLabel("Default Quality", systemImage: "sparkles.tv.fill", tint: .purple)
+                    Toggle(isOn: $settings.videoModeEnabled) {
+                        SettingLabel("Video Mode", systemImage: "play.rectangle.fill", tint: .red)
                     }
-                    Toggle(isOn: $settings.autoplaysVideos) {
-                        SettingLabel("Autoplay Next Video", systemImage: "play.square.stack.fill", tint: .red)
-                    }
-                    Toggle(isOn: $settings.holdsToSpeedUp) {
-                        SettingLabel("Hold to Speed Up", systemImage: "forward.fill", tint: .blue)
-                    }
-                    Toggle(isOn: $settings.swipesForBrightness) {
-                        SettingLabel("Swipe for Brightness", systemImage: "sun.max.fill", tint: .yellow)
+                    if settings.videoModeEnabled {
+                        Picker(selection: $settings.videoQuality) {
+                            ForEach(AppSettings.videoQualities, id: \.self) { Text(VideoQualityName.long($0)).tag($0) }
+                        } label: {
+                            SettingLabel("Default Quality", systemImage: "sparkles.tv.fill", tint: .purple)
+                        }
+                        Toggle(isOn: $settings.autoplaysVideos) {
+                            SettingLabel("Autoplay Next Video", systemImage: "play.square.stack.fill", tint: .red)
+                        }
+                        Toggle(isOn: $settings.holdsToSpeedUp) {
+                            SettingLabel("Hold to Speed Up", systemImage: "forward.fill", tint: .blue)
+                        }
+                        Toggle(isOn: $settings.swipesForBrightness) {
+                            SettingLabel("Swipe for Brightness", systemImage: "sun.max.fill", tint: .yellow)
+                        }
                     }
                 } header: {
                     Text("Videos")
                 } footer: {
-                    Text("Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
+                    if !settings.videoModeEnabled {
+                        Text("Video Mode adds YouTube itself beside your music: a Music and Video switch on Home, with videos, subscriptions and the video player.")
+                    } else {
+                        Text("Video Mode adds a Music and Video switch on Home. Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
+                    }
                 }
 
                 Section {

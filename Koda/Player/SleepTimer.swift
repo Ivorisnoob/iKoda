@@ -30,7 +30,7 @@ final class SleepTimer {
         task = Task { [weak self] in
             try? await Task.sleep(for: .seconds(minutes * 60))
             guard !Task.isCancelled, let self, self.mode == .at(end) else { return }
-            self.player.pause()
+            self.player.pause(from: "the sleep timer")
             self.mode = .off
         }
     }

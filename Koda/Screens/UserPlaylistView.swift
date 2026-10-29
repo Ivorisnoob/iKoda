@@ -114,8 +114,8 @@ struct UserPlaylistView: View {
                 canPlay: !playlist.songs.isEmpty,
                 play: { player.play(playlist.songs) },
                 shuffle: { player.play(playlist.songs, startAt: Int.random(in: 0..<max(playlist.songs.count, 1)), shuffled: true) }
-            ) {
-                PlaylistMosaic(songs: playlist.songs, size: 232, cornerRadius: 12)
+            ) { side in
+                PlaylistMosaic(songs: playlist.songs, size: side, cornerRadius: 12)
             } actions: {
                 if !playlist.songs.isEmpty {
                     DownloadButton(songs: playlist.songs)

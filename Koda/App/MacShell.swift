@@ -26,6 +26,9 @@ struct MacPlayerBar: View {
 
     /// A narrow window: the transport gives up some width, and the volume keeps its speaker.
     private var isNarrow: Bool { width < 760 }
+    /// The smallest windows: shuffle and repeat step out (the Controls menu keeps both), so the
+    /// song's title still has room beside the transport.
+    private var isCompact: Bool { width < 560 }
 
     var body: some View {
         HStack(spacing: isNarrow ? 10 : 16) {
@@ -35,10 +38,14 @@ struct MacPlayerBar: View {
                 transport
                 BarProgress()
             }
-            .frame(width: isNarrow ? 270 : 360)
+            .frame(width: isCompact ? 180 : isNarrow ? 270 : 360)
+            // Compact, the transport moves off centre to leave the title what's left.
             trailing
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(maxWidth: isCompact ? nil : .infinity, alignment: .trailing)
         }
+        // Measured on a flexible frame: the bar's own parts have fixed widths, and measuring
+        // them would hold the bar at its old width.
+        .frame(minWidth: 0, maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .padding(.horizontal, 12)
         .frame(height: 68)
@@ -62,8 +69,13 @@ struct MacPlayerBar: View {
                 }
                 .lineLimit(1)
                 .contentTransition(.opacity)
+                if let mixing = player.mixing {
+                    MixingBadge(mixing: mixing, compact: true)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
             }
             .contentShape(.rect)
+            .animation(.smooth(duration: 0.35), value: player.mixing)
         }
         .buttonStyle(BarButtonStyle(padding: 4))
         .disabled(player.current == nil)
@@ -73,7 +85,9 @@ struct MacPlayerBar: View {
 
     private var transport: some View {
         HStack(spacing: isNarrow ? 8 : 18) {
-            iconButton("shuffle", help: "Shuffle", isOn: player.isShuffled) { player.setShuffle(!player.isShuffled) }
+            if !isCompact {
+                iconButton("shuffle", help: "Shuffle", isOn: player.isShuffled) { player.setShuffle(!player.isShuffled) }
+            }
             iconButton("backward.fill", help: "Previous") { player.previous() }
             if app.settings.showsSkipButtons {
                 let interval = app.settings.skipInterval
@@ -87,8 +101,10 @@ struct MacPlayerBar: View {
                     .disabled(player.phase != .ready)
             }
             iconButton("forward.fill", help: "Next") { player.next() }
-            iconButton(player.repeatMode == .one ? "repeat.1" : "repeat", help: "Repeat", isOn: player.repeatMode != .off) {
-                player.cycleRepeat()
+            if !isCompact {
+                iconButton(player.repeatMode == .one ? "repeat.1" : "repeat", help: "Repeat", isOn: player.repeatMode != .off) {
+                    player.cycleRepeat()
+                }
             }
         }
         .disabled(player.current == nil)
@@ -266,7 +282,7 @@ struct KodaCommands: Commands {
         CommandMenu("Controls") {
             let player = model.player
             let hasSong = player.current != nil
-            Button(player.wantsToPlay ? "Pause" : "Play") { player.togglePlayPause() }
+            Button(player.wantsToPlay ? "Pause" : "Play") { player.togglePlayPause(from: "the menu bar") }
                 .keyboardShortcut(.space, modifiers: [])
                 .disabled(!hasSong)
             Button("Next") { player.next() }
@@ -282,6 +298,12 @@ struct KodaCommands: Commands {
             Button("Skip Back \(interval.rawValue) Seconds") { player.skip(by: -interval.seconds) }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                 .disabled(player.phase != .ready)
+            #if DEBUG
+            // For hearing transitions without waiting out each song; Debug builds only.
+            Button("Jump to Next Transition") { player.jumpToTransition() }
+                .keyboardShortcut("j", modifiers: [.command, .option])
+                .disabled(player.phase != .ready)
+            #endif
             Divider()
             Button("Increase Volume") { player.volume = min(1, player.volume + 0.1) }
                 .keyboardShortcut(.upArrow, modifiers: .command)

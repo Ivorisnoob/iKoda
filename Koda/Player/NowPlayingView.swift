@@ -200,7 +200,7 @@ struct NowPlayingView: View {
     private var floatingArtwork: some View {
         let big = isWide || panel == .artwork
         let radius: CGFloat = big ? 18 : 8
-        return ArtworkView(artwork: player.current?.artwork, size: 380, cornerRadius: radius, fillsFrame: true)
+        return MixingCovers(artwork: player.current?.artwork, mixing: player.mixing, cornerRadius: radius)
             // While the song loads the cover waits a little small, then settles to full size
             // the moment sound starts. Nothing is drawn over the art itself.
             .clipShape(.rect(cornerRadius: radius, style: .continuous))

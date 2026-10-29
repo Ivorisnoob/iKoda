@@ -41,23 +41,36 @@ struct MacPageTitle<Accessory: View>: View {
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                }
-                Text(title)
-                    .font(.system(size: 30, weight: .bold))
-                    .lineLimit(1)
+        // Where the title and its controls don't fit side by side, the controls go under it
+        // rather than cutting the title short.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .lastTextBaseline, spacing: 16) {
+                heading
+                Spacer(minLength: 0)
+                accessory()
             }
-            Spacer(minLength: 0)
-            accessory()
+            VStack(alignment: .leading, spacing: 12) {
+                heading
+                HStack(spacing: 12) { accessory() }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, MacMetrics.gutter)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let subtitle {
+                Text(subtitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+            }
+            Text(title)
+                .font(.system(size: 30, weight: .bold))
+                .lineLimit(1)
+        }
     }
 }
 
@@ -337,19 +350,25 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
     var canPlay = true
     let play: () -> Void
     let shuffle: () -> Void
-    @ViewBuilder var cover: () -> Cover
+    /// Drawn at the side it is given: smaller in a narrow window.
+    @ViewBuilder var cover: (CGFloat) -> Cover
     @ViewBuilder var actions: () -> Actions
 
     @State private var showsDescription = false
     @State private var width: CGFloat = 900
     @Environment(\.colorScheme) private var colorScheme
 
-    /// A narrow window keeps the cover beside the title, smaller.
+    /// A narrow window keeps the cover beside the title, smaller; the narrowest puts it above,
+    /// where the title and the buttons keep the page's whole width.
     private var coverSide: CGFloat { width < 620 ? 150 : 232 }
+    private var stacked: Bool { width < 600 }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: width < 620 ? 20 : 28) {
-            cover()
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: width < 620 ? 20 : 28))
+        layout {
+            cover(coverSide)
                 .frame(width: coverSide, height: coverSide)
                 .shadow(color: .black.opacity(0.22), radius: 22, y: 12)
             VStack(alignment: .leading, spacing: 0) {
@@ -413,9 +432,11 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
                 }
                 .padding(.top, width < 620 ? 12 : 18)
             }
-            Spacer(minLength: 0)
+            if !stacked { Spacer(minLength: 0) }
         }
         .padding(.horizontal, MacMetrics.gutter)
+        // Measured on a flexible frame, not the header: the cover's fixed side would hold it wide.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }

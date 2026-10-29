@@ -15,14 +15,23 @@ struct Scrubber: View {
     @State private var dragStart: Double?
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.25)) { context in
+        // Four times a second is enough for a song's progress; through an AutoMix transition the
+        // outgoing song's bar fades smoothly, so the timeline runs at frame rate then.
+        TimelineView(.animation(minimumInterval: player.mixing == nil ? 0.25 : 1.0 / 30)) { context in
             let duration = max(player.duration, 1)
             let fraction = dragFraction ?? min(1, player.position(at: context.date) / duration)
+            let mixing = player.mixing
             VStack(spacing: 6) {
                 GeometryReader { geometry in
                     let width = geometry.size.width
                     ZStack(alignment: .leading) {
                         Capsule().fill(.white.opacity(0.25))
+                        // The old song's progress lingers and fades as the new one's grows from zero.
+                        if let mixing, dragFraction == nil {
+                            let progress = mixing.progress(at: context.date)
+                            Capsule().fill(.white.opacity(0.45 * (1 - progress)))
+                                .frame(width: max(0, width * mixing.outgoingFraction(at: context.date)))
+                        }
                         Capsule().fill(.white.opacity(dragFraction == nil ? 0.85 : 1))
                             .frame(width: max(0, width * fraction))
                     }
@@ -59,6 +68,15 @@ struct Scrubber: View {
                 }
                 .font(.caption.monospacedDigit().weight(.medium))
                 .foregroundStyle(.white.opacity(0.6))
+                // Where Music says it: under the bar, between the times.
+                .overlay {
+                    if let mixing {
+                        MixingBadge(mixing: mixing, compact: true, glass: false)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    }
+                }
+                .animation(.smooth(duration: 0.4), value: mixing)
             }
             .accessibilityElement()
             .accessibilityLabel("Position")
@@ -154,7 +172,8 @@ struct VolumeSlider: View {
 final class SystemVolume {
     private(set) var level: Float
     @ObservationIgnored private var observation: NSKeyValueObservation?
-    @ObservationIgnored weak var slider: UISlider?
+    @ObservationIgnored weak var volumeView: MPVolumeView?
+    @ObservationIgnored private var settle: Task<Void, Never>?
 
     init() {
         level = AVAudioSession.sharedInstance().outputVolume
@@ -164,10 +183,28 @@ final class SystemVolume {
     }
 
     func set(_ value: Float) {
+        // Found each time: a slider kept from earlier went stale with Bluetooth headphones (the
+        // volume view seems to build a new one when the route changes) and moved nothing.
+        guard let slider = volumeView.flatMap(Self.slider(in:)) else { return }
         level = value
-        guard let slider else { return }
         slider.value = value
         slider.sendActions(for: .valueChanged)
+        // Shown at once under the finger, then held to what the system really did, so the bar
+        // never claims a change the headphones didn't take.
+        settle?.cancel()
+        settle = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            self?.level = AVAudioSession.sharedInstance().outputVolume
+        }
+    }
+
+    private static func slider(in view: UIView) -> UISlider? {
+        for subview in view.subviews {
+            if let slider = subview as? UISlider { return slider }
+            if let slider = slider(in: subview) { return slider }
+        }
+        return nil
     }
 
     /// The observer runs on whatever thread the audio session reports from, so it is built
@@ -193,12 +230,7 @@ private struct HiddenSystemVolumeView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MPVolumeView, context: Context) {
-        if volume.slider == nil {
-            // The slider exists once the view has laid out.
-            Task { @MainActor in
-                volume.slider = view.subviews.compactMap { $0 as? UISlider }.first
-            }
-        }
+        volume.volumeView = view
     }
 }
 

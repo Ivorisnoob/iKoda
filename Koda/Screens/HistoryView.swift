@@ -82,8 +82,8 @@ struct HistoryView: View {
                 canPlay: !all.isEmpty,
                 play: { player.play(Array(all.prefix(200))) },
                 shuffle: { player.play(Array(all.prefix(200)), startAt: Int.random(in: 0..<max(min(all.count, 200), 1)), shuffled: true) }
-            ) {
-                MacSymbolCover(systemImage: "clock.arrow.circlepath", tint: .orange)
+            ) { side in
+                MacSymbolCover(systemImage: "clock.arrow.circlepath", tint: .orange, size: side)
             } actions: {
                 if !all.isEmpty {
                     Button("Clear History", role: .destructive) { confirmsClear = true }

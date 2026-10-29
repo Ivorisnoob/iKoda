@@ -40,13 +40,15 @@ struct MacRootView: View {
     @State private var draftName = ""
     @State private var renaming: UserPlaylist?
     @State private var deleting: UserPlaylist?
+    /// The sidebar's height: a short window leaves the list its room rather than the glance.
+    @State private var sidebarHeight: CGFloat = 800
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         dialogs(nowPlayingLayer(routing(searching(splitView))))
-            // A full-screen video covers the whole window, sidebar and all, as the window goes
-            // into macOS full screen with its toolbar hidden: in the view tree rather than
-            // presented, so nothing about the window's toolbar or split view changes under it.
+            // A full-screen video covers the whole window under the toolbar, sidebar and all, as
+            // the window goes into macOS full screen: in the view tree rather than presented, so
+            // nothing about the window's toolbar or split view changes under it.
             .overlay {
                 if model.videos.isFullScreen, let video = model.videos.current {
                     FullScreenVideoView(playback: model.videos, video: video)
@@ -241,10 +243,12 @@ struct MacRootView: View {
         .environment(\.defaultMinListRowHeight, 28)
         // Music or Video at the head of the sidebar; what's under it follows.
         .safeAreaBar(edge: .top) {
-            ModeToggle()
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
+            if model.settings.videoModeEnabled {
+                ModeToggle()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+            }
         }
         // The channels under Subscriptions: one call (YouTube's sidebar), when video mode shows.
         .task(id: "\(model.roster.activeID)|\(model.settings.mode)|\(model.subscribedChannels == nil)") {
@@ -252,7 +256,6 @@ struct MacRootView: View {
         }
         // A launch in video mode opens on its Home.
         .onAppear {
-            MacWindow.hideToolbarInFullScreen()
             if model.settings.mode == .video, !(section ?? .home).isVideo { section = .videos }
         }
         .onChange(of: model.settings.mode) { _, mode in
@@ -264,6 +267,7 @@ struct MacRootView: View {
         .safeAreaBar(edge: .bottom, spacing: 0) {
             sidebarFoot
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeight = $0 }
     }
 
     /// YouTube's own sidebar, the Mac's way: the feeds, what's yours (signed in, Watch Later and
@@ -358,8 +362,9 @@ struct MacRootView: View {
 
     private var sidebarFoot: some View {
         VStack(spacing: 8) {
-            // Up Next and today's listening are the songs'; video mode leaves them out.
-            if model.settings.mode == .music {
+            // Up Next and today's listening are the songs'; video mode leaves them out, and so
+            // does a short window, where the glance would cover most of the list.
+            if model.settings.mode == .music, sidebarHeight >= 640 {
                 MacSidebarGlance(openQueue: { model.showNowPlaying(.queue) }, openStats: { section = .stats })
             }
             profileButton

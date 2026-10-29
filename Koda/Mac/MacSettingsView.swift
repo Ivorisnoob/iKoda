@@ -457,14 +457,6 @@ private struct MacPlaybackPane: View {
                 .controlSize(.small)
             }
             .disabled(player.transitions != .crossfade)
-            if player.transitions == .autoMix {
-                MacSettingsRow(title: "AutoMix log", detail: "What AutoMix measured and planned for each transition, with the songs' measurements, for reporting one that sounded wrong.") {
-                    AutoMixLogShareLink {
-                        Text("Share…")
-                    }
-                    .fixedSize()
-                }
-            }
         }
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled
                          ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and M mutes. Double-click a video for full screen."

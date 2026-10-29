@@ -238,7 +238,14 @@ public final class Player {
     private struct PlanKey: Equatable {
         var from: UUID
         var to: UUID
+        /// The rate the outgoing song plays at, which the plan's tempo match is made for.
+        var outgoingRate: Double
     }
+
+    /// The rate the playing song was started at: not 1 after an AutoMix transition matched a
+    /// tempo, until the song next starts from a standstill (a playing player's rate is never
+    /// changed; see `follow`).
+    private var heardRate: Double = 1
 
     /// The planned handover from the current occurrence to the standby one.
     private var autoMixPlan: (key: PlanKey, plan: TransitionPlan)?
@@ -343,7 +350,13 @@ public final class Player {
         if avPlayer.currentItem == nil || phase != .ready {
             loadCurrent(at: timeAnchor.position)
         } else {
+            restoreStallWaiting()
+            // From a standstill it plays at its own tempo again (`play` is rate 1), which is safe
+            // where changing it while playing isn't; the coming transition is planned anew for it.
+            let wasStretched = heardRate != 1
+            heardRate = 1
             avPlayer.play()
+            if wasStretched { armCrossfade() }
         }
         updateNowPlaying()
     }
@@ -505,6 +518,7 @@ public final class Player {
         disarmCrossfade()
         discardStandby()
         autoMixPlan = nil
+        heardRate = 1
         avPlayer.removeAllItems()
         occurrences = [:]
         preloaded = []
@@ -544,6 +558,7 @@ public final class Player {
                 applyLoudness(stream)
                 if fadeIn > 0 { startFadeIn(over: fadeIn) } else { cancelFadeIn() }
                 phase = .ready
+                restoreStallWaiting()
                 if wantsToPlay { avPlayer.play() }
                 sampleTime()
                 updateNowPlaying()
@@ -708,7 +723,7 @@ public final class Player {
               let id = occurrences[ObjectIdentifier(item)], item.forwardPlaybackEndTime.isValid else { return }
         let end = item.forwardPlaybackEndTime.seconds
         if autoMix {
-            if let entry = autoMixPlan, entry.key.from == id, standby?.id == entry.key.to,
+            if let entry = autoMixPlan, entry.key.from == id, standby?.id == entry.key.to, entry.key.outgoingRate == heardRate,
                item.currentTime().seconds < entry.plan.cue - Self.autoMixLead {
                 let moment = max(0.1, entry.plan.cue - Self.autoMixLead)
                 let at = NSValue(time: CMTime(seconds: moment, preferredTimescale: 600))
@@ -754,6 +769,8 @@ public final class Player {
         guard let next = standby else { return }
         standby = nil
         autoMixPlan = nil
+        // `play` below starts it at its own tempo.
+        heardRate = 1
         retireMain(fading: fade)
         adopt(next.player)
         currentStream = next.stream
@@ -876,7 +893,7 @@ public final class Player {
               let fromId = occurrences[ObjectIdentifier(item)], let from = queue.current, from.id == fromId,
               let next = standby, let to = queue.peekNext(automatic: true), to.id == next.id,
               let fromStream = currentStream, fromStream.videoId == from.song.id else { return }
-        let key = PlanKey(from: fromId, to: next.id)
+        let key = PlanKey(from: fromId, to: next.id, outgoingRate: heardRate)
         if autoMixPlan?.key == key || planning == key { return }
         planning = key
         let analyzer = autoMixAnalyzer()
@@ -894,7 +911,8 @@ public final class Player {
                 AutoMixLog.note("plan \(from.song.title) → \(to.song.title): no measurements, plain crossfade")
                 return
             }
-            guard let plan = TransitionPlanner.plan(from: a, to: b, context: .init(outgoingEnd: end, albumNeighbours: neighbours)) else {
+            guard let plan = TransitionPlanner.plan(from: a, to: b, context: .init(outgoingEnd: end, albumNeighbours: neighbours,
+                                                                                    outgoingRate: key.outgoingRate)) else {
                 AutoMixLog.note("plan \(from.song.title) → \(to.song.title): too short to mix, plain crossfade")
                 return
             }
@@ -906,7 +924,7 @@ public final class Player {
             }
             guard autoMix, queue.current?.id == fromId, standby?.id == next.id else { return }
             if player.status == .readyToPlay, player.rate == 0 {
-                player.preroll(atRate: Float(plan.rate)) { ready in
+                player.preroll(atRate: Float(plan.rate * key.outgoingRate)) { ready in
                     if !ready { AutoMixLog.note("preroll of \(to.song.title) didn't finish") }
                 }
             }
@@ -924,11 +942,15 @@ public final class Player {
         guard autoMix, wantsToPlay, !stopsAtEndOfSong, let item = avPlayer.currentItem,
               occurrences[ObjectIdentifier(item)] == id, queue.current?.id == id,
               let next = standby, let to = queue.peekNext(automatic: true), next.id == to.id,
-              let entry = autoMixPlan, entry.key == PlanKey(from: id, to: next.id) else {
+              let entry = autoMixPlan, entry.key == PlanKey(from: id, to: next.id, outgoingRate: heardRate) else {
             AutoMixLog.note("cue reached but the queue moved on; no transition")
             return
         }
         let plan = entry.plan
+        // The plan is in the songs' own seconds; the outgoing one may be playing stretched.
+        let outgoingRate = heardRate
+        let playerRate = plan.rate * outgoingRate
+        let overlap = plan.overlap / outgoingRate
         let fromTitle = queue.current?.song.title ?? "?"
         let fromArtwork = queue.current?.song.artwork
         let fromDuration = item.forwardPlaybackEndTime.isValid ? item.forwardPlaybackEndTime.seconds : duration
@@ -952,18 +974,20 @@ public final class Player {
         autoMixPlan = nil
         standby = nil
         // Without a channel the old song falls back to a volume fade.
-        retireMain(fading: outgoingDSP == nil ? max(1, plan.overlap) : 0, hold: max(0, wait) + plan.overlap + 0.4)
+        retireMain(fading: outgoingDSP == nil ? max(1, overlap) : 0, hold: max(0, wait) + overlap + 0.4)
         adopt(next.player)
         currentStream = next.stream
         applyLoudness(next.stream.loudnessDb)
-        if incomingDSP == nil, plan.style != .gapless { startFadeIn(over: max(0.5, min(plan.overlap, 3))) } else { cancelFadeIn() }
+        if incomingDSP == nil, plan.style != .gapless { startFadeIn(over: max(0.5, min(overlap, 3))) } else { cancelFadeIn() }
         scheduledStart = Date().addingTimeInterval(max(0, wait))
+        // Set before the queue moves on, so the next transition is planned from this rate.
+        heardRate = playerRate
         if scheduled {
             avPlayer.automaticallyWaitsToMinimizeStalling = false
-            avPlayer.setRate(Float(plan.rate), time: .invalid, atHostTime: hostCue)
+            avPlayer.setRate(Float(playerRate), time: .invalid, atHostTime: hostCue)
         } else {
             let player = avPlayer
-            let rate = Float(plan.rate)
+            let rate = Float(playerRate)
             Task {
                 try? await Task.sleep(for: .seconds(max(0, wait)))
                 guard self.avPlayer === player, self.wantsToPlay else { return }
@@ -972,31 +996,32 @@ public final class Player {
         }
         currentItemChanged(ObjectIdentifier(next.item))
         // It starts at its entry point, not at zero.
-        timeAnchor = TimeAnchor(position: plan.inStart, date: Date().addingTimeInterval(max(0, wait)), rate: plan.rate)
+        timeAnchor = TimeAnchor(position: plan.inStart, date: Date().addingTimeInterval(max(0, wait)), rate: playerRate)
         updateNowPlaying()
         if plan.style != .gapless {
             let started = Date().addingTimeInterval(max(0, wait))
             mixing = Mixing(style: plan.style, from: fromTitle, to: to.song.title, fromArtwork: fromArtwork, started: started,
-                            overlap: plan.overlap, fromPosition: plan.cue, fromDuration: fromDuration,
-                            beat: plan.firstBeat.map { started.addingTimeInterval($0 - plan.cue) }, beatPeriod: plan.beatPeriod)
+                            overlap: overlap, fromPosition: plan.cue, fromDuration: fromDuration,
+                            beat: plan.firstBeat.map { started.addingTimeInterval(($0 - plan.cue) / outgoingRate) },
+                            beatPeriod: plan.beatPeriod.map { $0 / outgoingRate })
         }
-        AutoMixLog.note("start \(fromTitle) → \(to.song.title): \(plan.style.rawValue), "
+        AutoMixLog.note("start \(fromTitle) → \(to.song.title): \(plan.style.rawValue) at rate \(String(format: "%.4f", playerRate)), "
             + (scheduled ? "scheduled on the clock in \(wait.s2) s" : "NOT scheduled (timebase \(item.timebase != nil), ready \(next.item.status == .readyToPlay), airplay \(next.player.isExternalPlaybackActive)); started by timer")
             + ", channels out \(outgoingDSP != nil) in \(incomingDSP != nil)")
         let incoming = avPlayer
         let incomingItem = next.item
         transitionTask = Task { [weak self] in
-            await self?.follow(plan, outgoing: outgoing, outgoingItem: item, incoming: incoming, incomingItem: incomingItem,
+            await self?.follow(plan, overlap: overlap, outgoing: outgoing, outgoingItem: item, incoming: incoming, incomingItem: incomingItem,
                                wait: max(0, wait), outgoingDSP: outgoingDSP, incomingDSP: incomingDSP)
         }
     }
 
     /// Watch a transition through: how close the two songs' clocks landed to the plan, both
-    /// channels' levels as it goes, then the tempo eased back and the channel opened.
-    private func follow(_ plan: TransitionPlan, outgoing: AVQueuePlayer, outgoingItem: AVPlayerItem, incoming: AVQueuePlayer,
+    /// channels' levels as it goes, then the channel opened. `overlap` is in real seconds.
+    private func follow(_ plan: TransitionPlan, overlap: TimeInterval, outgoing: AVQueuePlayer, outgoingItem: AVPlayerItem, incoming: AVQueuePlayer,
                         incomingItem: AVPlayerItem, wait: TimeInterval, outgoingDSP: TransitionDSP?, incomingDSP: TransitionDSP?) async {
         func db(_ level: Float) -> String { level > 0.00001 ? (20 * log10(Double(level))).s1 : "-inf" }
-        try? await Task.sleep(for: .seconds(wait + min(0.6, max(0.1, plan.overlap / 2))))
+        try? await Task.sleep(for: .seconds(wait + min(0.6, max(0.1, overlap / 2))))
         guard !Task.isCancelled else { return }
         scheduledStart = nil
         let outNow = outgoingItem.currentTime().seconds
@@ -1011,7 +1036,7 @@ public final class Player {
         sampleTime()
         updateNowPlaying()
         // Levels through the blend, every half second.
-        let finish = Date().addingTimeInterval(max(0, plan.overlap - min(0.6, max(0.1, plan.overlap / 2))))
+        let finish = Date().addingTimeInterval(max(0, overlap - min(0.6, max(0.1, overlap / 2))))
         while Date() < finish, !Task.isCancelled {
             var parts: [String] = []
             if let m = outgoingDSP?.meter, tail === outgoing {
@@ -1025,41 +1050,18 @@ public final class Player {
         }
         guard !Task.isCancelled else { return }
         if mixing != nil { mixing = nil }
-        // The new song kept "playing" but went silent here on repeat one (Espresso, Oct 2026):
-        // what its channel and player do for a while after the blend shows which step did it.
-        Task { [weak self] in
-            for _ in 0..<16 {
-                guard let self, self.avPlayer === incoming else { return }
-                if let m = incomingDSP?.meter {
-                    AutoMixLog.note("  after: in t=\(m.time.s2) peak \(db(m.peak)) dB rms \(db(m.rms)) gain \(String(format: "%.2f", m.gain)) "
-                        + "hp \(Int(m.highPass)) lp \(Int(m.lowPass)) non-finite \(m.nonFinite) blocks \(m.blocks) | "
-                        + "player \(incoming.timeControlStatus.rawValue) rate \(String(format: "%.4f", incoming.rate)) item t=\(incomingItem.currentTime().seconds.s2)")
-                }
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-        }
         // Open the channel so seeking back over the entry doesn't play the moves again.
-        if avPlayer === incoming {
-            incomingDSP?.clear()
-            AutoMixLog.note("channel opened at \(incomingItem.currentTime().seconds.s2)")
-        }
-        incoming.automaticallyWaitsToMinimizeStalling = true
-        // Ease a matched tempo back to the song's own over four seconds; steps this small aren't heard.
-        if abs(plan.rate - 1) > 0.0005 {
-            let steps = 16
-            for step in 1...steps {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled, avPlayer === incoming, incoming.timeControlStatus == .playing else { break }
-                incoming.rate = Float(plan.rate + (1 - plan.rate) * Double(step) / Double(steps))
-            }
-            sampleTime()
-            updateNowPlaying()
-        }
-        AutoMixLog.note("done \(plan.style.rawValue); rate now \(String(format: "%.3f", incoming.rate))")
+        if avPlayer === incoming { incomingDSP?.clear() }
+        // The new song keeps its matched rate, and its scheduled-start buffering, until it next
+        // stops. On iOS 27 a playing AVPlayer's rate or stalling mode changed under it makes
+        // mediaplaybackd begin an interruption and rebuild the route each time, with no end: it
+        // went on "playing" in silence until paused (Espresso looping into itself, eased from
+        // 0.9995 to 1, October 2026). `resume` and `loadCurrent` restore both from a standstill.
+        AutoMixLog.note("done \(plan.style.rawValue); rate stays \(String(format: "%.4f", incoming.rate)) until the song stops")
     }
 
-    /// Stop following a transition and leave the new song playing plainly: open its channel
-    /// smoothly, its own tempo back.
+    /// Stop following a transition and leave the new song playing plainly: its channel opened
+    /// smoothly. Its rate is left alone while it plays (see `follow`).
     private func endTransition() {
         transitionTask?.cancel()
         transitionTask = nil
@@ -1069,9 +1071,14 @@ public final class Player {
         if let item = avPlayer.currentItem, let dsp = TransitionDSP.of(item) {
             dsp.release(at: item.currentTime().seconds)
         }
-        if avPlayer.timeControlStatus == .playing, avPlayer.rate != 1 { avPlayer.rate = 1 }
-        avPlayer.automaticallyWaitsToMinimizeStalling = true
         AutoMixLog.note("transition cut short")
+    }
+
+    /// Back to riding out network waits, from a standstill only (see `follow`): a standby set up
+    /// for a scheduled start doesn't wait, and a playing player mustn't be switched.
+    private func restoreStallWaiting() {
+        guard avPlayer.timeControlStatus == .paused, !avPlayer.automaticallyWaitsToMinimizeStalling else { return }
+        avPlayer.automaticallyWaitsToMinimizeStalling = true
     }
 
     /// For trying transitions out: jump to a few seconds before the planned one (or the end).

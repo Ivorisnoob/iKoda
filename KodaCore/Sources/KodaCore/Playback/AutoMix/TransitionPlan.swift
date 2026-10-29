@@ -131,20 +131,47 @@ public nonisolated enum TransitionPlanner {
     public static let maxLeftOut = 8.0
     /// How long before a hard stop the next song comes in when the beats can't be locked.
     public static let hardStopBlend = 3.0
+    /// Beats drifting apart by less than this over a whole blend aren't heard, so the next song
+    /// isn't stretched for it (Espresso into itself measured 0.9995: 4.6 ms over 9.25 s). A
+    /// stretched song keeps its rate until it stops, since changing a playing player's rate
+    /// silenced it on iOS 27 (see `Player.follow`), so stretching only when it is heard matters.
+    public static let inaudibleDrift = 0.010
+
+    /// `rate` (the next song's seconds per outgoing second), or the one that plays the next
+    /// song at its own tempo when that keeps the beats within `inaudibleDrift` over `seconds`.
+    /// `outgoingRate` is how fast the outgoing song is playing, itself maybe left stretched by
+    /// the transition before.
+    static func rate(_ rate: Double, over seconds: Double, outgoingRate: Double = 1) -> Double {
+        let own = 1 / outgoingRate
+        return abs(rate - own) * seconds <= inaudibleDrift ? own : rate
+    }
 
     public struct Context: Sendable {
         /// The outgoing song's playable end (YouTube's length).
         public var outgoingEnd: Double
         /// The two are neighbouring tracks of one album played in order.
         public var albumNeighbours: Bool
+        /// How fast the outgoing song is playing: not 1 when the transition into it matched a
+        /// tempo, since a playing song's rate is never changed (see `Player.follow`).
+        public var outgoingRate: Double
 
-        public init(outgoingEnd: Double, albumNeighbours: Bool) {
+        public init(outgoingEnd: Double, albumNeighbours: Bool, outgoingRate: Double = 1) {
             self.outgoingEnd = outgoingEnd
             self.albumNeighbours = albumNeighbours
+            self.outgoingRate = outgoingRate
         }
     }
 
+    /// `rate` in the plan is the next song's seconds per outgoing second; the player plays it at
+    /// `rate × context.outgoingRate`.
     public static func plan(from a: TrackAnalysis, to b: TrackAnalysis, context: Context) -> TransitionPlan? {
+        guard var plan = basePlan(from: a, to: b, context: context) else { return nil }
+        // Without locked beats the next song plays at its own tempo.
+        if plan.firstBeat == nil { plan.rate = 1 / context.outgoingRate }
+        return plan
+    }
+
+    static func basePlan(from a: TrackAnalysis, to b: TrackAnalysis, context: Context) -> TransitionPlan? {
         let end = min(a.musicEnd, context.outgoingEnd)
         guard context.outgoingEnd > 20 else { return nil }
         if context.albumNeighbours {
@@ -153,7 +180,8 @@ public nonisolated enum TransitionPlanner {
         }
         // Past a long silent lead-in, but never far into a song.
         let entry = min(max(0, b.musicStart - 0.02), 20)
-        let match = tempoMatch(a, b)
+        let outgoingRate = context.outgoingRate
+        let match = tempoMatch(a, b, outgoingRate: outgoingRate)
         let quietIntro = b.introLength >= 2.5
 
         // Like Music, look well back from the end for the best place to hand over, not only at it.
@@ -179,8 +207,9 @@ public nonisolated enum TransitionPlanner {
         if plan.style == .beatMatch { return plan }
         if let match, let outro = a.grid(near: plan.cue), let intro = b.intro,
            outro.strength >= gridStrength, intro.strength >= gridStrength {
-            plan = snap(plan, outro: outro, intro: intro, rate: match.rate, entryFrom: b.musicStart)
-            plan.reason += "; beats lined up (\(outro.bpm.s1) → \(intro.bpm.s1) bpm, rate \(String(format: "%.3f", match.rate)))"
+            let rate = Self.rate(match.rate, over: plan.overlap, outgoingRate: outgoingRate)
+            plan = snap(plan, outro: outro, intro: intro, rate: rate, entryFrom: b.musicStart)
+            plan.reason += "; beats lined up (\(outro.bpm.s1) → \(intro.bpm.s1) bpm, rate \(String(format: "%.4f", plan.rate)))"
         } else if let match {
             plan.reason += "; tempos fit (rate \(String(format: "%.3f", match.rate))) but the pulse is too weak to line up"
         } else {
@@ -228,14 +257,17 @@ public nonisolated enum TransitionPlanner {
     }
 
     struct Match {
+        /// The next song's seconds per outgoing second that line their beats up.
         var rate: Double
         /// The incoming beat period as heard at that rate, folded to the outgoing one's octave.
         var factor: Double
+        var outgoingRate: Double = 1
     }
 
-    /// The rate that brings the incoming song's tempo onto the outgoing one's, allowing for
-    /// one being heard at half or double the other, when it is within `maxStretch`.
-    static func tempoMatch(_ a: TrackAnalysis, _ b: TrackAnalysis) -> Match? {
+    /// The rate that brings the incoming song's tempo onto the outgoing one's as heard (at
+    /// `outgoingRate`), allowing for one being heard at half or double the other, when the
+    /// player's rate for it stays within `maxStretch` of the song's own tempo.
+    static func tempoMatch(_ a: TrackAnalysis, _ b: TrackAnalysis, outgoingRate: Double = 1) -> Match? {
         guard a.tempoConfidence >= tempoConfidence, b.tempoConfidence >= tempoConfidence,
               let outPeriod = a.outro?.period ?? a.bpm.map({ 60 / $0 }),
               let inPeriod = b.intro?.period ?? b.bpm.map({ 60 / $0 }) else { return nil }
@@ -244,8 +276,9 @@ public nonisolated enum TransitionPlanner {
             // The incoming beats come every inPeriod / factor when folded; matching them means
             // playing it at this rate.
             let rate = inPeriod / (factor * outPeriod)
-            if abs(rate - 1) <= maxStretch, best.map({ abs(rate - 1) < abs($0.rate - 1) }) ?? true {
-                best = Match(rate: rate, factor: factor)
+            let playerRate = rate * outgoingRate
+            if abs(playerRate - 1) <= maxStretch, best.map({ abs(playerRate - 1) < abs($0.rate * outgoingRate - 1) }) ?? true {
+                best = Match(rate: rate, factor: factor, outgoingRate: outgoingRate)
             }
         }
         return best
@@ -286,13 +319,14 @@ public nonisolated enum TransitionPlanner {
         }
         let inStart = min(max(0, b.musicStart - 0.02), 20)
         let inBeat = intro.beat(atOrAfter: inStart)
+        let rate = Self.rate(match.rate, over: beats * p, outgoingRate: match.outgoingRate)
         // The next song starts at its first sound, early enough that its first beat lands on cueBeat.
-        let lead = (inBeat - inStart) / match.rate
+        let lead = (inBeat - inStart) / rate
         let cue = cueBeat - lead
         let length = beats * p + lead
         let mid = cueBeat + beats / 2 * p
         let at = section.map { _ in "mixing at the outro section, \((end - cueBeat).s1) s before the end; " } ?? ""
-        var plan = TransitionPlan(style: .beatMatch, cue: cue, inStart: inStart, overlap: length, rate: match.rate,
+        var plan = TransitionPlan(style: .beatMatch, cue: cue, inStart: inStart, overlap: length, rate: rate,
                                   reason: at + "\(Int(beats)) beats at \(outro.bpm.s1) bpm locked to \(intro.bpm.s1) bpm, bass swap at \(mid.s2)")
         plan.firstBeat = cueBeat
         plan.beatPeriod = p

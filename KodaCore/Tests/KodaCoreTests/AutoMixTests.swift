@@ -214,6 +214,40 @@ struct AutoMixTests {
         #expect(plan.incoming.highPass(at: plan.inStart + 1) <= Automation.highPassOff, "BIRDS comes in with its bass")
     }
 
+    /// Espresso into itself measures 104.0 bpm out and 104.1 in: 0.9995, 4.6 ms over the blend.
+    /// Stretching it for that was inaudible, and changing the rate back after silenced iOS 27.
+    @Test func leavesAnInaudibleTempoDifferenceAlone() throws {
+        let espresso = try #require(Self.measured()["espresso"])
+        let a = espresso.analysis
+        let plan = try #require(TransitionPlanner.plan(from: a, to: a, context: .init(outgoingEnd: espresso.duration, albumNeighbours: false)))
+        #expect(plan.style == .beatMatch, "\(plan.summary)")
+        #expect(plan.firstBeat != nil)
+        #expect(plan.rate == 1, "\(plan.summary)")
+    }
+
+    /// A song a transition left stretched keeps playing that way, so the next one is matched to
+    /// the tempo heard, back at its own whenever that keeps the beats together, and never
+    /// stretched further than `maxStretch` from its own.
+    @Test func plansFromTheRateTheOutgoingSongIsHeardAt() throws {
+        let espresso = try #require(Self.measured()["espresso"])
+        let a = espresso.analysis
+        func plan(_ outgoingRate: Double) throws -> TransitionPlan {
+            try #require(TransitionPlanner.plan(from: a, to: a, context: .init(outgoingEnd: espresso.duration, albumNeighbours: false,
+                                                                                  outgoingRate: outgoingRate)))
+        }
+        // Heard 2 % fast: the next copy is played 2 % fast too, beats still locked.
+        let fast = try plan(1.02)
+        #expect(fast.firstBeat != nil, "\(fast.summary)")
+        #expect(abs(fast.rate * 1.02 - 1.02) < 0.002, "player rate \(fast.rate * 1.02)")
+        // Heard a hair fast, within what's audible: the next copy goes back to its own tempo.
+        let hair = try plan(1.0005)
+        #expect(abs(hair.rate * 1.0005 - 1) < 1e-9, "player rate \(hair.rate * 1.0005)")
+        // Heard 7 % fast: matching would take it past 6 %, so no beat lock, its own tempo.
+        let far = try plan(1.07)
+        #expect(far.firstBeat == nil, "\(far.summary)")
+        #expect(abs(far.rate * 1.07 - 1) < 1e-9, "player rate \(far.rate * 1.07)")
+    }
+
     @Test func leavesAlbumTracksGapless() throws {
         let a = TrackAnalyzer.analyze(Self.song(bpm: 120))
         let b = TrackAnalyzer.analyze(Self.song(bpm: 120))

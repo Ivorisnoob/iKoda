@@ -28,6 +28,8 @@ final class AppModel {
     /// The panel Now Playing should show when it next opens or is already open: the Mac's
     /// player bar and menu bar open lyrics and the queue directly.
     var requestedPanel: NowPlayingView.Panel?
+    /// The Mac's lyrics or queue beside the page, as Music shows them; nil when closed.
+    var sidePanel: MacSidePanel?
     /// Profile and Settings, opened from Home or from the Mac's Settings menu item.
     var isProfilePresented = false
     /// A sidebar place for the Mac's window to go to, asked for from elsewhere, e.g. Settings.
@@ -255,6 +257,17 @@ final class AppModel {
         guard player.current != nil else { return }
         requestedPanel = panel
         isNowPlayingPresented = true
+    }
+
+    /// Lyrics or the queue: beside the page on the Mac (the same one again closes it), in Now
+    /// Playing on the iPhone.
+    func toggleLyricsOrQueue(_ panel: MacSidePanel) {
+        guard player.current != nil else { return }
+        if Platform.isMac {
+            sidePanel = sidePanel == panel ? nil : panel
+        } else {
+            showNowPlaying(panel == .lyrics ? .lyrics : .queue)
+        }
     }
 
     /// Switch tabs from the menu bar, closing Now Playing if it covers them.

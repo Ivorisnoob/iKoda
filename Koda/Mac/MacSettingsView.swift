@@ -461,7 +461,7 @@ private struct MacPlaybackPane: View {
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled
                          ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
                          : nil) {
-            MacSettingsToggle(title: "Video mode", detail: "YouTube itself beside your music: a Music and Video switch heads the sidebar, with videos, subscriptions and the video player.",
+            MacSettingsToggle(title: "Video mode", detail: "YouTube itself beside your music: Videos, your channels and Explore join the sidebar, with the video player.",
                               isOn: $settings.videoModeEnabled)
             if settings.videoModeEnabled {
                 MacSettingsRow(title: "Default quality", detail: "Videos start at this, or the best they have below it. Auto follows the connection.") {

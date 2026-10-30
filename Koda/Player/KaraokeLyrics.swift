@@ -398,7 +398,7 @@ struct WordFlow: Layout {
             if !joins { words.append([]) }
         }
         var rows: [Row] = [Row()]
-        for word in words where !word.isEmpty {
+        func place(_ word: [Item]) {
             let wordWidth = word.dropLast().reduce(0) { $0 + $1.size.width + $1.gap } + (word.last?.size.width ?? 0)
             let current = rows[rows.count - 1]
             let needed = current.items.isEmpty ? wordWidth : current.width + (current.items.last?.gap ?? 0) + wordWidth
@@ -411,6 +411,16 @@ struct WordFlow: Layout {
                 row.height = max(row.height, item.size.height)
             }
             rows[rows.count - 1] = row
+        }
+        for word in words where !word.isEmpty {
+            let wordWidth = word.dropLast().reduce(0) { $0 + $1.size.width + $1.gap } + (word.last?.size.width ?? 0)
+            // Japanese and Chinese have no spaces, so a whole line can be one "word": wider than
+            // the line, it breaks between its syllables, as those languages break anywhere.
+            if wordWidth > width, word.count > 1 {
+                for item in word { place([item]) }
+            } else {
+                place(word)
+            }
         }
         return rows.filter { !$0.items.isEmpty }
     }

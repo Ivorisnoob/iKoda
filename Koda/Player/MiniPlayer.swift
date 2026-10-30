@@ -22,7 +22,7 @@ struct MiniPlayer: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 12) {
-                ArtworkView(artwork: player.current?.artwork, size: isInline ? 28 : 36, cornerRadius: isInline ? 6 : 8)
+                ArtworkView(artwork: player.current?.artwork, size: isInline ? 28 : 36, cornerRadius: isInline ? 8 : 10)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(player.current?.title ?? "Not Playing")
                         .font(.subheadline.weight(.semibold))

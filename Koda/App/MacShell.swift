@@ -17,7 +17,8 @@ enum Platform {
 /// has played. The song on the left opens Now Playing; the transport and progress sit in
 /// the middle, where the eye expects them; lyrics, queue and volume on the right.
 struct MacPlayerBar: View {
-    let open: (NowPlayingView.Panel) -> Void
+    /// The song opens Now Playing; lyrics and the queue open beside the page instead.
+    let openNowPlaying: () -> Void
     /// Where Now Playing zooms out of and back into.
     var zoom: Namespace.ID?
     @Environment(AppModel.self) private var app
@@ -55,9 +56,10 @@ struct MacPlayerBar: View {
     }
 
     private var nowPlaying: some View {
-        Button { open(.artwork) } label: {
+        Button { openNowPlaying() } label: {
             HStack(spacing: 12) {
-                ArtworkView(artwork: player.current?.artwork, size: 46, cornerRadius: 8)
+                // Concentric with the bar's corners, as the system's own nested shapes are.
+                ArtworkView(artwork: player.current?.artwork, size: 46, cornerRadius: 12)
                     .modifier(ZoomSource(namespace: zoom))
                     .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
                 VStack(alignment: .leading, spacing: 1) {
@@ -112,9 +114,9 @@ struct MacPlayerBar: View {
 
     private var trailing: some View {
         HStack(spacing: 6) {
-            iconButton("quote.bubble", help: "Lyrics") { open(.lyrics) }
+            iconButton("quote.bubble", help: "Lyrics", isOn: app.sidePanel == .lyrics) { app.toggleLyricsOrQueue(.lyrics) }
                 .disabled(player.current == nil)
-            iconButton("list.bullet", help: "Queue") { open(.queue) }
+            iconButton("list.bullet", help: "Up Next", isOn: app.sidePanel == .queue) { app.toggleLyricsOrQueue(.queue) }
                 .disabled(player.current == nil)
             BarVolume(showsSlider: !isNarrow)
                 .frame(width: isNarrow ? 22 : 110)
@@ -324,10 +326,10 @@ struct KodaCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
             .disabled(!hasSong)
-            Button("Lyrics") { model.showNowPlaying(.lyrics) }
+            Button("Lyrics") { model.toggleLyricsOrQueue(.lyrics) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(!hasSong)
-            Button("Queue") { model.showNowPlaying(.queue) }
+            Button("Queue") { model.toggleLyricsOrQueue(.queue) }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(!hasSong)
         }
@@ -338,6 +340,13 @@ struct KodaCommands: Commands {
                 .keyboardShortcut("2", modifiers: .command)
             Button("Search") { model.go(to: .search) }
                 .keyboardShortcut("f", modifiers: .command)
+            if model.settings.videoModeEnabled {
+                Divider()
+                Button("Videos") { model.go(to: .videos) }
+                    .keyboardShortcut("3", modifiers: .command)
+                Button("Watch History") { model.go(to: .watched) }
+                    .keyboardShortcut("4", modifiers: .command)
+            }
         }
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { model.isProfilePresented = true }
@@ -354,7 +363,7 @@ private struct ZoomSource: ViewModifier {
 
     func body(content: Content) -> some View {
         if let namespace {
-            content.matchedTransitionSource(id: "player", in: namespace) { $0.clipShape(.rect(cornerRadius: 8)) }
+            content.matchedTransitionSource(id: "player", in: namespace) { $0.clipShape(.rect(cornerRadius: 12)) }
         } else {
             content
         }

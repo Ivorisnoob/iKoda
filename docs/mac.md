@@ -13,6 +13,8 @@ Everything below the UI is shared: `KodaCore`, `AppModel`, the models of each pa
 ## Decisions
 
 - **Now Playing is a page.** On the Mac it is `Route.nowPlaying`, pushed onto the current section's stack with the system zoom (`.navigationTransition(.zoom)` from the player bar's cover, marked `.matchedTransitionSource`), the same transition the iPhone presents with. It closes from the toolbar's back button or Esc; a click in the sidebar closes it too. The player bar fades under it but stays in place as the zoom's target.
+- **No modes on the Mac.** Music and Videos are groups of one sidebar (`Section(isExpanded:)`, folded state kept), as Music and TV keep everything they hold; the iPhone's Music/Video switch exists because a tab bar has four slots. Where you are decides the toolbar search's target, and the player bar shows whatever plays.
+- **Lyrics and Up Next open beside the page**, in SwiftUI's `.inspector`, as Music's sidebar panels do: one at a time, switched at the top or from the player bar. The bar's cover still opens Now Playing, which has lyrics and the queue of its own beside the cover.
 - **Each section keeps its own trail of pages** (`paths[MacSection]`), and Home's model belongs to the window, so switching sections never reloads anything. Clicking the section you're in returns to its first page.
 - **Fetched pages are cached for ten minutes** in `KodaCore`'s `PageCache` (albums, artists, playlists, moods, explore, charts). Pull to refresh and ⌘R clear it.
 - **Settings is its own window** (`WindowGroup(id: "settings", for: String.self)`, so asking again brings the one window forward), laid out like System Settings.

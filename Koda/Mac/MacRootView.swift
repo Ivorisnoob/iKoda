@@ -42,6 +42,14 @@ struct MacRootView: View {
     @State private var deleting: UserPlaylist?
     /// The sidebar's height: a short window leaves the list its room rather than the glance.
     @State private var sidebarHeight: CGFloat = 800
+    /// Which of the sidebar's groups are open, kept between launches as the Mac's sidebars keep
+    /// them. Someone who never watches videos folds Videos away once.
+    @AppStorage("koda.mac.sidebar.music") private var musicExpanded = true
+    @AppStorage("koda.mac.sidebar.library") private var libraryExpanded = true
+    @AppStorage("koda.mac.sidebar.playlists") private var playlistsExpanded = true
+    @AppStorage("koda.mac.sidebar.videos") private var videosExpanded = true
+    @AppStorage("koda.mac.sidebar.channels") private var channelsExpanded = true
+    @AppStorage("koda.mac.sidebar.explore") private var exploreExpanded = false
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -73,34 +81,40 @@ struct MacRootView: View {
         }
         .environment(\.nowPlayingZoom, playerZoom)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // A video playing away from its page has the bar (in music mode only while it plays,
-            // so it can always be stopped); otherwise the songs' bar, which belongs to music mode.
+            // The bar is whatever is playing: a video away from its page, or the song. With both
+            // paused, the one that belongs where you are.
             if showsVideoBar {
                 MacVideoBar(playback: model.videos) {
                     if let video = model.videos.current { model.open(.video(video)) }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if player.current != nil, model.settings.mode == .music {
+            } else if player.current != nil {
                 // Under Now Playing the bar only repeats it, so it steps out of sight; it stays in
                 // place, as the cover the player zooms back into.
-                MacPlayerBar(open: { panel in
-                    model.requestedPanel = panel
-                    openNowPlaying()
-                }, zoom: playerZoom)
+                MacPlayerBar(openNowPlaying: openNowPlaying, zoom: playerZoom)
                 .opacity(showsNowPlaying ? 0 : 1)
                 .allowsHitTesting(!showsNowPlaying)
                 .accessibilityHidden(showsNowPlaying)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.smooth(duration: 0.35), value: player.current == nil || model.settings.mode == .video)
+        .animation(.smooth(duration: 0.35), value: player.current == nil)
         .animation(.smooth(duration: 0.35), value: showsVideoBar)
         .animation(.smooth(duration: 0.25), value: showsNowPlaying)
+        // Lyrics or Up Next beside the page, from the player bar, as Music has them; Now
+        // Playing has its own, so the panel steps aside while it's open.
+        .inspector(isPresented: Binding(get: { model.sidePanel != nil && !showsNowPlaying },
+                                        set: { if !$0 { model.sidePanel = nil } })) {
+            MacSidePanelView()
+                .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
+        }
+        .onChange(of: player.current == nil) { _, isEmpty in if isEmpty { model.sidePanel = nil } }
     }
 
     private var showsVideoBar: Bool {
         let videos = model.videos
-        return videos.current != nil && !videos.isOnItsPage && (model.settings.mode == .video || videos.isPlaying)
+        guard videos.current != nil, !videos.isOnItsPage else { return false }
+        return videos.isPlaying || player.current == nil || (!player.wantsToPlay && (section ?? .home).isVideo)
     }
 
     private func searching<V: View>(_ content: V) -> some View {
@@ -140,11 +154,20 @@ struct MacRootView: View {
         content
         .onChange(of: model.selectedTab) { _, tab in
             switch tab {
-            case .home: section = .home
-            case .library: section = .recent
-            case .videos: section = .videos
+            // From the menu bar: open the group it lands in, if it was folded away.
+            case .home:
+                musicExpanded = true
+                section = .home
+            case .library:
+                libraryExpanded = true
+                section = .recent
+            case .videos:
+                videosExpanded = true
+                section = .videos
             case .subscriptions: section = .subscriptions
-            case .watched: section = .watched
+            case .watched:
+                videosExpanded = true
+                section = .watched
             case .videoSearch: section = .videos
                 searchFocused = true
             case .search:
@@ -230,32 +253,30 @@ struct MacRootView: View {
 
     // MARK: Sidebar
 
+    /// Music and videos in one sidebar, as the Mac's apps keep everything they hold: no mode to
+    /// switch, you go where you want and the toolbar's search and the player bar follow. Each
+    /// group folds away with the system's disclosure; Videos is there with Video mode on.
     private var sidebar: some View {
         List {
-            if model.settings.mode == .music { musicSidebar } else { videoSidebar }
+            musicSidebar
+            if model.settings.videoModeEnabled { videoSidebar }
         }
         .listStyle(.sidebar)
         .environment(\.defaultMinListRowHeight, 28)
-        // Music or Video at the head of the sidebar; what's under it follows.
-        .safeAreaBar(edge: .top) {
-            if model.settings.videoModeEnabled {
-                ModeToggle()
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-            }
+        // The channels under Subscriptions: one call (YouTube's sidebar), once there is a place for them.
+        .task(id: "\(model.roster.activeID)|\(model.settings.videoModeEnabled)|\(model.subscribedChannels == nil)") {
+            if model.settings.videoModeEnabled, model.subscribedChannels == nil { await model.loadSubscribedChannels() }
         }
-        // The channels under Subscriptions: one call (YouTube's sidebar), when video mode shows.
-        .task(id: "\(model.roster.activeID)|\(model.settings.mode)|\(model.subscribedChannels == nil)") {
-            if model.settings.mode == .video, model.subscribedChannels == nil { await model.loadSubscribedChannels() }
-        }
-        // A launch in video mode opens on its Home.
+        // A launch opens on the side last used.
         .onAppear {
-            if model.settings.mode == .video, !(section ?? .home).isVideo { section = .videos }
+            if model.settings.mode == .video, model.settings.videoModeEnabled, !(section ?? .home).isVideo { section = .videos }
         }
-        .onChange(of: model.settings.mode) { _, mode in
-            closeNowPlaying()
-            if (section ?? .home).isVideo != (mode == .video) { section = mode == .music ? .home : .videos }
+        // Remembered for the next launch (and the iPhone's tabs follow the same setting there).
+        .onChange(of: section) { _, section in
+            model.settings.mode = (section ?? .home).isVideo ? .video : .music
+        }
+        .onChange(of: model.settings.videoModeEnabled) { _, enabled in
+            if !enabled, (section ?? .home).isVideo { section = .home }
         }
         // A bar, not an inset: the system draws its scroll edge effect under it, so rows fade
         // out beneath the glance instead of showing through its translucent card.
@@ -265,12 +286,12 @@ struct MacRootView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeight = $0 }
     }
 
-    /// YouTube's own sidebar, the Mac's way: the feeds, what's yours (signed in, Watch Later and
-    /// Liked Videos too), the channels you follow, then topics anyone can browse.
+    /// YouTube's own sidebar, the Mac's way: the feeds and what's yours (signed in, Watch Later
+    /// and Liked Videos too), the channels you follow, then topics anyone can browse.
     @ViewBuilder
     private var videoSidebar: some View {
         let signedIn = model.roster.active.isSignedIn && !model.roster.active.isExpired
-        Section {
+        Section("Videos", isExpanded: $videosExpanded) {
             sidebarRow("Home", "play.rectangle", .videos)
             if signedIn {
                 sidebarRow("Subscriptions", "person.2.crop.square.stack", .subscriptions)
@@ -278,16 +299,14 @@ struct MacRootView: View {
             if videoSearch.submitted != nil {
                 sidebarRow("Search Results", "magnifyingglass", .videoSearch)
             }
-        }
-        Section("You") {
-            sidebarRow("History", "clock.arrow.circlepath", .watched)
+            sidebarRow("Watch History", "clock.arrow.circlepath", .watched)
             if signedIn {
                 sidebarRow("Watch Later", "clock", .videoPlaylist("WL"))
                 sidebarRow("Liked Videos", "hand.thumbsup", .videoPlaylist("LL"))
             }
         }
         if signedIn, let channels = model.subscribedChannels, !channels.isEmpty {
-            Section("Subscriptions") {
+            Section("Channels", isExpanded: $channelsExpanded) {
                 // Those that posted lately, as YouTube's own sidebar shows them; All Channels is A to Z.
                 ForEach((model.channelsByUpload.isEmpty ? channels : model.channelsByUpload).prefix(12), id: \.id) { channel in
                     if let id = channel.id {
@@ -299,7 +318,7 @@ struct MacRootView: View {
                 }
             }
         }
-        Section("Explore") {
+        Section("Explore", isExpanded: $exploreExpanded) {
             ForEach(ExploreTopic.allCases) { topic in
                 sidebarRow(topic.title, topic.systemImage, .explore(topic))
             }
@@ -308,59 +327,57 @@ struct MacRootView: View {
 
     @ViewBuilder
     private var musicSidebar: some View {
-            Section {
-                sidebarRow("Home", "house", .home)
-                sidebarRow("Browse", "square.grid.2x2", .browse)
-                if search.submitted != nil {
-                    sidebarRow("Search Results", "magnifyingglass", .search)
-                }
+        Section("Music", isExpanded: $musicExpanded) {
+            sidebarRow("Home", "house", .home)
+            sidebarRow("Browse", "square.grid.2x2", .browse)
+            if search.submitted != nil {
+                sidebarRow("Search Results", "magnifyingglass", .search)
             }
-            Section("Library") {
-                sidebarRow("Recently Played", "clock", .recent)
-                sidebarRow("History", "clock.arrow.circlepath", .history)
-                sidebarRow("Liked Songs", "heart", .liked, count: library.liked.count)
-                sidebarRow("Albums", "square.stack", .albums)
-                sidebarRow("Playlists", "music.note.list", .playlists)
-                sidebarRow("Artists", "music.mic", .artists)
-                sidebarRow("Downloads", "arrow.down.circle", .downloads, count: downloads.songs.count)
-                sidebarRow("Ready Offline", "airplane", .offline)
-                sidebarRow("Listening Stats", "chart.bar", .stats)
-                sidebarRow("Last.fm", "dot.radiowaves.left.and.right", .lastFM)
-            }
-            Section {
-                ForEach(library.userPlaylists) { playlist in
-                    sidebarRow(playlist.name, "music.note", .userPlaylist(playlist.id))
-                        .contextMenu {
-                            Button("Play", systemImage: "play") { player.play(playlist.songs) }
-                                .disabled(playlist.songs.isEmpty)
-                            Button("Rename…", systemImage: "pencil") {
-                                draftName = playlist.name
-                                renaming = playlist
-                            }
-                            Divider()
-                            Button("Delete Playlist…", systemImage: "trash", role: .destructive) { deleting = playlist }
+        }
+        Section("Library", isExpanded: $libraryExpanded) {
+            sidebarRow("Recently Played", "clock", .recent)
+            sidebarRow("History", "clock.arrow.circlepath", .history)
+            sidebarRow("Liked Songs", "heart", .liked, count: library.liked.count)
+            sidebarRow("Albums", "square.stack", .albums)
+            sidebarRow("Playlists", "music.note.list", .playlists)
+            sidebarRow("Artists", "music.mic", .artists)
+            sidebarRow("Downloads", "arrow.down.circle", .downloads, count: downloads.songs.count)
+            sidebarRow("Ready Offline", "airplane", .offline)
+            sidebarRow("Listening Stats", "chart.bar", .stats)
+            sidebarRow("Last.fm", "dot.radiowaves.left.and.right", .lastFM)
+        }
+        Section("Your Playlists", isExpanded: $playlistsExpanded) {
+            ForEach(library.userPlaylists) { playlist in
+                sidebarRow(playlist.name, "music.note", .userPlaylist(playlist.id))
+                    .contextMenu {
+                        Button("Play", systemImage: "play") { player.play(playlist.songs) }
+                            .disabled(playlist.songs.isEmpty)
+                        Button("Rename…", systemImage: "pencil") {
+                            draftName = playlist.name
+                            renaming = playlist
                         }
-                }
-                Button {
-                    draftName = ""
-                    namingPlaylist = true
-                } label: {
-                    MacSidebarLabel(title: "New Playlist", systemImage: "plus", isSelected: false, dimmed: true)
-                }
-                .buttonStyle(.plain)
-                .listRowInsets(MacSidebarLabel.insets)
-                .listRowBackground(Color.clear)
-            } header: {
-                Text("Your Playlists")
+                        Divider()
+                        Button("Delete Playlist…", systemImage: "trash", role: .destructive) { deleting = playlist }
+                    }
             }
+            Button {
+                draftName = ""
+                namingPlaylist = true
+            } label: {
+                MacSidebarLabel(title: "New Playlist", systemImage: "plus", isSelected: false, dimmed: true)
+            }
+            .buttonStyle(.plain)
+            .listRowInsets(MacSidebarLabel.insets)
+            .listRowBackground(Color.clear)
+        }
     }
 
     private var sidebarFoot: some View {
         VStack(spacing: 8) {
-            // Up Next and today's listening are the songs'; video mode leaves them out, and so
-            // does a short window, where the glance would cover most of the list.
-            if model.settings.mode == .music, sidebarHeight >= 640 {
-                MacSidebarGlance(openQueue: { model.showNowPlaying(.queue) }, openStats: { section = .stats })
+            // Up Next and today's listening; a short window leaves them out, where the glance
+            // would cover most of the list.
+            if sidebarHeight >= 640 {
+                MacSidebarGlance(openQueue: { model.sidePanel = .queue }, openStats: { section = .stats })
             }
             profileButton
         }

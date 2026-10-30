@@ -13,9 +13,12 @@ enum MacSidePanel: Hashable {
 struct MacSidePanelView: View {
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
+    /// The window's toolbar band over the panel: the switch sits in it, level with the window's
+    /// top row, where search used to be. Not a toolbar item: the toolbar never changes at runtime.
+    @State private var toolbarHeight: CGFloat = 52
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Picker("Show", selection: Binding(get: { app.sidePanel ?? .lyrics }, set: { app.sidePanel = $0 })) {
                 Text("Lyrics").tag(MacSidePanel.lyrics)
                 Text("Up Next").tag(MacSidePanel.queue)
@@ -23,12 +26,14 @@ struct MacSidePanelView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .frame(height: toolbarHeight)
             Group {
                 if app.sidePanel == .queue { QueuePanel() } else { LyricsPanel() }
             }
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
+        .ignoresSafeArea(.container, edges: .top)
     }
 }

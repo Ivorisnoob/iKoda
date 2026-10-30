@@ -30,7 +30,7 @@ struct MacVideoWindow: View {
         .onChange(of: model.videos.isFullScreen, initial: true) { _, isFullScreen in
             if !isFullScreen { dismissWindow(id: Self.windowID, value: Self.windowID) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIWindow.didBecomeKeyNotification)) { note in
+        .onReceive(NotificationCenter.default.publisher(for: FullScreenWindow.didBecomeKey)) { note in
             window.becameKey(note.object)
         }
         .onReceive(NotificationCenter.default.publisher(for: FullScreenWindow.didExitFullScreen)) { note in
@@ -40,11 +40,14 @@ struct MacVideoWindow: View {
     }
 }
 
-/// The video window's own AppKit window, reached the one way Catalyst allows: it is the key
-/// window the moment its UIWindow becomes key. AppKit's `toggleFullScreen:` (what the green button
-/// sends) takes it into full screen; UIKit has no call for that.
+/// The video window's own AppKit window, taken into full screen with AppKit's `toggleFullScreen:`
+/// (what the green button sends): UIKit has no call for it. Catalyst gives no public way from a
+/// UIWindow to its NSWindow, so it's recognised as it becomes key by its frame, which is the
+/// scene's own. Never "the key window": as the new window became key, AppKit could still name
+/// the main window, which then went full screen instead.
 @MainActor
 final class FullScreenWindow {
+    static let didBecomeKey = Notification.Name("NSWindowDidBecomeKeyNotification")
     static let didExitFullScreen = Notification.Name("NSWindowDidExitFullScreenNotification")
     private weak var window: UIWindow?
     private weak var appKitWindow: NSObject?
@@ -57,12 +60,16 @@ final class FullScreenWindow {
         window.windowScene?.titlebar?.titleVisibility = .hidden
         window.windowScene?.titlebar?.toolbar = nil
         #endif
-        if window.isKeyWindow { enterFullScreen() }
     }
 
+    /// An AppKit window became key: if it's this one, the first time, into full screen it goes.
     func becameKey(_ object: Any?) {
-        guard let window, (object as? UIWindow) === window, appKitWindow == nil else { return }
-        enterFullScreen()
+        guard appKitWindow == nil, let candidate = object as? NSObject,
+              let scene = window?.windowScene, Self.frame(of: candidate) == scene.effectiveGeometry.systemFrame else { return }
+        appKitWindow = candidate
+        // NSWindow.StyleMask.fullScreen
+        let mask = candidate.value(forKey: "styleMask") as? UInt ?? 0
+        if mask & (1 << 14) == 0 { candidate.perform(NSSelectorFromString("toggleFullScreen:"), with: nil) }
     }
 
     func isWindow(_ object: Any?) -> Bool {
@@ -70,14 +77,13 @@ final class FullScreenWindow {
         return (object as AnyObject?) === appKitWindow
     }
 
-    private func enterFullScreen() {
-        guard let appClass = NSClassFromString("NSApplication") as? NSObject.Type,
-              let app = appClass.value(forKey: "sharedApplication") as? NSObject,
-              let key = app.value(forKey: "keyWindow") as? NSObject else { return }
-        appKitWindow = key
-        // NSWindow.StyleMask.fullScreen
-        let mask = key.value(forKey: "styleMask") as? UInt ?? 0
-        if mask & (1 << 14) == 0 { key.perform(NSSelectorFromString("toggleFullScreen:"), with: nil) }
+    /// An AppKit window's frame as UIKit gives a scene's: from the top of the main screen, where
+    /// AppKit counts from its bottom.
+    private static func frame(of appKitWindow: NSObject) -> CGRect? {
+        guard let frame = (appKitWindow.value(forKey: "frame") as? NSValue)?.cgRectValue,
+              let screens = (NSClassFromString("NSScreen") as? NSObject.Type)?.value(forKey: "screens") as? [NSObject],
+              let main = (screens.first?.value(forKey: "frame") as? NSValue)?.cgRectValue else { return nil }
+        return CGRect(x: frame.minX, y: main.height - frame.maxY, width: frame.width, height: frame.height)
     }
 }
 

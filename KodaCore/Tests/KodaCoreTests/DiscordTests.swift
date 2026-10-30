@@ -274,7 +274,23 @@ final class DiscordFakeConnection: DiscordConnection {
 @Observable
 final class DiscordFakeSource {
     var allowed = true
-    var song: DiscordNowPlaying?
+    /// The song as of `since`. A new song, a pause or a resume starts the clock again; changing
+    /// `position` on its own is a jump, as a seek is.
+    var song: DiscordNowPlaying? {
+        didSet {
+            if oldValue?.songID != song?.songID || oldValue?.isPlaying != song?.isPlaying { since = Date() }
+        }
+    }
+    private var since = Date()
+
+    /// Where the song is at `date`: a playing song moves on with the clock, as the player's
+    /// does. Frozen, the card's end time crept by however long a slow test ran, and past the
+    /// seek allowance a second card went out.
+    func nowPlaying(at date: Date) -> DiscordNowPlaying? {
+        guard var song else { return nil }
+        if song.isPlaying { song.position += max(0, date.timeIntervalSince(since)) }
+        return song
+    }
 }
 
 @MainActor
@@ -287,7 +303,7 @@ struct DiscordPresenceTests {
         let counter = Counter()
         let connection = connection
         let presence = DiscordPresence(isAllowed: { [source] in source.allowed },
-                                       nowPlaying: { [source] _ in source.song },
+                                       nowPlaying: { [source] date in source.nowPlaying(at: date) },
                                        connector: { await counter.connect(discordOpen ? connection : nil) },
                                        timing: timing)
         return (presence, counter)

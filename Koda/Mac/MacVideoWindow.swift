@@ -64,8 +64,7 @@ final class FullScreenWindow {
 
     /// An AppKit window became key: if it's this one, the first time, into full screen it goes.
     func becameKey(_ object: Any?) {
-        guard appKitWindow == nil, let candidate = object as? NSObject,
-              let scene = window?.windowScene, Self.frame(of: candidate) == scene.effectiveGeometry.systemFrame else { return }
+        guard appKitWindow == nil, let candidate = object as? NSObject, isHost(candidate) else { return }
         appKitWindow = candidate
         // NSWindow.StyleMask.fullScreen
         let mask = candidate.value(forKey: "styleMask") as? UInt ?? 0
@@ -75,6 +74,15 @@ final class FullScreenWindow {
     func isWindow(_ object: Any?) -> Bool {
         guard let appKitWindow else { return false }
         return (object as AnyObject?) === appKitWindow
+    }
+
+    private func isHost(_ candidate: NSObject) -> Bool {
+        #if targetEnvironment(macCatalyst)
+        guard let scene = window?.windowScene else { return false }
+        return Self.frame(of: candidate) == scene.effectiveGeometry.systemFrame
+        #else
+        return false
+        #endif
     }
 
     /// An AppKit window's frame as UIKit gives a scene's: from the top of the main screen, where

@@ -47,6 +47,36 @@ func fixture(_ name: String) throws -> JSON {
         #expect(!page.quickPicks.contains { $0.id == "heardBefore" })
     }
 
+    @Test func signedInHomeFindsQuickPicksOnALaterPage() throws {
+        // Signed in, Home's first page (October 2026) is Listen again and two card shelves with a
+        // continuation; Quick picks comes on the next page, in a sectionListContinuation.
+        let heard = ["musicTwoRowItemRenderer": [
+            "title": ["runs": [["text": "Heard Before"]]],
+            "subtitle": ["runs": [["text": "Some Artist"]]],
+            "navigationEndpoint": ["watchEndpoint": ["videoId": "heardBefore"]],
+        ]]
+        let listenAgain = ["musicCarouselShelfRenderer": [
+            "header": ["musicCarouselShelfBasicHeaderRenderer": ["title": ["runs": [["text": "Listen again"]]]]],
+            "contents": [heard],
+        ]]
+        let first = JSON(["contents": ["singleColumnBrowseResultsRenderer": ["tabs": [["tabRenderer": ["content": ["sectionListRenderer": [
+            "contents": [listenAgain],
+            "continuations": [["nextContinuationData": ["continuation": "page2"]]],
+        ]]]]]]]])
+        var page = Pages.shelves(first)
+        #expect(page.quickPicks.isEmpty)
+        #expect(Pages.searchContinuation(first) == "page2")
+
+        let quick = try fixture("home-quick-picks").objects("musicCarouselShelfRenderer")[0].raw!
+        let second = JSON(["continuationContents": ["sectionListContinuation": [
+            "contents": [["musicCarouselShelfRenderer": quick]],
+        ]]])
+        page.append(Pages.shelves(second))
+        #expect(page.shelves.map(\.title) == ["Listen again", "Quick picks"])
+        #expect(page.quickPicks.count == 20)
+        #expect(!page.quickPicks.contains { $0.id == "heardBefore" })
+    }
+
     @Test func chartTopArtistsAreArtists() throws {
         let page = Pages.shelves(try fixture("charts-top-artists"))
         let artists = page.artists

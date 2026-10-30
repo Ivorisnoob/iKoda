@@ -214,6 +214,13 @@ public struct ShelfPage: Sendable {
         self.quickPicks = quickPicks
     }
 
+    /// The next page of the same list: its shelves after these, Quick picks from the first that has them.
+    public mutating func append(_ next: ShelfPage) {
+        shelves += next.shelves
+        if moods.isEmpty { moods = next.moods }
+        if quickPicks.isEmpty { quickPicks = next.quickPicks }
+    }
+
     /// Every artist on the page, in shelf order, each once: a chart's "Top artists".
     public var artists: [ArtistSummary] {
         var seen = Set<String>()

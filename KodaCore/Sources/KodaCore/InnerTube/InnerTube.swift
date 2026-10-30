@@ -169,8 +169,21 @@ public final class YouTubeMusic: Sendable {
     public func home(params: String? = nil) async throws -> ShelfPage {
         var payload: [String: Any] = ["browseId": "FEmusic_home"]
         if let params { payload["params"] = params }
-        return Pages.shelves(try await api.music("browse", payload))
+        var root = try await api.music("browse", payload)
+        var page = Pages.shelves(root)
+        // Signed in, Home comes three shelves at a time and Quick picks isn't among the first
+        // three (seen October 2026: Listen again, a seasonal shelf, Albums for you, then Quick
+        // picks on the next page). Read on until it shows, a few pages at most.
+        for _ in 0..<Self.homePagesForQuickPicks where page.quickPicks.isEmpty {
+            guard let token = Pages.searchContinuation(root) else { break }
+            root = try await api.music("browse", ["continuation": token])
+            page.append(Pages.shelves(root))
+        }
+        return page
     }
+
+    /// How many more pages of Home are read looking for Quick picks.
+    static let homePagesForQuickPicks = 3
 
     public func explore() async throws -> ShelfPage {
         try await page("explore") { [api] in

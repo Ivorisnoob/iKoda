@@ -46,16 +46,11 @@ struct MacRootView: View {
 
     var body: some View {
         dialogs(nowPlayingLayer(routing(searching(splitView))))
-            // A full-screen video covers the whole window under the toolbar, sidebar and all, as
-            // the window goes into macOS full screen: in the view tree rather than presented, so
-            // nothing about the window's toolbar or split view changes under it.
-            .overlay {
-                if model.videos.isFullScreen, let video = model.videos.current {
-                    FullScreenVideoView(playback: model.videos, video: video)
-                        .transition(.opacity)
-                }
+            // A full-screen video gets a window of its own (MacVideoWindow), so this window and
+            // its toolbar never change for it; that window closes itself when the video leaves.
+            .onChange(of: model.videos.isFullScreen) { _, isFullScreen in
+                if isFullScreen { openWindow(id: MacVideoWindow.windowID, value: MacVideoWindow.windowID) }
             }
-            .animation(.smooth(duration: 0.25), value: model.videos.isFullScreen)
     }
 
     private var splitView: some View {

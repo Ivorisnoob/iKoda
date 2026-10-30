@@ -50,6 +50,12 @@ struct KodaApp: App {
                 .preferredColorScheme(model.settings.theme.colorScheme)
         }
         .defaultSize(width: 820, height: 600)
+
+        // A full-screen video: its own window, keyed by one value so there is only ever one.
+        WindowGroup("Video", id: MacVideoWindow.windowID, for: String.self) { _ in
+            MacVideoWindow()
+                .appEnvironment(model)
+        }
         #endif
     }
 }

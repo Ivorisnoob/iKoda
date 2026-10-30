@@ -459,7 +459,7 @@ private struct MacPlaybackPane: View {
             .disabled(player.transitions != .crossfade)
         }
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled
-                         ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and M mutes. Double-click a video for full screen."
+                         ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
                          : nil) {
             MacSettingsToggle(title: "Video mode", detail: "YouTube itself beside your music: a Music and Video switch heads the sidebar, with videos, subscriptions and the video player.",
                               isOn: $settings.videoModeEnabled)

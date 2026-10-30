@@ -8,7 +8,8 @@ enum MacSidePanel: Hashable {
 
 /// Lyrics or Up Next beside the page, as Music shows them on the Mac: one at a time, switched
 /// at the top or from the player bar's buttons (the same button again closes it), while the page
-/// stays as it was. On the song's own colours, as Now Playing draws the same two panels.
+/// stays as it was. In the window's own appearance, as Music's panels are; Now Playing
+/// draws the same two panels on the song's colours.
 struct MacSidePanelView: View {
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
@@ -29,11 +30,5 @@ struct MacSidePanelView: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background {
-            MeshBackground(palette: app.nowPlayingPalette.palette, isAnimating: false)
-                .ignoresSafeArea()
-        }
-        .foregroundStyle(.white)
-        .environment(\.colorScheme, .dark)
     }
 }

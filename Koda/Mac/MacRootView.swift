@@ -53,7 +53,7 @@ struct MacRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        dialogs(nowPlayingLayer(routing(searching(splitView))))
+        dialogs(nowPlayingLayer(routing(splitView)))
             // A full-screen video gets a window of its own (MacVideoWindow), so this window and
             // its toolbar never change for it; that window closes itself when the video leaves.
             .onChange(of: model.videos.isFullScreen) { _, isFullScreen in
@@ -63,7 +63,7 @@ struct MacRootView: View {
 
     private var splitView: some View {
         NavigationSplitView {
-            sidebar
+            searching(sidebar)
                 .navigationSplitViewColumnWidth(min: 210, ideal: 236, max: 320)
         } detail: {
             // Now Playing is pushed onto the section's stack like any page, zooming out of the
@@ -106,7 +106,7 @@ struct MacRootView: View {
         .inspector(isPresented: Binding(get: { model.sidePanel != nil && !showsNowPlaying },
                                         set: { if !$0 { model.sidePanel = nil } })) {
             MacSidePanelView()
-                .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
+                .inspectorColumnWidth(min: 250, ideal: 300, max: 420)
         }
         .onChange(of: player.current == nil) { _, isEmpty in if isEmpty { model.sidePanel = nil } }
     }
@@ -120,9 +120,10 @@ struct MacRootView: View {
     private func searching<V: View>(_ content: V) -> some View {
         @Bindable var search = search
         return content
-        // In the window's toolbar, top right, where the Mac's apps keep search.
-        .searchable(text: $search.query, placement: .toolbar,
-                    prompt: (section ?? .home).isVideo ? "Search YouTube" : "Songs, artists, albums or a link")
+        // At the head of the sidebar, as Music, Mail and Notes keep it: the toolbar's right end sits
+        // over the lyrics and Up Next panel when that is open.
+        .searchable(text: $search.query, placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: (section ?? .home).isVideo ? "Search YouTube" : "Search")
         .searchFocused($searchFocused)
         .searchSuggestions {
             if !(section ?? .home).isVideo, search.query != search.submitted {

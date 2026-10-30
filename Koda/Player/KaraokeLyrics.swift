@@ -170,7 +170,7 @@ private struct InterludeDots: View {
                 ForEach(0..<3) { index in
                     let fill = min(1, max(0, interlude.progress * 3 - Double(index)))
                     Circle()
-                        .fill(.white.opacity(0.3 + 0.7 * fill))
+                        .fill(.primary.opacity(0.3 + 0.7 * fill))
                         .frame(width: 11, height: 11)
                 }
             }
@@ -195,6 +195,7 @@ struct LyricRow: View {
     /// preview outside the window, where the app's environment objects don't reach.
     let style: LyricsStyle
     let player: Player
+    @Environment(\.colorScheme) private var colorScheme
 
     nonisolated static let defaultFontSize: CGFloat = 30
     /// Where the line sits: every line on the left unless Duet Sides is on.
@@ -241,10 +242,10 @@ struct LyricRow: View {
                     .font(style.font)
                     .multilineTextAlignment(voice == .duet ? .trailing : voice == .together ? .center : .leading)
                     // Line-timed lyrics light as a whole line; no word fill is invented for them.
-                    .shadow(color: .white.opacity(isCurrent ? 0.35 : 0), radius: isCurrent ? 14 : 0)
+                    .shadow(color: .white.opacity(isCurrent && colorScheme == .dark ? 0.35 : 0), radius: isCurrent ? 14 : 0)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, alignment: frameAlignment)
         // A duet's sides stop short of each other, so a wrapped line still reads as its singer's.
         .padding(voice == .duet ? .leading : .trailing, style.duetSides && hasDuet && voice != .together ? 44 : 0)
@@ -301,6 +302,7 @@ private struct KaraokeWord: View {
     let font: Font
     var lift: CGFloat
     var swells: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     /// How long a word takes to rise, in seconds; it keeps rising after the next word starts, so a line moves as a ripple.
     private static let riseDuration: TimeInterval = 0.65
@@ -317,16 +319,17 @@ private struct KaraokeWord: View {
 
         Text(word.text)
             .font(font)
-            .foregroundStyle(.white.opacity(0.38))
+            .foregroundStyle(.primary.opacity(0.38))
             .fixedSize()
             .overlay {
                 Text(word.text)
                     .font(font)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .fixedSize()
                     .mask { FillMask(progress: fill) }
             }
-            .shadow(color: .white.opacity(0.55 * sustain), radius: 12 * sustain)
+            // A glow only on dark colours; on a light page it would be a grey smudge.
+            .shadow(color: .white.opacity(colorScheme == .dark ? 0.55 * sustain : 0), radius: 12 * sustain)
             .scaleEffect(1 + 0.045 * sustain, anchor: .bottom)
             .offset(y: -lift * eased)
     }
@@ -433,7 +436,7 @@ struct LyricsLoading: View {
             ForEach([0.82, 0.64, 0.9, 0.5, 0.72], id: \.self) { fraction in
                 GeometryReader { geometry in
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(.white.opacity(0.14))
+                        .fill(.primary.opacity(0.14))
                         .frame(width: geometry.size.width * fraction)
                 }
                 .frame(height: 26)

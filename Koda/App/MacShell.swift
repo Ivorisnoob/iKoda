@@ -51,6 +51,9 @@ struct MacPlayerBar: View {
         .padding(.horizontal, 12)
         .frame(height: 68)
         .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+        // The whole bar takes its clicks: through the glass between its buttons they reached the
+        // page scrolling underneath, and a click beside the speaker played a song in the list.
+        .contentShape(.rect(cornerRadius: 22, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
@@ -119,7 +122,7 @@ struct MacPlayerBar: View {
             iconButton("list.bullet", help: "Up Next", isOn: app.sidePanel == .queue) { app.toggleLyricsOrQueue(.queue) }
                 .disabled(player.current == nil)
             BarVolume(showsSlider: !isNarrow)
-                .frame(width: isNarrow ? 22 : 110)
+                .frame(width: isNarrow ? 28 : 120)
                 .padding(.leading, isNarrow ? 0 : 6)
         }
     }
@@ -213,25 +216,31 @@ private struct BarProgress: View {
 
 /// Koda's own volume, drawn like the progress line; the speaker shows how loud it is.
 private struct BarVolume: View {
-    /// Off in a narrow window: the speaker alone, which still mutes, and ⌘↑ ⌘↓ still change it.
+    /// Off in a narrow window: the speaker alone, which opens the slider in a popover.
     var showsSlider = true
     @Environment(Player.self) private var player
     @State private var hovering = false
+    @State private var showsPopover = false
 
     var body: some View {
-        @Bindable var player = player
         HStack(spacing: 6) {
             Button {
-                player.volume = player.volume > 0 ? 0 : 0.7
+                if showsSlider { player.volume = player.volume > 0 ? 0 : 0.7 } else { showsPopover.toggle() }
             } label: {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 18)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
                     .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(player.volume > 0 ? "Mute" : "Unmute")
+            .buttonStyle(BarButtonStyle())
+            .help(showsSlider ? (player.volume > 0 ? "Mute" : "Unmute") : "Volume")
+            .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
+                slider
+                    .frame(width: 160)
+                    .padding(14)
+                    .presentationCompactAdaptation(.popover)
+            }
             if showsSlider { slider }
         }
         .animation(.snappy(duration: 0.15), value: hovering)

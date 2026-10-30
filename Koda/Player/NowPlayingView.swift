@@ -434,9 +434,12 @@ struct PlayerToggleStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
         configuration.label
-            .foregroundStyle(isOn ? Color.black : .white)
+            // The page's ink when on, so it reads on Now Playing's dark colours and in a light panel.
+            .foregroundStyle(isOn ? AnyShapeStyle(.background) : AnyShapeStyle(.primary))
             .background {
-                Capsule().fill(.white.opacity(isOn ? (pressed ? 0.85 : 1) : offFill + (pressed ? 0.12 : 0)))
+                // Color.primary, not the hierarchical style: that follows the label's own ink,
+                // which is the page colour while on.
+                Capsule().fill(Color.primary.opacity(isOn ? (pressed ? 0.85 : 1) : offFill + (pressed ? 0.12 : 0)))
             }
             .contentShape(.capsule)
             .scaleEffect(pressed ? 0.95 : 1)

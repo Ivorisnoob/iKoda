@@ -15,7 +15,7 @@ struct LyricsPanel: View {
                 LyricsLoading()
             case .failed, .loaded(nil):
                 ContentUnavailableView("No Lyrics", systemImage: "quote.bubble", description: Text("Lyrics for this song aren't available."))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
             case .loaded(.plain(let text)?):
                 ScrollView {
                     Text(text)

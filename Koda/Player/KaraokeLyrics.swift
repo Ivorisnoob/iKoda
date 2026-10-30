@@ -170,7 +170,7 @@ private struct InterludeDots: View {
                 ForEach(0..<3) { index in
                     let fill = min(1, max(0, interlude.progress * 3 - Double(index)))
                     Circle()
-                        .fill(.primary.opacity(0.3 + 0.7 * fill))
+                        .fill(Color.primary.opacity(0.3 + 0.7 * fill))
                         .frame(width: 11, height: 11)
                 }
             }
@@ -220,22 +220,29 @@ struct LyricRow: View {
     var body: some View {
         VStack(alignment: alignment, spacing: 6) {
             if line.isWordTimed {
+                // The resting words and the sung line swap at once, never crossfading: the resting
+                // copy is fully inked (the row's own fade dims it), so a crossfade under the row's
+                // spring lit the whole line for a moment before it filled from its first word.
                 if isCurrent {
                     KaraokeLine(line: line, offset: offset, alignment: alignment, style: style, player: player)
+                        .transition(.identity)
                 } else {
-                    WordFlow(alignment: alignment, spacing: style.spacing) {
-                        ForEach(Array(line.words.enumerated()), id: \.offset) { _, word in
-                            Text(word.text).font(style.font).layoutValue(key: SpaceAfter.self, value: word.spaceAfter)
-                        }
-                    }
-                    if style.showsBackingVocals, !line.background.isEmpty {
-                        WordFlow(alignment: alignment, spacing: style.backgroundSpacing) {
-                            ForEach(Array(line.background.enumerated()), id: \.offset) { _, word in
-                                Text(word.text).font(style.backgroundFont).layoutValue(key: SpaceAfter.self, value: word.spaceAfter)
+                    VStack(alignment: alignment, spacing: 6) {
+                        WordFlow(alignment: alignment, spacing: style.spacing) {
+                            ForEach(Array(line.words.enumerated()), id: \.offset) { _, word in
+                                Text(word.text).font(style.font).layoutValue(key: SpaceAfter.self, value: word.spaceAfter)
                             }
                         }
-                        .opacity(0.7)
+                        if style.showsBackingVocals, !line.background.isEmpty {
+                            WordFlow(alignment: alignment, spacing: style.backgroundSpacing) {
+                                ForEach(Array(line.background.enumerated()), id: \.offset) { _, word in
+                                    Text(word.text).font(style.backgroundFont).layoutValue(key: SpaceAfter.self, value: word.spaceAfter)
+                                }
+                            }
+                            .opacity(0.7)
+                        }
                     }
+                    .transition(.identity)
                 }
             } else {
                 Text(line.text.isEmpty ? "♪" : line.text)
@@ -245,10 +252,14 @@ struct LyricRow: View {
                     .shadow(color: .white.opacity(isCurrent && colorScheme == .dark ? 0.35 : 0), radius: isCurrent ? 14 : 0)
             }
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(Color.primary)
         .frame(maxWidth: .infinity, alignment: frameAlignment)
         // A duet's sides stop short of each other, so a wrapped line still reads as its singer's.
         .padding(voice == .duet ? .leading : .trailing, style.duetSides && hasDuet && voice != .together ? 44 : 0)
+        // One layer before it fades: in the Mac's side panel the text is blended with the panel
+        // behind it, and line by line that blend ignored the fade, so the lines either side of the
+        // sung one (the only ones without a blur, which flattens them too) stayed fully lit.
+        .compositingGroup()
         .opacity(isCurrent ? 1 : distance <= 1 ? 0.42 : 0.3)
         .blur(radius: isCurrent ? 0 : min(Double(max(distance - 1, 0)) * 0.7, 2.4))
         .scaleEffect(isCurrent ? 1 : 0.97, anchor: UnitPoint(x: voice == .duet ? 1 : voice == .together ? 0.5 : 0, y: 0.5))
@@ -319,12 +330,12 @@ private struct KaraokeWord: View {
 
         Text(word.text)
             .font(font)
-            .foregroundStyle(.primary.opacity(0.38))
+            .foregroundStyle(Color.primary.opacity(0.38))
             .fixedSize()
             .overlay {
                 Text(word.text)
                     .font(font)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                     .fixedSize()
                     .mask { FillMask(progress: fill) }
             }
@@ -436,7 +447,7 @@ struct LyricsLoading: View {
             ForEach([0.82, 0.64, 0.9, 0.5, 0.72], id: \.self) { fraction in
                 GeometryReader { geometry in
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(.primary.opacity(0.14))
+                        .fill(Color.primary.opacity(0.14))
                         .frame(width: geometry.size.width * fraction)
                 }
                 .frame(height: 26)

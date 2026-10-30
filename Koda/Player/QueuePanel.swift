@@ -31,17 +31,17 @@ struct QueuePanel: View {
             HStack {
                 Text(player.upcoming.isEmpty ? "Nothing Up Next" : "Up Next")
                     .font(.headline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                 Spacer()
                 if let undo {
                     Button(undo.label) { perform(undo) }
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                         .transition(.opacity)
                 } else if !player.upcoming.isEmpty {
                     Button("Clear") { clear() }
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                         .transition(.opacity)
                 }
             }
@@ -55,7 +55,7 @@ struct QueuePanel: View {
                             // The cover lines up with the toggles and the heading above.
                             .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                             .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(.primary.opacity(0.15))
+                            .listRowSeparatorTint(Color.primary.opacity(0.15))
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button("Remove", systemImage: "minus.circle", role: .destructive) { remove(item) }
                             }
@@ -187,10 +187,10 @@ private struct QueueRow: View {
             ArtworkView(artwork: song.artwork, size: 44, cornerRadius: 6)
             VStack(alignment: .leading, spacing: 2) {
                 Text(song.title).font(.subheadline.weight(.medium)).lineLimit(1)
-                Text(song.artistLine).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(song.artistLine).font(.caption).foregroundStyle(Color.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(Color.primary)
     }
 }

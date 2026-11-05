@@ -157,7 +157,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Home")
                 } footer: {
-                    Text("Your Taste is the artists, genres and songs Home starts from. Charts on Home adds YouTube Music's global and local charts to Home; they're always on New.")
+                    Text("Your Taste is the artists, genres and songs Home starts from. Charts on Home adds YouTube Music's global and local charts to Home.")
                 }
 
                 Section {

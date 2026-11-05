@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A place in the Mac's sidebar.
 enum MacSection: Hashable {
-    case home, new, browse, search
+    case home, radio, browse, search
     case recent, history, liked, albums, playlists, artists, downloads, offline, stats
     case lastFM
     case userPlaylist(UUID)
@@ -162,9 +162,9 @@ struct MacRootView: View {
             case .home:
                 musicExpanded = true
                 section = .home
-            case .new:
+            case .radio:
                 musicExpanded = true
-                section = .new
+                section = .radio
             case .library:
                 libraryExpanded = true
                 section = .recent
@@ -377,7 +377,7 @@ struct MacRootView: View {
         pinnedSidebar
         Section("Music", isExpanded: $musicExpanded) {
             sidebarRow("Home", "house", .home)
-            sidebarRow("New", "sparkles", .new)
+            sidebarRow("Radio", "dot.radiowaves.left.and.right", .radio)
             sidebarRow("Browse", "square.grid.2x2", .browse)
             if search.submitted != nil {
                 sidebarRow("Search Results", "magnifyingglass", .search)
@@ -509,7 +509,7 @@ struct MacRootView: View {
     private var detail: some View {
         switch section ?? .home {
         case .home: MacHomeView(model: model.home).id(model.roster.activeID)
-        case .new: NewView()
+        case .radio: RadioView()
         case .browse: MacBrowseView(search: search) { submit($0) }
         case .search: MacSearchResultsView(model: search)
         case .recent: SavedSongsView(title: "Recently Played", source: .recent)

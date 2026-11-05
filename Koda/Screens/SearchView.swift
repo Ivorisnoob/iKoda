@@ -193,15 +193,18 @@ struct SearchView: View {
 
 /// A colour tile for a mood; the colour comes from its name, so it is the same every time.
 struct MoodTile: View {
-    let mood: Mood
+    let title: String
+
+    init(mood: Mood) { title = mood.title }
+    init(title: String) { self.title = title }
 
     private var hue: Double {
-        let hash = mood.title.unicodeScalars.reduce(UInt32(5381)) { ($0 &<< 5) &+ $0 &+ $1.value }
+        let hash = title.unicodeScalars.reduce(UInt32(5381)) { ($0 &<< 5) &+ $0 &+ $1.value }
         return Double(hash % 360) / 360
     }
 
     var body: some View {
-        Text(mood.title)
+        Text(title)
             .font(.headline)
             .foregroundStyle(.white)
             .multilineTextAlignment(.leading)

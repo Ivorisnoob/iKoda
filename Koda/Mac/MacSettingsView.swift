@@ -582,7 +582,7 @@ private struct MacAppearancePane: View {
         }
         MacSettingsGroup(title: "Home") {
             MacSettingsToggle(title: "Charts on Home",
-                              detail: "YouTube Music's global and local charts as a row on Home. They're always on New.",
+                              detail: "YouTube Music's global and local charts as a row on Home.",
                               isOn: $settings.showsChartsOnHome)
         }
     }

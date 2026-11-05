@@ -571,6 +571,14 @@ private struct MacAppearancePane: View {
             MacSettingsToggle(title: "Moving player colours",
                               detail: "The playing song's colours drift behind Now Playing. They always hold still with Reduce Motion on.",
                               isOn: $settings.animatesPlayerBackground)
+            MacSettingsRow(title: "Animated art",
+                           detail: "Album covers that move in Now Playing, found by looking up the playing song's title and artist in Apple Music's catalogue.") {
+                Picker("Animated art", selection: $settings.animatedArt) {
+                    ForEach(AppSettings.AnimatedArt.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
         }
     }
 }

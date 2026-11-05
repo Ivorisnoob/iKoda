@@ -187,6 +187,9 @@ public final class Player {
     public var isUnwanted: ((Song) -> Bool)?
     /// Loads artwork for the lock screen; set by the app, which owns image decoding.
     public var artworkLoader: (@MainActor (URL) async -> MPMediaItemArtwork?)?
+    /// The song's animated covers for the Lock Screen, keyed by Now Playing property
+    /// (`MPNowPlayingInfoProperty1x1AnimatedArtwork`, …); set by the app, which owns the setting.
+    public var animatedArtworkLoader: (@MainActor (Song) async -> [String: MPMediaItemAnimatedArtwork])?
 
     public let music: YouTubeMusic
     /// The player the current song plays on. Replaced when a crossfade or a faded skip hands
@@ -219,6 +222,7 @@ public final class Player {
     private var observations: [NSKeyValueObservation] = []
     private var timeObserver: Any?
     private var nowPlayingArtworkFor: URL?
+    private var nowPlayingAnimatedFor: String?
     private var lastListenedTick: Date?
     /// The playing song's loudness above target, kept so normalization can be switched mid-song.
     private var currentLoudnessDb: Double?
@@ -1209,6 +1213,7 @@ public final class Player {
             // makes it start over, as for a new song; `updateNowPlaying` below fills it.
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             nowPlayingArtworkFor = nil
+            nowPlayingAnimatedFor = nil
             AutoMixLog.note("repeat one came round: Now Playing restarted")
         }
         trace("currentItemChanged fresh=\(startsFresh) loops=\(loops) queueMatches=\(queue.current?.id == id) t=\(avPlayer.currentTime().seconds)")
@@ -1533,6 +1538,7 @@ public final class Player {
         if info[MPNowPlayingInfoPropertyExternalContentIdentifier] as? String != song.id {
             info = [:]
             nowPlayingArtworkFor = nil
+            nowPlayingAnimatedFor = nil
         }
         info[MPNowPlayingInfoPropertyExternalContentIdentifier] = song.id
         info[MPMediaItemPropertyTitle] = song.title
@@ -1555,6 +1561,19 @@ public final class Player {
                 guard queue.current?.song.id == songId else { return }
                 var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
                 info[MPMediaItemPropertyArtwork] = artwork
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            }
+        }
+        if nowPlayingAnimatedFor != song.id, let loader = animatedArtworkLoader {
+            nowPlayingAnimatedFor = song.id
+            let songId = song.id
+            Task {
+                let animated = await loader(song)
+                guard !animated.isEmpty, queue.current?.song.id == songId else { return }
+                var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                for (key, artwork) in animated where MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys.contains(key) {
+                    info[key] = artwork
+                }
                 MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             }
         }

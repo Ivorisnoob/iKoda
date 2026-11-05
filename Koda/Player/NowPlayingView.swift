@@ -200,7 +200,9 @@ struct NowPlayingView: View {
     private var floatingArtwork: some View {
         let big = isWide || panel == .artwork
         let radius: CGFloat = big ? 18 : 8
-        return MixingCovers(artwork: player.current?.artwork, mixing: player.mixing, cornerRadius: radius)
+        // The animated cover plays only at full size, as in Music, not in the lyrics and queue header.
+        return MixingCovers(artwork: player.current?.artwork, mixing: player.mixing, cornerRadius: radius,
+                            animated: big ? player.current : nil, isPlaying: player.wantsToPlay)
             // While the song loads the cover waits a little small, then settles to full size
             // the moment sound starts. Nothing is drawn over the art itself.
             .clipShape(.rect(cornerRadius: radius, style: .continuous))

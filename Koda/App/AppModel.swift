@@ -10,6 +10,8 @@ final class AppModel {
     let player: Player
     let library: Library
     let lyrics = LyricsClient()
+    /// Animated album covers; the loops live in Caches, which the system may clear.
+    let motionArtwork = MotionArtwork(directory: URL.cachesDirectory.appending(path: "MotionArtwork"))
     let sleepTimer: SleepTimer
     /// Everyone who uses Koda on this device; the library is the active profile's.
     let roster: ProfileRoster
@@ -164,6 +166,10 @@ final class AppModel {
         player.artworkLoader = { @MainActor url in
             guard let image = await ImagePipeline.shared.image(url, pixels: 600) else { return nil }
             return ImagePipeline.nowPlayingArtwork(image)
+        }
+        player.animatedArtworkLoader = { @MainActor [weak self] song in
+            guard let self else { return [:] }
+            return await LockScreenAnimatedArt.artwork(for: song, app: self)
         }
         connectAccounts()
         if settings.mode == .video { selectedTab = .videos }

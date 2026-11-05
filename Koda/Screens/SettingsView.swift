@@ -102,10 +102,15 @@ struct SettingsView: View {
                     Toggle(isOn: $settings.animatesPlayerBackground) {
                         SettingLabel("Moving Player Colours", systemImage: "wand.and.stars", tint: .orange)
                     }
+                    Picker(selection: $settings.animatedArt) {
+                        ForEach(AppSettings.AnimatedArt.allCases) { Text($0.title).tag($0) }
+                    } label: {
+                        SettingLabel("Animated Art", systemImage: "sparkles.rectangle.stack.fill", tint: .pink)
+                    }
                 } header: {
                     Text("Look and Feel")
                 } footer: {
-                    Text("The colours of the playing song's cover drift behind Now Playing. Turned off, they hold still. They always hold still with Reduce Motion on.")
+                    Text("The colours of the playing song's cover drift behind Now Playing. Turned off, they hold still. They always hold still with Reduce Motion on.\n\nAnimated Art plays album covers that move, in Now Playing and on the Lock Screen. Koda finds them by looking up the playing song's title and artist in Apple Music's catalogue. Covers already downloaded play on any network.")
                 }
 
                 Section {

@@ -76,11 +76,28 @@ final class AppSettings {
         var systemImage: String { self == .music ? "music.note" : "play.rectangle.fill" }
     }
 
+    /// Album covers that move in Now Playing and on the Lock Screen, as Music's Animated Art.
+    enum AnimatedArt: String, CaseIterable, Identifiable {
+        case on, wifiOnly, off
+
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .on: "On"
+            case .wifiOnly: "Wi\u{2011}Fi Only"
+            case .off: "Off"
+            }
+        }
+        /// Loops already kept play whatever the network; this is only about fetching new ones.
+        var allowsCellular: Bool { self == .on }
+    }
+
     private let defaults = UserDefaults.standard
 
     var theme: Theme { didSet { defaults.set(theme.rawValue, forKey: Keys.theme) } }
     /// The cover's colours drift behind Now Playing; off, they hold still.
     var animatesPlayerBackground: Bool { didSet { defaults.set(animatesPlayerBackground, forKey: Keys.animatedBackground) } }
+    var animatedArt: AnimatedArt { didSet { defaults.set(animatedArt.rawValue, forKey: Keys.animatedArt) } }
     /// Every lyrics service, best first; the order decides which answer wins.
     var lyricsSourceOrder: [LyricsSource] { didSet { defaults.set(lyricsSourceOrder.map(\.rawValue), forKey: Keys.lyricsOrder) } }
     var disabledLyricsSources: Set<LyricsSource> { didSet { defaults.set(disabledLyricsSources.map(\.rawValue), forKey: Keys.lyricsDisabled) } }
@@ -128,6 +145,7 @@ final class AppSettings {
     private enum Keys {
         static let theme = "koda.theme"
         static let animatedBackground = "koda.player.animatedBackground"
+        static let animatedArt = "koda.player.animatedArt"
         static let lyricsOrder = "koda.lyrics.order"
         static let lyricsDisabled = "koda.lyrics.disabled"
         static let lyricsMotion = "koda.lyrics.motion"
@@ -154,6 +172,8 @@ final class AppSettings {
         let d = UserDefaults.standard
         theme = d.string(forKey: Keys.theme).flatMap(Theme.init(rawValue:)) ?? .system
         animatesPlayerBackground = d.object(forKey: Keys.animatedBackground) as? Bool ?? true
+        // Wi-Fi only to begin with: a new album's loop is a few megabytes, about a song's worth.
+        animatedArt = d.string(forKey: Keys.animatedArt).flatMap(AnimatedArt.init(rawValue:)) ?? .wifiOnly
         // Services added in a later version join at the end of a saved order.
         let saved = (d.stringArray(forKey: Keys.lyricsOrder) ?? []).compactMap(LyricsSource.init(rawValue:))
         lyricsSourceOrder = saved + LyricsSource.allCases.filter { !saved.contains($0) }

@@ -33,6 +33,9 @@ struct MixingCovers: View {
     let artwork: Artwork?
     let mixing: Player.Mixing?
     let cornerRadius: CGFloat
+    /// The song whose animated cover plays over its still one, if any.
+    var animated: Song? = nil
+    var isPlaying = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -42,6 +45,9 @@ struct MixingCovers: View {
             let eased = progress * progress * (3 - 2 * progress)
             ZStack {
                 ArtworkView(artwork: artwork, size: 380, cornerRadius: cornerRadius, fillsFrame: true)
+                    .overlay {
+                        if let animated { AnimatedCover(song: animated, isPlaying: isPlaying) }
+                    }
                     .scaleEffect(reduceMotion ? 1 : 0.95 + 0.05 * eased)
                 if let mixing, progress < 1 {
                     ArtworkView(artwork: mixing.fromArtwork, size: 380, cornerRadius: cornerRadius, fillsFrame: true)

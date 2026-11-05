@@ -103,3 +103,36 @@ import Testing
         #expect(Lyrics.ttmlTime("abc") == nil)
     }
 }
+
+@Suite struct LyricsRomanizerTests {
+    private func isLatin(_ text: String?) -> Bool {
+        guard let text, !text.isEmpty else { return false }
+        return text.unicodeScalars.allSatisfy { $0.isASCII || (0xC0...0x24F).contains($0.value) }
+    }
+
+    @Test func latinLyricsNeedNothing() {
+        #expect(LyricsRomanizer.romanize("I been tryna call", language: "en") == nil)
+        #expect(LyricsRomanizer.romanize("Corazón, ¿dónde estás?", language: "es") == nil)
+        #expect(!LyricsRomanizer.needsRomanization(["I been tryna call", "Café"]))
+    }
+
+    @Test func otherScriptsComeOutInLatinLetters() {
+        #expect(LyricsRomanizer.romanize("привет", language: "ru") == "privet")
+        #expect(isLatin(LyricsRomanizer.romanize("사랑해", language: "ko")))
+        #expect(isLatin(LyricsRomanizer.romanize("नमस्ते दुनिया", language: "hi")))
+        #expect(isLatin(LyricsRomanizer.romanize("我爱你", language: "zh-Hans")))
+        #expect(LyricsRomanizer.needsRomanization(["Hello", "사랑해"]))
+    }
+
+    /// Kanji read the Japanese way: 君 is "kimi", not the Chinese "jun".
+    @Test func japaneseIsReadAsJapanese() throws {
+        let romaji = try #require(LyricsRomanizer.romanize("君の名は", language: "ja"))
+        #expect(isLatin(romaji))
+        #expect(romaji.lowercased().hasPrefix("kimi"))
+    }
+
+    @Test func tellsTheLanguageFromAllTheLines() {
+        let lines = ["君の名前を呼んだ", "夜空に星が光る", "ずっと一緒にいたい"]
+        #expect(LyricsRomanizer.language(of: lines) == "ja")
+    }
+}

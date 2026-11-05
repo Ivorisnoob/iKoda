@@ -92,6 +92,28 @@ final class AppSettings {
         var allowsCellular: Bool { self == .on }
     }
 
+    /// What shows under each line of lyrics in another language or script, as Music's
+    /// Translation and Pronunciation.
+    enum LyricsExtra: String, CaseIterable, Identifiable {
+        case off, translation, pronunciation
+
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .off: "Off"
+            case .translation: "Translation"
+            case .pronunciation: "Pronunciation"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .off: "text.bubble"
+            case .translation: "translate"
+            case .pronunciation: "character.phonetic"
+            }
+        }
+    }
+
     private let defaults = UserDefaults.standard
 
     var theme: Theme { didSet { defaults.set(theme.rawValue, forKey: Keys.theme) } }
@@ -106,6 +128,7 @@ final class AppSettings {
     /// Words rise as they start and held notes swell.
     var lyricsMotion: Bool { didSet { defaults.set(lyricsMotion, forKey: Keys.lyricsMotion) } }
     var lyricsSize: LyricsSize { didSet { defaults.set(lyricsSize.rawValue, forKey: Keys.lyricsSize) } }
+    var lyricsExtra: LyricsExtra { didSet { defaults.set(lyricsExtra.rawValue, forKey: Keys.lyricsExtra) } }
     var showsBackingVocals: Bool { didSet { defaults.set(showsBackingVocals, forKey: Keys.backingVocals) } }
     /// The second singer of a duet on the right; off, every line sits on the left.
     var duetSides: Bool { didSet { defaults.set(duetSides, forKey: Keys.duetSides) } }
@@ -153,6 +176,7 @@ final class AppSettings {
         static let lyricsDisabled = "koda.lyrics.disabled"
         static let lyricsMotion = "koda.lyrics.motion"
         static let lyricsSize = "koda.lyrics.size"
+        static let lyricsExtra = "koda.lyrics.extra"
         static let backingVocals = "koda.lyrics.backingVocals"
         static let duetSides = "koda.lyrics.duetSides"
         static let listeningHistory = "koda.history.listening"
@@ -184,6 +208,7 @@ final class AppSettings {
         disabledLyricsSources = Set((d.stringArray(forKey: Keys.lyricsDisabled) ?? []).compactMap(LyricsSource.init(rawValue:)))
         lyricsMotion = d.object(forKey: Keys.lyricsMotion) as? Bool ?? true
         lyricsSize = d.string(forKey: Keys.lyricsSize).flatMap(LyricsSize.init(rawValue:)) ?? .standard
+        lyricsExtra = d.string(forKey: Keys.lyricsExtra).flatMap(LyricsExtra.init(rawValue:)) ?? .off
         showsBackingVocals = d.object(forKey: Keys.backingVocals) as? Bool ?? true
         duetSides = d.object(forKey: Keys.duetSides) as? Bool ?? true
         savesListeningHistory = d.object(forKey: Keys.listeningHistory) as? Bool ?? true

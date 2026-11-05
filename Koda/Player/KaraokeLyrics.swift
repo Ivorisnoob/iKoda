@@ -1,5 +1,6 @@
 import KodaCore
 import SwiftUI
+import Translation
 
 /// Synced lyrics that follow the song. Word-timed lines fill word by word as
 /// they are sung: each word lights up from its left edge, rises a touch as it
@@ -18,6 +19,15 @@ struct SyncedLyrics: View {
     @State private var topFade: CGFloat = 0
     static let topFadeHeight: CGFloat = 56
     @State private var shareFrom: ShareStart?
+    /// The lyrics' language, told from all their lines.
+    @State private var language: String?
+    /// Each line in Latin letters, by line id, for lyrics in another script.
+    @State private var pronunciations: [Int: String] = [:]
+    /// Each line in the listener's language, by line id, once translated.
+    @State private var translations: [Int: String] = [:]
+    /// Set while translation is wanted and possible: the system translates on the device,
+    /// asking first to download the languages if they aren't yet.
+    @State private var translating: TranslationSession.Configuration?
 
     private struct ShareStart: Identifiable {
         let line: Int
@@ -28,6 +38,32 @@ struct SyncedLyrics: View {
     /// The listener's correction for this song; positive shows each line later.
     private var offset: TimeInterval { player.current.map { library.lyricsOffset(for: $0.id) } ?? 0 }
     private var hasDuet: Bool { lines.contains { $0.voice != .lead } }
+
+    /// Lyrics in a language other than the listener's can be translated.
+    private var canTranslate: Bool {
+        guard let language, let code = Locale.Language(identifier: language).languageCode else { return false }
+        return code != Locale.current.language.languageCode
+    }
+
+    /// The line under a line, as chosen and available.
+    private func extra(for line: LyricLine) -> String? {
+        switch app.settings.lyricsExtra {
+        case .off: nil
+        case .translation: canTranslate ? translations[line.id] : nil
+        case .pronunciation: pronunciations[line.id]
+        }
+    }
+
+    /// What can go under the lines of these lyrics; Off always.
+    private var extraChoices: [AppSettings.LyricsExtra] {
+        AppSettings.LyricsExtra.allCases.filter { choice in
+            switch choice {
+            case .off: true
+            case .translation: canTranslate
+            case .pronunciation: !pronunciations.isEmpty
+            }
+        }
+    }
 
     /// Lead the audio slightly so a line lights up as it is sung, not after.
     static let lead: TimeInterval = 0.15
@@ -48,7 +84,8 @@ struct SyncedLyrics: View {
                         ForEach(lines) { line in
                             let isCurrent = line.id == current && interlude == nil
                             LyricRow(line: line, isCurrent: isCurrent, distance: current.map { abs(line.id - $0) } ?? line.id + 1,
-                                     hasDuet: hasDuet, offset: offset, style: LyricsStyle(app.settings), player: player)
+                                     hasDuet: hasDuet, offset: offset, style: LyricsStyle(app.settings), player: player,
+                                     extra: extra(for: line))
                                 .id(line.id)
                                 .contentShape(.rect)
                                 .onTapGesture {
@@ -122,11 +159,89 @@ struct SyncedLyrics: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            if extraChoices.count > 1 { extraMenu }
+        }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: userScrolled)
+        .animation(.smooth, value: app.settings.lyricsExtra)
+        .task(id: lines) { await readLanguage() }
+        .onChange(of: app.settings.lyricsExtra) { updateTranslation() }
+        .translationTask(translating, action: Self.translator(lines, into: $translations))
         .sheet(item: $shareFrom) { start in
             LyricsShareSheet(lines: lines, song: start.song, startingAt: start.line)
                 .appEnvironment(app)
                 .environment(\.colorScheme, .dark)
+        }
+    }
+}
+
+extension SyncedLyrics {
+    /// Translation or Pronunciation under each line, as Music offers them for lyrics in
+    /// another language or script; shown only when one of them is possible.
+    private var extraMenu: some View {
+        Menu {
+            Picker("Under Each Line", selection: Binding(get: { app.settings.lyricsExtra }, set: { app.settings.lyricsExtra = $0 })) {
+                ForEach(extraChoices) { choice in
+                    Label(choice.title, systemImage: choice.systemImage).tag(choice)
+                }
+            }
+        } label: {
+            Image(systemName: "translate")
+                .font(.footnote.weight(.semibold))
+                .frame(width: 34, height: 34)
+        }
+        .menuIndicator(.hidden)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .padding(.vertical, 8)
+        .padding(.horizontal, Self.bleed + 8)
+        .accessibilityLabel("Translation and Pronunciation")
+    }
+
+    /// The language and the pronunciations are worked out once per lyrics, off the main thread.
+    private func readLanguage() async {
+        translations = [:]
+        translating = nil
+        let ids = lines.map(\.id)
+        let texts = lines.map(\.text)
+        let (found, said) = await Task.detached(priority: .userInitiated) { () -> (String?, [Int: String]) in
+            let language = LyricsRomanizer.language(of: texts)
+            guard LyricsRomanizer.needsRomanization(texts) else { return (language, [:]) }
+            var said: [Int: String] = [:]
+            for (id, text) in zip(ids, texts) {
+                if let latin = LyricsRomanizer.romanize(text, language: language) { said[id] = latin }
+            }
+            return (language, said)
+        }.value
+        guard !Task.isCancelled else { return }
+        language = found
+        pronunciations = said
+        updateTranslation()
+    }
+
+    /// The session is the system's and isn't sendable, so the translating is done outside the
+    /// main actor, in a closure made here, and only the results come back to it.
+    nonisolated private static func translator(_ lines: [LyricLine], into store: Binding<[Int: String]>) -> @concurrent (TranslationSession) async -> Void {
+        { @concurrent session in
+            let requests = lines.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+                .map { TranslationSession.Request(sourceText: $0.text, clientIdentifier: String($0.id)) }
+            guard let responses = try? await session.translations(from: requests) else { return }
+            var found: [Int: String] = [:]
+            for response in responses {
+                if let id = response.clientIdentifier.flatMap(Int.init) { found[id] = response.targetText }
+            }
+            let translated = found
+            await MainActor.run { withAnimation(.smooth) { store.wrappedValue = translated } }
+        }
+    }
+
+    private func updateTranslation() {
+        guard app.settings.lyricsExtra == .translation, canTranslate, let language else {
+            translating = nil
+            return
+        }
+        if translating == nil, translations.isEmpty {
+            translating = TranslationSession.Configuration(source: Locale.Language(identifier: language), target: nil)
         }
     }
 }
@@ -195,6 +310,8 @@ struct LyricRow: View {
     /// preview outside the window, where the app's environment objects don't reach.
     let style: LyricsStyle
     let player: Player
+    /// A translation or pronunciation shown under the line.
+    var extra: String? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     nonisolated static let defaultFontSize: CGFloat = 30
@@ -251,6 +368,13 @@ struct LyricRow: View {
                     // Line-timed lyrics light as a whole line; no word fill is invented for them.
                     .shadow(color: .white.opacity(isCurrent && colorScheme == .dark ? 0.35 : 0), radius: isCurrent ? 14 : 0)
             }
+            if let extra {
+                Text(extra)
+                    .font(style.extraFont)
+                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .multilineTextAlignment(voice == .duet ? .trailing : voice == .together ? .center : .leading)
+                    .transition(.opacity)
+            }
         }
         .foregroundStyle(Color.primary)
         .frame(maxWidth: .infinity, alignment: frameAlignment)
@@ -265,7 +389,7 @@ struct LyricRow: View {
         .scaleEffect(isCurrent ? 1 : 0.97, anchor: UnitPoint(x: voice == .duet ? 1 : voice == .together ? 0.5 : 0, y: 0.5))
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: isCurrent)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(line.text)
+        .accessibilityLabel(extra.map { "\(line.text), \($0)" } ?? line.text)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 }
@@ -477,6 +601,8 @@ struct LyricsStyle {
 
     var font: Font { .system(size: fontSize, weight: .bold) }
     var backgroundFont: Font { .system(size: fontSize * 0.7, weight: .semibold) }
+    /// A translation or pronunciation under a line.
+    var extraFont: Font { .system(size: fontSize * 0.6, weight: .semibold) }
     /// A space is about a quarter of the type size.
     var spacing: CGFloat { fontSize * 0.25 }
     var backgroundSpacing: CGFloat { fontSize * 0.7 * 0.25 }

@@ -19,6 +19,7 @@ struct SongMenuItems: View {
             Button(liked ? "Remove from Liked" : "Like", systemImage: liked ? "heart.slash" : "heart") { library.toggleLike(song) }
             AddToPlaylistMenu(songs: [song])
             DownloadMenuItem(song: song)
+            PinMenuItem(pin: .song(song))
             if let album = song.album {
                 Button("Go to Album", systemImage: "square.stack") {
                     model.open(.album(AlbumSummary(id: album.id, title: album.title, artistLine: song.artistLine, artists: song.artists, artwork: song.artwork)))
@@ -31,6 +32,19 @@ struct SongMenuItems: View {
         }
         Section {
             NotInterestedMenu(song: song)
+        }
+    }
+}
+
+/// Pins to the top of Library, or unpins, as Music's Pin.
+struct PinMenuItem: View {
+    let pin: Pin
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let pinned = library.isPinned(pin)
+        Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
+            withAnimation(.smooth) { library.togglePin(pin) }
         }
     }
 }

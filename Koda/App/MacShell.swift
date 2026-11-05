@@ -345,6 +345,8 @@ struct KodaCommands: Commands {
         CommandMenu("Go") {
             Button("Home") { model.go(to: .home) }
                 .keyboardShortcut("1", modifiers: .command)
+            Button("New") { model.go(to: .new) }
+                .keyboardShortcut("1", modifiers: [.command, .option])
             Button("Library") { model.go(to: .library) }
                 .keyboardShortcut("2", modifiers: .command)
             Button("Search") { model.go(to: .search) }

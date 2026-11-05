@@ -73,6 +73,7 @@ func fixture(_ name: String) throws -> JSON {
         ]]])
         page.append(Pages.shelves(second))
         #expect(page.shelves.map(\.title) == ["Listen again", "Quick picks"])
+        #expect(page.shelvesBesideQuickPicks.map(\.title) == ["Listen again"])
         #expect(page.quickPicks.count == 20)
         #expect(!page.quickPicks.contains { $0.id == "heardBefore" })
     }

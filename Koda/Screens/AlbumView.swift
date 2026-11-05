@@ -71,6 +71,7 @@ struct AlbumView: View {
                 Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(songs) }
                 Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
                 AddToPlaylistMenu(songs: songs)
+                PinMenuItem(pin: .album(summary))
                 ShareLink(item: URL(string: "https://music.youtube.com/browse/\(summary.id)")!) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
@@ -152,6 +153,7 @@ struct AlbumView: View {
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
                         AddToPlaylistMenu(songs: songs)
                     }
+                    PinMenuItem(pin: .album(summary))
                     ShareLink(item: URL(string: "https://music.youtube.com/browse/\(summary.id)")!) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }

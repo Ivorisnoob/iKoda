@@ -37,6 +37,8 @@ public final class Library {
     public private(set) var watched: [Video] = []
     /// How far each watched video got, by id: the bars on its frame and where it starts again.
     public private(set) var videoProgress: [String: VideoProgress] = [:]
+    /// What the listener pinned to the top of Library, in the order pinned.
+    public private(set) var pins: [Pin] = []
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
@@ -325,6 +327,36 @@ public final class Library {
 
     public func deletePlaylist(_ id: UUID) {
         userPlaylists.removeAll { $0.id == id }
+        pins.removeAll { $0 == .userPlaylist(id) }
+        save()
+    }
+
+    // MARK: Pins
+
+    public func isPinned(_ pin: Pin) -> Bool { pins.contains { $0.id == pin.id } }
+
+    /// Pinned to the end of the pins, as Music adds them; pinning again does nothing.
+    public func pin(_ pin: Pin) {
+        guard !isPinned(pin) else { return }
+        pins.append(pin)
+        save()
+    }
+
+    public func unpin(_ pin: Pin) {
+        pins.removeAll { $0.id == pin.id }
+        save()
+    }
+
+    public func togglePin(_ pin: Pin) {
+        if isPinned(pin) { unpin(pin) } else { self.pin(pin) }
+    }
+
+    /// One place earlier (`by` -1) or later (+1) among the pins.
+    public func movePin(_ pin: Pin, by offset: Int) {
+        guard let index = pins.firstIndex(where: { $0.id == pin.id }) else { return }
+        let target = index + offset
+        guard pins.indices.contains(target) else { return }
+        pins.swapAt(index, target)
         save()
     }
 
@@ -449,6 +481,7 @@ public final class Library {
         var watched: [Video] = []
         var videoProgress: [String: VideoProgress] = [:]
         var androidPlaysImportedThrough: Date?
+        var pins: [Pin] = []
 
         init() {}
 
@@ -470,6 +503,8 @@ public final class Library {
             watched = try c.decodeIfPresent([Video].self, forKey: .watched) ?? []
             videoProgress = try c.decodeIfPresent([String: VideoProgress].self, forKey: .videoProgress) ?? [:]
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
+            // A pin of a kind a later version adds is dropped, not the whole file.
+            pins = (try? c.decodeIfPresent([Lossy<Pin>].self, forKey: .pins))?.compactMap(\.value) ?? []
         }
     }
 
@@ -500,6 +535,7 @@ public final class Library {
         watched = snapshot.watched
         videoProgress = snapshot.videoProgress
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
+        pins = snapshot.pins
     }
 
     /// Write the library a moment later, off the main thread, and only its newest state: with
@@ -574,6 +610,7 @@ public final class Library {
         snapshot.watched = watched
         snapshot.videoProgress = videoProgress
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
+        snapshot.pins = pins
         return snapshot
     }
 

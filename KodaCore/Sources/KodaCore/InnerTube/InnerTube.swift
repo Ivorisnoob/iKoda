@@ -173,8 +173,9 @@ public final class YouTubeMusic: Sendable {
         var page = Pages.shelves(root)
         // Signed in, Home comes three shelves at a time and Quick picks isn't among the first
         // three (seen October 2026: Listen again, a seasonal shelf, Albums for you, then Quick
-        // picks on the next page). Read on until it shows, a few pages at most.
-        for _ in 0..<Self.homePagesForQuickPicks where page.quickPicks.isEmpty {
+        // picks on the next page). Read on until it shows and there are enough of the account's
+        // own shelves to fill Koda's Home, a few pages at most.
+        for _ in 0..<Self.homePagesForQuickPicks where page.quickPicks.isEmpty || page.shelves.count < Self.homeShelvesWanted {
             guard let token = Pages.searchContinuation(root) else { break }
             root = try await api.music("browse", ["continuation": token])
             page.append(Pages.shelves(root))
@@ -182,8 +183,10 @@ public final class YouTubeMusic: Sendable {
         return page
     }
 
-    /// How many more pages of Home are read looking for Quick picks.
+    /// How many more pages of Home are read looking for Quick picks and the account's shelves.
     static let homePagesForQuickPicks = 3
+    /// Shelves wanted from the account's Home, Quick picks among them.
+    static let homeShelvesWanted = 9
 
     public func explore() async throws -> ShelfPage {
         try await page("explore") { [api] in

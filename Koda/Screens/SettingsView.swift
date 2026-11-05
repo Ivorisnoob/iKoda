@@ -151,8 +151,13 @@ struct SettingsView: View {
                         SettingLabel("Your Taste", systemImage: "sparkles", tint: .pink)
                     }
                     .foregroundStyle(.primary)
+                    Toggle(isOn: $settings.showsChartsOnHome) {
+                        SettingLabel("Charts on Home", systemImage: "chart.line.uptrend.xyaxis", tint: .red)
+                    }
+                } header: {
+                    Text("Home")
                 } footer: {
-                    Text("The artists, genres and songs Home starts from.")
+                    Text("Your Taste is the artists, genres and songs Home starts from. Charts on Home adds YouTube Music's global and local charts to Home; they're always on New.")
                 }
 
                 Section {

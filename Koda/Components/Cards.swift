@@ -89,16 +89,19 @@ struct ItemCard: View {
                 CoverCard(artwork: album.artwork, title: album.title, subtitle: album.cardSubtitle, width: width)
             }
             .buttonStyle(.plain)
+            .contextMenu { PinMenuItem(pin: .album(album)) }
         case .playlist(let playlist):
             NavigationLink(value: Route.playlist(playlist)) {
                 CoverCard(artwork: playlist.artwork, title: playlist.title, subtitle: playlist.subtitle, width: width)
             }
             .buttonStyle(.plain)
+            .contextMenu { PinMenuItem(pin: .playlist(playlist)) }
         case .artist(let artist):
             NavigationLink(value: Route.artist(artist)) {
                 ArtistCard(artist: artist, width: width * 0.8)
             }
             .buttonStyle(.plain)
+            .contextMenu { PinMenuItem(pin: .artist(artist)) }
         }
     }
 }

@@ -357,12 +357,12 @@ final class AppModel {
 /// The iPhone's tabs: Home, Library and Search in music mode; Videos, Subscriptions, the
 /// watched list and Search in video mode.
 enum AppTab: Hashable {
-    case home, library, search
+    case home, new, library, search
     case videos, subscriptions, watched, videoSearch
 
     var mode: AppSettings.Mode {
         switch self {
-        case .home, .library, .search: .music
+        case .home, .new, .library, .search: .music
         case .videos, .subscriptions, .watched, .videoSearch: .video
         }
     }

@@ -85,6 +85,7 @@ struct ArtistView: View {
                         .buttonStyle(MacIconButtonStyle())
                         .help(saved ? "Remove from Library" : "Add to Library")
                         MacMoreMenu {
+                            PinMenuItem(pin: .artist(summary))
                             ShareLink(item: URL(string: "https://music.youtube.com/channel/\(summary.id)")!) {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
@@ -169,6 +170,14 @@ struct ArtistView: View {
                     library.toggleSave(state.value?.artist ?? summary)
                 }
                 .sensoryFeedback(.success, trigger: saved)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu("More", systemImage: "ellipsis") {
+                    PinMenuItem(pin: .artist(summary))
+                    ShareLink(item: URL(string: "https://music.youtube.com/channel/\(summary.id)")!) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                }
             }
         }
         .task { await palette.load(summary.artwork) }

@@ -221,6 +221,20 @@ public struct ShelfPage: Sendable {
         if quickPicks.isEmpty { quickPicks = next.quickPicks }
     }
 
+    /// Every shelf but Quick picks: signed in, the account's own (Listen again, mixes, albums
+    /// for you), which Koda's Home shows after its Quick picks.
+    public var shelvesBesideQuickPicks: [Shelf] {
+        let picks = Set(quickPicks.map(\.id))
+        return shelves.filter { shelf in
+            guard !picks.isEmpty else { return true }
+            let songs = shelf.items.compactMap { item -> String? in
+                if case .song(let song) = item { return song.id }
+                return nil
+            }
+            return songs.count < shelf.items.count || !picks.isSubset(of: Set(songs))
+        }
+    }
+
     /// Every artist on the page, in shelf order, each once: a chart's "Top artists".
     public var artists: [ArtistSummary] {
         var seen = Set<String>()

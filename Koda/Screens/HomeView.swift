@@ -12,6 +12,9 @@ final class HomeModel {
         /// The one row on Home that isn't built from the listener's own listening.
         var charts: [PlaylistSummary] = []
         var trending: [Song] = []
+        /// Signed in, the account's own shelves from YouTube Music's Home (Listen again, mixes,
+        /// albums for you), Quick picks aside. Optional so a snapshot from before still loads.
+        var accountShelves: [Shelf]?
 
         /// The shape of a loaded Home, for drawing it redacted while the real one loads.
         static let placeholder: Content = {
@@ -20,6 +23,13 @@ final class HomeModel {
             content.charts = (0..<6).map { PlaylistSummary(id: "placeholder-\($0)", title: "Top 100 Chart") }
             return content
         }()
+    }
+
+    /// Artists fans of one of the listener's top artists also like.
+    nonisolated struct SimilarArtists: Codable, Sendable, Identifiable {
+        var artist: String
+        var artists: [ArtistSummary]
+        var id: String { artist }
     }
 
     /// Songs woven from the radios of what the listener plays most.
@@ -40,6 +50,12 @@ final class HomeModel {
     private(set) var artistPhotos: [String: Artwork] = [:]
     /// The listener's most-played artists, as of the last load.
     private(set) var yourArtists: [ArtistRef] = []
+    /// This year's and last year's releases by those artists.
+    private(set) var latestReleases: [AlbumSummary] = []
+    /// Artists like the top two.
+    private(set) var similar: [SimilarArtists] = []
+    /// Songs played often, but not for a month.
+    private(set) var forgotten: [Song] = []
     /// When Home last loaded, so a window coming back to it after a long while can refresh it.
     private(set) var loadedAt: Date?
     /// What's shown came from the last launch's snapshot and hasn't been refreshed yet.
@@ -51,6 +67,8 @@ final class HomeModel {
         var mix: Mix?
         var artistPhotos: [String: Artwork]
         var loadedAt: Date
+        var latestReleases: [AlbumSummary]?
+        var similar: [SimilarArtists]?
     }
 
     /// Whose Home this is: each profile's is its own, and so is its snapshot.
@@ -65,6 +83,8 @@ final class HomeModel {
         mixPending = saved.mix == nil
         artistPhotos = saved.artistPhotos
         loadedAt = saved.loadedAt
+        latestReleases = saved.latestReleases ?? []
+        similar = saved.similar ?? []
         isFromSnapshot = true
     }
 
@@ -85,6 +105,7 @@ final class HomeModel {
         let taste = Taste(library: library)
         // What the listener asked not to be offered stays out of everything Home suggests.
         let hidden = library.notInterested
+        forgotten = HomePicks.forgottenFavourites(library.songStats.values, hidden: hidden)
         // Liked first, then what was kept in taste setup: Quick picks' seed when nothing's been played.
         let liked = library.liked + library.taste.songs
         let pickedArtists = library.taste.artists
@@ -99,10 +120,18 @@ final class HomeModel {
             let explorePage = try await explore
             content.trending = trending(explorePage).filter { !hidden.hides($0) }
             content.charts = await charts ?? []
-            let (title, songs) = await picks
+            let (title, songs, accountShelves) = await picks
             content.quickPicksTitle = title
             let offered = songs.filter { !hidden.hides($0) }
             content.quickPicks = offered.isEmpty ? content.trending : offered
+            content.accountShelves = accountShelves.compactMap { shelf in
+                var shelf = shelf
+                shelf.items = shelf.items.filter { item in
+                    if case .song(let song) = item { return !hidden.hides(song) }
+                    return true
+                }
+                return shelf.items.count >= 3 ? shelf : nil
+            }
             state = .loaded(content)
             loadedAt = Date()
             if mix == nil, taste.isEmpty, !content.trending.isEmpty {
@@ -114,7 +143,7 @@ final class HomeModel {
         }
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.buildMix(music: music, taste: taste, picks: pickedArtists, recent: recent, hidden: hidden) }
-            group.addTask { await self.loadArtistPhotos(music: music, library: library) }
+            group.addTask { await self.loadArtists(music: music, picks: pickedArtists, library: library, hidden: hidden) }
         }
         // Radios that all failed still leave a card: trending songs, as for someone new.
         if mix == nil, let trending = state.value?.trending, !trending.isEmpty {
@@ -123,7 +152,8 @@ final class HomeModel {
         withAnimation(.smooth) { mixPending = false }
         if let content = state.value, let loadedAt {
             isFromSnapshot = false
-            Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt), snapshotName)
+            Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt,
+                                latestReleases: latestReleases, similar: similar), snapshotName)
         }
     }
 
@@ -159,19 +189,50 @@ final class HomeModel {
         withAnimation(.smooth) { mix = Mix(artists: Array(taste.artists.prefix(3)), songs: songs, isPersonal: true) }
     }
 
-    private func loadArtistPhotos(music: YouTubeMusic, library: Library) async {
-        let ids = yourArtists.compactMap(\.id).filter { artistPhotos[$0] == nil }
-        guard !ids.isEmpty else { return }
-        let found = await withTaskGroup(of: (String, Artwork?).self) { group in
-            for id in ids {
-                group.addTask { (id, try? await music.artist(id).artist.artwork) }
+    /// The top artists' pages: their portraits, and from the first few, their latest releases
+    /// and the artists like them. Pages come through the page cache, and only the first
+    /// `pagesForPicks` are asked every load; further portraits only while missing.
+    private func loadArtists(music: YouTubeMusic, picks: [ArtistSummary], library: Library, hidden: NotInterested) async {
+        let played = yourArtists.compactMap(\.id)
+        // With nothing played yet, the artists picked in taste setup stand in.
+        let leading = Array((played.isEmpty ? picks.map(\.id).filter { $0.hasPrefix("UC") } : played).prefix(Self.pagesForPicks))
+        let portraitsOnly = played.filter { !leading.contains($0) && artistPhotos[$0] == nil }
+        let pages = await withTaskGroup(of: (String, ArtistPage?).self) { group in
+            for id in leading + portraitsOnly {
+                group.addTask { (id, try? await music.artist(id)) }
             }
-            var found: [String: Artwork] = [:]
-            for await (id, artwork) in group { if let artwork { found[id] = artwork } }
+            var found: [String: ArtistPage] = [:]
+            for await (id, page) in group { if let page { found[id] = page } }
             return found
         }
-        artistPhotos.merge(found) { _, new in new }
+        for (id, page) in pages {
+            if let artwork = page.artist.artwork { artistPhotos[id] = artwork }
+        }
+        let ordered = leading.compactMap { pages[$0] }
+        // A failed load keeps what was there rather than emptying the rows.
+        guard !ordered.isEmpty else { return }
+        let known = Set(played + library.artists.map(\.id) + picks.map(\.id))
+        var likes: [SimilarArtists] = []
+        for page in ordered where likes.count < 2 {
+            let artists = HomePicks.similar(to: page, excluding: known.union(likes.flatMap { $0.artists.map(\.id) }), hidden: hidden)
+            if artists.count >= 4 { likes.append(SimilarArtists(artist: page.artist.name, artists: Array(artists.prefix(12)))) }
+        }
+        withAnimation(.smooth) {
+            latestReleases = HomePicks.latestReleases(ordered)
+            similar = likes
+        }
     }
+
+    static func latestShelf(_ releases: [AlbumSummary]) -> Shelf {
+        Shelf(title: "New from your artists", strapline: "Out this year and last", items: releases.map(MusicItem.album))
+    }
+
+    static func similarShelf(_ likes: SimilarArtists) -> Shelf {
+        Shelf(title: "More like \(likes.artist)", strapline: "Fans also like", items: likes.artists.map(MusicItem.artist))
+    }
+
+    /// Artist pages asked for on every load, for New from your artists and the artists like them.
+    private static let pagesForPicks = 6
 
     /// The listener's most-played artists that can be opened, strongest first.
     func topArtists(_ library: Library, limit: Int = 10) -> [ArtistRef] {
@@ -186,14 +247,17 @@ final class HomeModel {
     /// Signed in, the account's Quick picks from YouTube Music's own Home, as Koda for Android
     /// takes them. Otherwise, or when that comes back short, songs like the last one played or,
     /// with nothing played yet, the newest liked; with neither, nothing (trending fills in).
-    private func quickPicks(music: YouTubeMusic, recent: [Song], liked: [Song], signedIn: Bool) async -> (String, [Song]) {
+    /// The account's other shelves come back with them, from the same pages.
+    private func quickPicks(music: YouTubeMusic, recent: [Song], liked: [Song], signedIn: Bool) async -> (String, [Song], [Shelf]) {
+        var shelves: [Shelf] = []
         if signedIn, let home = try? await music.home() {
+            shelves = home.shelvesBesideQuickPicks
             let songs = home.quickPicks
-            if songs.count >= 3 { return ("Quick picks", Array(songs.prefix(20))) }
+            if songs.count >= 3 { return ("Quick picks", Array(songs.prefix(20)), shelves) }
         }
-        guard let seed = recent.first ?? liked.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", []) }
+        guard let seed = recent.first ?? liked.first, let radio = try? await music.radio(for: seed.id) else { return ("Quick picks", [], shelves) }
         let songs = Array(radio.songs.filter { $0.id != seed.id }.prefix(20))
-        return ("Quick picks", songs)
+        return ("Quick picks", songs, shelves)
     }
 
     private func trending(_ explore: ShelfPage?) -> [Song] {
@@ -291,6 +355,13 @@ struct HomeView: View {
                 }
             }
         }
+        // Signed in, the account's own shelves from YouTube Music's Home.
+        ForEach(content.accountShelves ?? []) { shelf in
+            ItemShelf(shelf: shelf) { player.startRadio(from: $0) }
+        }
+        if model.latestReleases.count >= 3 {
+            ItemShelf(shelf: HomeModel.latestShelf(model.latestReleases)) { player.startRadio(from: $0) }
+        }
         let yours = model.yourArtists
         if yours.count >= 3 {
             ShelfView(title: "Your top artists", strapline: "Based on your listening") {
@@ -303,7 +374,21 @@ struct HomeView: View {
                 }
             }
         }
-        if !content.charts.isEmpty {
+        ForEach(model.similar) { likes in
+            ItemShelf(shelf: HomeModel.similarShelf(likes)) { player.startRadio(from: $0) }
+        }
+        if model.forgotten.count >= 4 {
+            ShelfView(title: "Forgotten favourites", strapline: "Played often, not lately") {
+                ForEach(Array(model.forgotten.enumerated()), id: \.element.id) { index, song in
+                    Button { player.play(model.forgotten, startAt: index) } label: {
+                        CoverCard(artwork: song.artwork, title: song.title, subtitle: song.artistLine, width: 140)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { SongMenuItems(song: song) } preview: { SongPreview(song: song) }
+                }
+            }
+        }
+        if app.settings.showsChartsOnHome, !content.charts.isEmpty {
             ShelfView(title: "Charts", strapline: "Global and near you") {
                 ForEach(content.charts) { chart in
                     NavigationLink(value: Route.playlist(chart)) {

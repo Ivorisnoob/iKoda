@@ -3,10 +3,12 @@ import SwiftUI
 
 /// A place in the Mac's sidebar.
 enum MacSection: Hashable {
-    case home, browse, search
+    case home, new, browse, search
     case recent, history, liked, albums, playlists, artists, downloads, offline, stats
     case lastFM
     case userPlaylist(UUID)
+    /// An album, playlist or artist pinned to the top of the sidebar.
+    case pinned(Pin)
     /// YouTube: the Home feed, the subscriptions feed, and search results.
     case videos, subscriptions, watched, videoSearch
     /// YouTube: Watch Later or Liked Videos, a subscribed channel, a topic, every channel.
@@ -45,6 +47,7 @@ struct MacRootView: View {
     /// Which of the sidebar's groups are open, kept between launches as the Mac's sidebars keep
     /// them. Someone who never watches videos folds Videos away once.
     @AppStorage("koda.mac.sidebar.music") private var musicExpanded = true
+    @AppStorage("koda.mac.sidebar.pinned") private var pinnedExpanded = true
     @AppStorage("koda.mac.sidebar.library") private var libraryExpanded = true
     @AppStorage("koda.mac.sidebar.playlists") private var playlistsExpanded = true
     @AppStorage("koda.mac.sidebar.videos") private var videosExpanded = true
@@ -159,6 +162,9 @@ struct MacRootView: View {
             case .home:
                 musicExpanded = true
                 section = .home
+            case .new:
+                musicExpanded = true
+                section = .new
             case .library:
                 libraryExpanded = true
                 section = .recent
@@ -186,6 +192,7 @@ struct MacRootView: View {
             closeNowPlaying()
             paths = [:]
             if case .userPlaylist = section { section = .home }
+            if case .pinned = section { section = .home }
         }
         .sheet(isPresented: Binding(get: { model.isAddingProfile }, set: { model.isAddingProfile = $0 })) {
             AddProfileView().appEnvironment(model)
@@ -326,10 +333,51 @@ struct MacRootView: View {
         }
     }
 
+    /// What the listener pinned, as Music keeps pins at the top of its sidebar: a song plays,
+    /// everything else opens its page.
+    @ViewBuilder
+    private var pinnedSidebar: some View {
+        if !library.pins.isEmpty {
+            Section("Pinned", isExpanded: $pinnedExpanded) {
+                ForEach(library.pins) { pin in
+                    pinnedRow(pin)
+                        .contextMenu {
+                            PinMenuItem(pin: pin)
+                            Button("Move Up", systemImage: "arrow.up") { library.movePin(pin, by: -1) }
+                                .disabled(library.pins.first == pin)
+                            Button("Move Down", systemImage: "arrow.down") { library.movePin(pin, by: 1) }
+                                .disabled(library.pins.last == pin)
+                        }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pinnedRow(_ pin: Pin) -> some View {
+        switch pin {
+        case .song(let song):
+            Button { player.play([song]) } label: {
+                MacSidebarLabel(title: song.title, systemImage: "music.note", isSelected: false)
+            }
+            .buttonStyle(.plain)
+            .listRowInsets(MacSidebarLabel.insets)
+            .listRowBackground(Color.clear)
+        case .album(let album): sidebarRow(album.title, "square.stack", .pinned(pin))
+        case .playlist(let playlist): sidebarRow(playlist.title, "music.note.list", .pinned(pin))
+        case .artist(let artist): sidebarRow(artist.name, "music.mic", .pinned(pin))
+        case .userPlaylist(let id):
+            if let playlist = library.userPlaylist(id) { sidebarRow(playlist.name, "music.note", .userPlaylist(id)) }
+        case .liked: sidebarRow("Liked Songs", "heart", .liked)
+        }
+    }
+
     @ViewBuilder
     private var musicSidebar: some View {
+        pinnedSidebar
         Section("Music", isExpanded: $musicExpanded) {
             sidebarRow("Home", "house", .home)
+            sidebarRow("New", "sparkles", .new)
             sidebarRow("Browse", "square.grid.2x2", .browse)
             if search.submitted != nil {
                 sidebarRow("Search Results", "magnifyingglass", .search)
@@ -461,6 +509,7 @@ struct MacRootView: View {
     private var detail: some View {
         switch section ?? .home {
         case .home: MacHomeView(model: model.home).id(model.roster.activeID)
+        case .new: NewView()
         case .browse: MacBrowseView(search: search) { submit($0) }
         case .search: MacSearchResultsView(model: search)
         case .recent: SavedSongsView(title: "Recently Played", source: .recent)
@@ -474,6 +523,12 @@ struct MacRootView: View {
         case .history: HistoryView()
         case .lastFM: MacLastFMView()
         case .userPlaylist(let id): UserPlaylistView(id: id).id(id)
+        case .pinned(.album(let album)): AlbumView(summary: album).id(album.id)
+        case .pinned(.playlist(let playlist)): PlaylistView(summary: playlist).id(playlist.id)
+        case .pinned(.artist(let artist)): ArtistView(summary: artist).id(artist.id)
+        // Songs play from the sidebar, and these two have sections of their own.
+        case .pinned(.song), .pinned(.liked): MacHomeView(model: model.home).id(model.roster.activeID)
+        case .pinned(.userPlaylist(let id)): UserPlaylistView(id: id).id(id)
         case .videos: VideoHomeView(feed: model.videoFeed(.home)).id(model.roster.activeID)
         case .subscriptions: VideoHomeView(feed: model.videoFeed(.subscriptions)).id(model.roster.activeID)
         case .watched: VideoLibraryView()

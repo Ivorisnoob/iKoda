@@ -79,6 +79,7 @@ struct UserPlaylistView: View {
                         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext(playlist.songs) }
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(playlist.songs) }
                     }
+                    PinMenuItem(pin: .userPlaylist(playlist.id))
                     Button("Rename", systemImage: "pencil") {
                         draftName = playlist.name
                         renaming = true
@@ -127,6 +128,7 @@ struct UserPlaylistView: View {
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(playlist.songs) }
                         Divider()
                     }
+                    PinMenuItem(pin: .userPlaylist(playlist.id))
                     Button("Rename…", systemImage: "pencil") {
                         draftName = playlist.name
                         renaming = true

@@ -98,6 +98,8 @@ final class AppSettings {
     /// The cover's colours drift behind Now Playing; off, they hold still.
     var animatesPlayerBackground: Bool { didSet { defaults.set(animatesPlayerBackground, forKey: Keys.animatedBackground) } }
     var animatedArt: AnimatedArt { didSet { defaults.set(animatedArt.rawValue, forKey: Keys.animatedArt) } }
+    /// YouTube Music's charts as a row on Home: the one row there not built from the listener.
+    var showsChartsOnHome: Bool { didSet { defaults.set(showsChartsOnHome, forKey: Keys.homeCharts) } }
     /// Every lyrics service, best first; the order decides which answer wins.
     var lyricsSourceOrder: [LyricsSource] { didSet { defaults.set(lyricsSourceOrder.map(\.rawValue), forKey: Keys.lyricsOrder) } }
     var disabledLyricsSources: Set<LyricsSource> { didSet { defaults.set(disabledLyricsSources.map(\.rawValue), forKey: Keys.lyricsDisabled) } }
@@ -146,6 +148,7 @@ final class AppSettings {
         static let theme = "koda.theme"
         static let animatedBackground = "koda.player.animatedBackground"
         static let animatedArt = "koda.player.animatedArt"
+        static let homeCharts = "koda.home.charts"
         static let lyricsOrder = "koda.lyrics.order"
         static let lyricsDisabled = "koda.lyrics.disabled"
         static let lyricsMotion = "koda.lyrics.motion"
@@ -174,6 +177,7 @@ final class AppSettings {
         animatesPlayerBackground = d.object(forKey: Keys.animatedBackground) as? Bool ?? true
         // Wi-Fi only to begin with: a new album's loop is a few megabytes, about a song's worth.
         animatedArt = d.string(forKey: Keys.animatedArt).flatMap(AnimatedArt.init(rawValue:)) ?? .wifiOnly
+        showsChartsOnHome = d.object(forKey: Keys.homeCharts) as? Bool ?? true
         // Services added in a later version join at the end of a saved order.
         let saved = (d.stringArray(forKey: Keys.lyricsOrder) ?? []).compactMap(LyricsSource.init(rawValue:))
         lyricsSourceOrder = saved + LyricsSource.allCases.filter { !saved.contains($0) }

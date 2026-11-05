@@ -94,6 +94,11 @@ struct MacHomeView: View {
                 }
             }
         }
+        // Signed in, the account's own shelves from YouTube Music's Home.
+        ForEach(content.accountShelves ?? []) { MacItemShelf(shelf: $0) }
+        if model.latestReleases.count >= 3 {
+            MacItemShelf(shelf: HomeModel.latestShelf(model.latestReleases))
+        }
         let yours = model.yourArtists
         if yours.count >= 3 {
             MacShelf(title: "Your top artists", subtitle: "Based on your listening") {
@@ -104,7 +109,20 @@ struct MacHomeView: View {
                 }
             }
         }
-        if !content.charts.isEmpty {
+        ForEach(model.similar) { MacItemShelf(shelf: HomeModel.similarShelf($0)) }
+        if model.forgotten.count >= 4 {
+            MacShelf(title: "Forgotten favourites", subtitle: "Played often, not lately") {
+                ForEach(Array(model.forgotten.enumerated()), id: \.element.id) { index, song in
+                    Button { player.play(model.forgotten, startAt: index) } label: {
+                        MacCoverCard(artwork: song.artwork, title: song.title, subtitle: song.artistLine,
+                                     onPlay: { player.play(model.forgotten, startAt: index) })
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { SongMenuItems(song: song) }
+                }
+            }
+        }
+        if app.settings.showsChartsOnHome, !content.charts.isEmpty {
             MacShelf(title: "Charts", subtitle: "Global and near you") {
                 ForEach(content.charts) { MacItemCard(item: .playlist($0)) }
             }

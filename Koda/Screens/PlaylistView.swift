@@ -70,6 +70,7 @@ struct PlaylistView: View {
                 Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
                 AddToPlaylistMenu(songs: songs)
             }
+            PinMenuItem(pin: .playlist(summary))
             ShareLink(item: URL(string: "https://music.youtube.com/playlist?list=\(summary.id)")!) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
@@ -129,6 +130,7 @@ struct PlaylistView: View {
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(songs) }
                         AddToPlaylistMenu(songs: songs)
                     }
+                    PinMenuItem(pin: .playlist(summary))
                     ShareLink(item: URL(string: "https://music.youtube.com/playlist?list=\(summary.id)")!) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }

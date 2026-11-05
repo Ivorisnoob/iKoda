@@ -166,12 +166,14 @@ struct MacItemCard: View {
                              onPlay: { app.playCollection(.album(album)) })
             }
             .buttonStyle(.plain)
+            .contextMenu { PinMenuItem(pin: .album(album)) }
         case .playlist(let playlist):
             NavigationLink(value: Route.playlist(playlist)) {
                 MacCoverCard(artwork: playlist.artwork, title: playlist.title, subtitle: playlist.subtitle, width: width,
                              onPlay: { app.playCollection(.playlist(playlist)) })
             }
             .buttonStyle(.plain)
+            .contextMenu { PinMenuItem(pin: .playlist(playlist)) }
         case .artist(let artist):
             MacArtistCard(artist: artist, width: width * 0.88)
         }
@@ -188,6 +190,7 @@ struct MacArtistCard: View {
             MacCoverCard(artwork: artist.artwork, title: artist.name, subtitle: artist.subtitle, width: width, circle: true)
         }
         .buttonStyle(.plain)
+        .contextMenu { PinMenuItem(pin: .artist(artist)) }
     }
 }
 

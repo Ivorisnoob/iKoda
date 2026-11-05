@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(Player.self) private var player
     @State private var homePath: [Route] = []
+    @State private var newPath: [Route] = []
     @State private var libraryPath: [Route] = []
     @State private var searchPath: [Route] = []
     @State private var videosPath: [Route] = []
@@ -39,6 +40,11 @@ struct RootView: View {
                     NavigationStack(path: $homePath) {
                         // A fresh Home for each profile: its own mix, picks and snapshot.
                         HomeView().id(model.roster.activeID).routeDestinations()
+                    }
+                }
+                Tab("New", systemImage: "sparkles", value: AppTab.new) {
+                    NavigationStack(path: $newPath) {
+                        NewView().routeDestinations()
                     }
                 }
                 Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
@@ -116,6 +122,7 @@ struct RootView: View {
         // Pages opened in another profile (its playlists, its liked songs) aren't this one's.
         .onChange(of: model.roster.activeID) {
             homePath = []
+            newPath = []
             libraryPath = []
             searchPath = []
             videosPath = []
@@ -136,6 +143,7 @@ struct RootView: View {
             model.pendingRoute = nil
             switch model.selectedTab {
             case .home: homePath.append(route)
+            case .new: newPath.append(route)
             case .library: libraryPath.append(route)
             case .videos: videosPath.append(route)
             case .subscriptions: subscriptionsPath.append(route)

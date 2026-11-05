@@ -37,6 +37,33 @@ import Testing
         #expect(Library(directory: dir).liked.map(\.id) == ["a"])
     }
 
+    @Test func pinsKeepTheirOrderAndSurviveARelaunch() throws {
+        let dir = try tempDirectory()
+        let library = Library(directory: dir)
+        let album = Pin.album(AlbumSummary(id: "MPRE1", title: "Album", artistLine: "X"))
+        let playlist = library.createPlaylist(named: "Mine")
+        library.pin(album)
+        library.pin(.liked)
+        library.pin(.userPlaylist(playlist.id))
+        library.pin(album)
+        #expect(library.pins.map(\.id) == ["a:MPRE1", "liked", "u:\(playlist.id.uuidString)"])
+        library.movePin(.liked, by: -1)
+        library.unpin(album)
+        library.flush()
+
+        let reopened = Library(directory: dir)
+        #expect(reopened.pins.map(\.id) == ["liked", "u:\(playlist.id.uuidString)"])
+        // Deleting a playlist takes its pin with it.
+        reopened.deletePlaylist(playlist.id)
+        #expect(reopened.pins == [.liked])
+    }
+
+    @Test func aPinOfAnUnknownKindDropsAlone() throws {
+        let json = #"{"pins": [{"liked": {}}, {"radioStation": {"_0": "x"}}]}"#
+        let snapshot = try JSONDecoder().decode(Library.Snapshot.self, from: Data(json.utf8))
+        #expect(snapshot.pins == [.liked])
+    }
+
     @Test func eachProfileFolderKeepsItsOwnLibrary() throws {
         let first = try tempDirectory(), second = try tempDirectory()
         let library = Library(directory: first)

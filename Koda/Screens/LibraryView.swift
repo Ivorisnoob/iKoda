@@ -40,9 +40,13 @@ struct LibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                if !library.pins.isEmpty {
+                    PinnedGrid()
+                }
                 VStack(spacing: 0) {
                     LibraryLink(title: "Liked Songs", systemImage: "heart.fill", tint: .pink, count: library.liked.count,
                                 route: .songs(title: "Liked Songs", source: .liked))
+                        .contextMenu { PinMenuItem(pin: .liked) }
                     Divider().padding(.leading, 56)
                     LibraryLink(title: "Downloads", systemImage: "arrow.down.circle.fill", tint: .blue, count: downloads.songs.count,
                                 route: .songs(title: "Downloads", source: .downloaded))
@@ -72,6 +76,7 @@ struct LibraryView: View {
                         ForEach(sortedArtists) { artist in
                             NavigationLink(value: Route.artist(artist)) { ArtistCard(artist: artist, width: 100) }
                                 .buttonStyle(.plain)
+                                .contextMenu { PinMenuItem(pin: .artist(artist)) }
                         }
                     }
                 }
@@ -125,6 +130,7 @@ struct LibraryView: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu { PinMenuItem(pin: .userPlaylist(playlist.id)) }
                     }
                 }
             }
@@ -175,6 +181,7 @@ struct LibraryView: View {
                             .aspectRatio(0.78, contentMode: .fit)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu { if let pin = Pin(item) { PinMenuItem(pin: pin) } }
                     }
                 }
             }
@@ -188,6 +195,81 @@ struct LibraryView: View {
         case .playlist(let p): p.subtitle
         default: nil
         }
+    }
+}
+
+/// What the listener pinned, as tiles at the top of Library, as Music shows its pins: three
+/// across, a song playing at a tap and everything else opening its page.
+private struct PinnedGrid: View {
+    @Environment(Library.self) private var library
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Pinned")
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3), spacing: 16) {
+                ForEach(library.pins) { pin in
+                    tile(pin)
+                        .contextMenu {
+                            PinMenuItem(pin: pin)
+                            Button("Move Earlier", systemImage: "arrow.left") { withAnimation(.smooth) { library.movePin(pin, by: -1) } }
+                                .disabled(library.pins.first == pin)
+                            Button("Move Later", systemImage: "arrow.right") { withAnimation(.smooth) { library.movePin(pin, by: 1) } }
+                                .disabled(library.pins.last == pin)
+                        }
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    @ViewBuilder
+    private func tile(_ pin: Pin) -> some View {
+        switch pin {
+        case .song(let song):
+            Button { player.play([song]) } label: {
+                card(title: song.title, subtitle: song.artistLine) { side in
+                    ArtworkView(artwork: song.artwork, size: side, cornerRadius: 10)
+                }
+            }
+            .buttonStyle(.plain)
+        case .album(let album):
+            link(.album(album), title: album.title, subtitle: album.artistLine) { ArtworkView(artwork: album.artwork, size: $0, cornerRadius: 10) }
+        case .playlist(let playlist):
+            link(.playlist(playlist), title: playlist.title, subtitle: playlist.subtitle) { ArtworkView(artwork: playlist.artwork, size: $0, cornerRadius: 10) }
+        case .artist(let artist):
+            link(.artist(artist), title: artist.name, subtitle: "Artist") { side in
+                ArtworkView(artwork: artist.artwork, size: side, cornerRadius: side / 2)
+            }
+        case .userPlaylist(let id):
+            if let playlist = library.userPlaylist(id) {
+                link(.userPlaylist(id), title: playlist.name, subtitle: "Playlist") { PlaylistMosaic(songs: playlist.songs, size: $0, cornerRadius: 10) }
+            }
+        case .liked:
+            link(.songs(title: "Liked Songs", source: .liked), title: "Liked Songs", subtitle: "Playlist") { side in
+                JumpBackIn.cover(.liked(count: library.liked.count, songs: library.liked), size: side)
+            }
+        }
+    }
+
+    private func link(_ route: Route, title: String, subtitle: String?, @ViewBuilder cover: @escaping (CGFloat) -> some View) -> some View {
+        NavigationLink(value: route) { card(title: title, subtitle: subtitle, cover: cover) }
+            .buttonStyle(.plain)
+    }
+
+    /// The cover fills the column's width; its size comes from the column, never the image.
+    private func card(title: String, subtitle: String?, @ViewBuilder cover: @escaping (CGFloat) -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay { GeometryReader { cover($0.size.width) } }
+            Text(title).font(.footnote.weight(.medium)).lineLimit(1)
+            if let subtitle {
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
     }
 }
 

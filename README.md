@@ -18,6 +18,29 @@
 
 Koda plays music from YouTube Music and videos from YouTube, without ads. Use it with no account at all, or sign in to bring your likes, playlists, subscriptions and history with you. It is the Apple sibling of [Koda for Android](https://github.com/Ivorisnoob/Koda), built for iPhone and Mac rather than ported to them.
 
+## Screenshots
+
+### Mac
+
+<table>
+  <tr>
+    <td align="center"><img src="Screenshots/mac/home.png" width="420" alt="Home"><br><sub>Home</sub></td>
+    <td align="center"><img src="Screenshots/mac/now-playing.png" width="420" alt="Now Playing with lyrics"><br><sub>Now Playing with lyrics</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Screenshots/mac/home-lyrics.png" width="420" alt="Lyrics beside any page"><br><sub>Lyrics beside any page</sub></td>
+    <td align="center"><img src="Screenshots/mac/up-next.png" width="420" alt="Up Next"><br><sub>Up Next</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Screenshots/mac/playlist.png" width="420" alt="Your playlist"><br><sub>Your playlist</sub></td>
+    <td align="center"><img src="Screenshots/mac/stats.png" width="420" alt="Listening stats"><br><sub>Listening stats</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Screenshots/mac/video.png" width="420" alt="Video mode"><br><sub>Video mode</sub></td>
+    <td align="center"><img src="Screenshots/mac/settings.png" width="420" alt="Settings, laid out like System Settings"><br><sub>Settings, laid out like System Settings</sub></td>
+  </tr>
+</table>
+
 ## Download
 
 Get **`Koda.ipa`** (iPhone) and **`Koda.dmg`** (Mac) from **[the latest release](https://github.com/Ivorisnoob/iKoda/releases/latest)**. Koda needs iOS 26 or macOS 26 or later.

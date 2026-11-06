@@ -23,6 +23,10 @@ public actor MotionArtwork {
     private let anyNetwork: URLSession
     /// Loops kept on disk; past it the least recently shown go.
     private let budget: Int
+    /// The album of a song that came without one, from YouTube: covers are matched by album.
+    /// Throws when it can't be asked now, so a network failure isn't remembered as no album.
+    public typealias AlbumFinder = @Sendable (_ videoId: String) async throws -> AlbumRef?
+    private let findAlbum: AlbumFinder?
 
     private var token: String?
     private var lookups: [String: Lookup] = [:]
@@ -42,9 +46,10 @@ public actor MotionArtwork {
     static let foundFor: TimeInterval = 180 * 86400
     static let missingFor: TimeInterval = 14 * 86400
 
-    public init(directory: URL, budget: Int = 500 << 20) {
+    public init(directory: URL, budget: Int = 500 << 20, findAlbum: AlbumFinder? = nil) {
         self.directory = directory
         self.budget = budget
+        self.findAlbum = findAlbum
         func session(allowsCellular: Bool) -> URLSession {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.allowsConstrainedNetworkAccess = false
@@ -62,9 +67,22 @@ public actor MotionArtwork {
 
     /// The animated covers of the album `song` is on, or nil when it has none (most don't).
     public func covers(for song: Song, allowsCellular: Bool) async -> Covers? {
-        guard MotionArtworkCatalog.isLookable(song) else { return nil }
         loadLookups()
+        // Known by its id first: the same song can reach the player without its album (some
+        // lists leave it out), and the answer found when it had one still holds.
         if let known = lookups[song.id], known.until > .now { return known.covers }
+        var song = song
+        if song.album == nil, !song.isVideo, let findAlbum {
+            let found: AlbumRef?
+            do { found = try await findAlbum(song.id) } catch { return nil }
+            guard let album = found else {
+                // YouTube has it on no album (a lone upload): there is no album cover to find.
+                remember(song.id, Lookup(covers: nil, until: .now + Self.missingFor))
+                return nil
+            }
+            song.album = album
+        }
+        guard MotionArtworkCatalog.isLookable(song) else { return nil }
         // Another song from the same album already found its cover: the cover is the album's.
         if let album = song.album?.id, let known = lookups[Self.albumKey(album)], known.until > .now, let covers = known.covers {
             remember(song.id, known)

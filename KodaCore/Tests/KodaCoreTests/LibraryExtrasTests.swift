@@ -137,3 +137,30 @@ import Testing
         #expect(!best.isDataSaver)
     }
 }
+
+@MainActor
+@Suite struct PlayRunTests {
+    private func play(_ id: String, _ minute: Double) -> PlayEvent {
+        PlayEvent(song: Song(id: id, title: id, artistLine: "X"), date: Date(timeIntervalSince1970: minute * 60))
+    }
+
+    @Test func backToBackPlaysOfOneSongAreOneRow() {
+        // Newest first: a on repeat three times, then b, then a again with b between.
+        let events = [play("a", 10), play("a", 7), play("a", 4), play("b", 2), play("a", 0)]
+        let runs = PlayRun.runs(events)
+        #expect(runs.map(\.song.id) == ["a", "b", "a"])
+        #expect(runs.map(\.count) == [3, 1, 1])
+        #expect(runs[0].date == events[0].date)
+    }
+
+    @Test func removingARunRemovesEveryPlayInIt() {
+        let library = Library(directory: nil)
+        let song = Song(id: "a", title: "A", artistLine: "X")
+        for minute in 0..<3 { library.recordPlay(song, at: Date(timeIntervalSince1970: Double(minute) * 60)) }
+        let run = PlayRun.runs(library.history)[0]
+        #expect(run.count == 3)
+        library.removeFromHistory(run)
+        #expect(library.history.isEmpty)
+        #expect(library.recent.isEmpty)
+    }
+}

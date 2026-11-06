@@ -510,6 +510,8 @@ struct MacTrackList: View {
     var onRowAppear: ((Int) -> Void)?
     /// Extra items at the top of each row's menu, such as Remove from Playlist.
     var rowMenu: ((Int) -> AnyView)?
+    /// A short mark after a row's title, such as History's "3×".
+    var badge: ((Int) -> String?)?
 
     @State private var width: CGFloat = 900
 
@@ -522,7 +524,7 @@ struct MacTrackList: View {
             LazyVStack(spacing: 0) {
                 ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                     MacTrackRow(song: song, index: index, numbered: numbered, showsArtist: artist, showsAlbum: album,
-                                play: { play(index) }, extraMenu: rowMenu?(index))
+                                play: { play(index) }, extraMenu: rowMenu?(index), badge: badge?(index))
                         .onAppear { onRowAppear?(index) }
                 }
             }
@@ -567,6 +569,7 @@ private struct MacTrackRow: View {
     let showsAlbum: Bool
     let play: () -> Void
     var extraMenu: AnyView?
+    var badge: String?
 
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
@@ -588,6 +591,14 @@ private struct MacTrackRow: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .help("Music video")
+                }
+                if let badge {
+                    Text(badge)
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(.primary.opacity(0.08), in: .capsule)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -13,11 +13,11 @@ enum MacSidePanel: Hashable {
 struct MacSidePanelView: View {
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
-    /// The window's toolbar band over the panel: the switch sits in it, level with the window's
-    /// top row, where search used to be. Not a toolbar item: the toolbar never changes at runtime.
-    @State private var toolbarHeight: CGFloat = 52
 
     var body: some View {
+        // Under the window's toolbar, in the panel's own space: drawn up in the titlebar band,
+        // the switch couldn't be clicked (the band belongs to the window, for dragging it) and
+        // the sidebar button went missing after the sidebar was hidden with the panel open.
         VStack(spacing: 8) {
             Picker("Show", selection: Binding(get: { app.sidePanel ?? .lyrics }, set: { app.sidePanel = $0 })) {
                 Text("Lyrics").tag(MacSidePanel.lyrics)
@@ -26,14 +26,12 @@ struct MacSidePanelView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 16)
-            .frame(height: toolbarHeight)
+            .padding(.top, 8)
             Group {
                 if app.sidePanel == .queue { QueuePanel() } else { LyricsPanel() }
             }
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
-        .ignoresSafeArea(.container, edges: .top)
     }
 }

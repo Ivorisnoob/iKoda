@@ -153,12 +153,48 @@ import Testing
         var other = song("Taste", album: "Short n' Sweet")
         other.id = "y"
         #expect(await motion.covers(for: other, allowsCellular: false) == covers)
+        // The same song reaching the player without its album still has its cover.
+        #expect(await motion.covers(for: song("Espresso", album: nil), allowsCellular: false) == covers)
         // A song known to have none isn't asked about again.
         var none = song("Please Please Please", album: "Short n' Sweet")
         none.id = "nothing"
         #expect(await motion.covers(for: none, allowsCellular: false) == nil)
         // The Lock Screen's still frame comes from disk.
         #expect(await motion.previewImage(covers, shape: .tall, pixels: 600, allowsCellular: false) == Data([0xFF, 0xD8]))
+    }
+
+    @Test func aSongWithoutItsAlbumIsAskedAboutOnceAndAFailureIsntRemembered() async throws {
+        let directory = URL.temporaryDirectory.appending(path: "motion-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let covers = try #require(MotionArtworkCatalog.covers(in: search(), for: song("Espresso", album: "Short n' Sweet")))
+        // The album YouTube names is one whose cover is already known.
+        let seeded = ["album:MPREb_1": SeededLookup(covers: covers, until: .now + 3600)]
+        try JSONEncoder().encode(seeded).write(to: directory.appending(path: "lookups.json"))
+        let asked = Counter()
+        let motion = MotionArtwork(directory: directory) { id in
+            await asked.add()
+            if id == "offline" { throw URLError(.notConnectedToInternet) }
+            return id == "single" ? nil : AlbumRef(id: "MPREb_1", title: "Short n' Sweet")
+        }
+        var bare = song("Espresso", album: nil)
+        bare.id = "bare"
+        #expect(await motion.covers(for: bare, allowsCellular: false) == covers)
+        var single = song("Lone Upload", album: nil)
+        single.id = "single"
+        #expect(await motion.covers(for: single, allowsCellular: false) == nil)
+        #expect(await motion.covers(for: single, allowsCellular: false) == nil)
+        var offline = song("Espresso", album: nil)
+        offline.id = "offline"
+        #expect(await motion.covers(for: offline, allowsCellular: false) == nil)
+        #expect(await motion.covers(for: offline, allowsCellular: false) == nil)
+        // Asked once for each song it learned something about; a failure is asked again.
+        #expect(await asked.value == 4)
+    }
+
+    private actor Counter {
+        var value = 0
+        func add() { value += 1 }
     }
 
     /// Real network: Music on the web's token, the catalogue, and the loop download.

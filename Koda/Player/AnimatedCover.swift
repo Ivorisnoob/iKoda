@@ -53,12 +53,13 @@ struct AnimatedCover: View {
 
     private func find() async {
         let setting = app.settings.animatedArt
-        guard let song, let album = song.album?.id, setting != .off, playsAnimatedImages else {
+        guard let song, setting != .off, playsAnimatedImages else {
             show(nil)
             return
         }
         // Another album's loop never lingers over this song's cover while its own is looked for.
-        if loop?.album != album { show(nil) }
+        // A song that arrived without its album may still have a cover known by its id.
+        if song.album?.id == nil || loop?.album != song.album?.id { show(nil) }
         guard let covers = await app.motionArtwork.covers(for: song, allowsCellular: setting.allowsCellular),
               covers.masters[shape] != nil,
               let file = await app.motionArtwork.loop(covers, shape: shape, pixels: AnimatedCover.pixels,
@@ -67,7 +68,7 @@ struct AnimatedCover: View {
             if !Task.isCancelled { show(nil) }
             return
         }
-        show(Loop(album: album, file: file))
+        show(Loop(album: song.album?.id ?? "apple:\(covers.albumID)", file: file))
     }
 
     private func show(_ next: Loop?) {
@@ -114,6 +115,67 @@ struct FullScreenMotionArt: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// The wide Now Playing's animated art (a Mac window, an iPad): the album's tall loop down the
+/// whole height of the window, under the title bar, as Music shows it. Beside lyrics or Up Next
+/// it rests against the window's leading edge and dissolves towards them, blurring as it fades;
+/// alone it stands in the middle and dissolves on both sides. Its foot blurs under the controls.
+struct SideMotionArt: View {
+    let song: Song?
+    let isPlaying: Bool
+    /// Lyrics or Up Next are open beside it.
+    let beside: Bool
+    let onShow: (Bool) -> Void
+
+    /// The art's width in a window `size`: three wide to four tall, leaving room for the panel.
+    static func width(in size: CGSize, beside: Bool) -> CGFloat {
+        min(size.height * 0.75, size.width * (beside ? 0.6 : 1))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = Self.width(in: geometry.size, beside: beside)
+            AnimatedCover(song: song, isPlaying: isPlaying, shape: .tall, onShow: onShow)
+                .frame(width: width, height: geometry.size.height)
+                .clipped()
+                // Blur gathers towards every edge that fades, so the loop melts rather than stops.
+                .overlay {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .mask {
+                            ZStack {
+                                LinearGradient(stops: [.init(color: .clear, location: 0.5), .init(color: .black, location: 0.92)],
+                                               startPoint: .top, endPoint: .bottom)
+                                LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black, location: 0.95)],
+                                               startPoint: .leading, endPoint: .trailing)
+                                if !beside {
+                                    LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black, location: 0.95)],
+                                                   startPoint: .trailing, endPoint: .leading)
+                                }
+                            }
+                        }
+                }
+                .mask(Self.fade(startPoint: .leading, endPoint: .trailing, both: !beside))
+                .mask(Self.fade(startPoint: .top, endPoint: .bottom, both: false))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: beside ? .leading : .center)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// Opaque, then easing out to nothing over the last stretch (at both ends with `both`).
+    private static func fade(startPoint: UnitPoint, endPoint: UnitPoint, both: Bool) -> LinearGradient {
+        let tail: [Gradient.Stop] = [.init(color: .black, location: 0.62), .init(color: .black.opacity(0.75), location: 0.76),
+                                     .init(color: .black.opacity(0.35), location: 0.88), .init(color: .clear, location: 1)]
+        guard both else { return LinearGradient(stops: [.init(color: .black, location: 0)] + tail, startPoint: startPoint, endPoint: endPoint) }
+        let head = tail.reversed().map { Gradient.Stop(color: $0.color, location: 1 - $0.location) }
+        // Both ends over the same span: the head mirrors the tail.
+        let squeeze: (Gradient.Stop) -> Gradient.Stop = { .init(color: $0.color, location: $0.location) }
+        return LinearGradient(stops: (head.map(squeeze).filter { $0.location < 0.5 } + [.init(color: .black, location: 0.5)]
+                                      + tail.filter { $0.location > 0.5 }), startPoint: startPoint, endPoint: endPoint)
     }
 }
 

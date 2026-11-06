@@ -138,6 +138,11 @@ public final class Library {
     }
 
     /// Forget one play. A song with no play left in the history leaves Recently Played too.
+    /// Every play of a run at once, as History removes a "3×" row.
+    public func removeFromHistory(_ run: PlayRun) {
+        for event in run.events { removeFromHistory(event.id) }
+    }
+
     public func removeFromHistory(_ id: PlayEvent.ID) {
         guard let index = history.firstIndex(where: { $0.id == id }) else { return }
         let songId = history.remove(at: index).song.id
@@ -728,6 +733,31 @@ public struct PlayEvent: Identifiable, Hashable, Codable, Sendable {
         self.id = id
         self.song = song
         self.date = date
+    }
+}
+
+/// One song played several times in a row, with nothing between: History shows it once, "3×".
+public struct PlayRun: Identifiable, Hashable, Sendable {
+    /// Newest first, as History lists them; never empty.
+    public let events: [PlayEvent]
+
+    public var id: UUID { events[0].id }
+    public var song: Song { events[0].song }
+    /// The latest of the plays.
+    public var date: Date { events[0].date }
+    public var count: Int { events.count }
+
+    /// `events` (newest first) with each run of back-to-back plays of one song made one.
+    public static func runs(_ events: [PlayEvent]) -> [PlayRun] {
+        var runs: [[PlayEvent]] = []
+        for event in events {
+            if let last = runs.last?.last, last.song.id == event.song.id {
+                runs[runs.count - 1].append(event)
+            } else {
+                runs.append([event])
+            }
+        }
+        return runs.map(PlayRun.init(events:))
     }
 }
 

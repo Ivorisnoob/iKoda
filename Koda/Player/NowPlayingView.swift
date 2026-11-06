@@ -17,21 +17,32 @@ struct NowPlayingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Room for the cover and the lyrics or queue side by side: a Mac window, an iPad in landscape.
     @State private var isWide = false
-    /// The album's tall loop is ready to fill the top of the screen.
+    /// The album's tall loop is ready to show.
     @State private var hasTallArt = false
+    @State private var size: CGSize = .zero
 
-    /// The phone's player with its cover page open shows a tall loop full screen when the album
-    /// has one, as Music does; the Mac and wide layouts keep the square cover.
-    private var showsFullScreenArt: Bool { !isWide && !Platform.isMac && panel == .artwork && hasTallArt }
+    /// With a tall loop the album's art moves in place of the square cover, as Music shows it:
+    /// across the top of the one-column player while its cover page is open, and down the whole
+    /// cover column of the wide one, beside lyrics or Up Next too.
+    private var showsMotionArt: Bool { hasTallArt && (isWide || panel == .artwork) }
+
+    /// The wide player's controls sit over the art's middle while lyrics or Up Next are beside it.
+    private var sideArtWidth: CGFloat { SideMotionArt.width(in: size, beside: panel != .artwork) }
 
     var body: some View {
         ZStack {
             MeshBackground(palette: app.nowPlayingPalette.palette, isAnimating: player.wantsToPlay && app.settings.animatesPlayerBackground)
-            if !isWide, !Platform.isMac, player.current != nil {
+            if isWide, player.current != nil {
+                SideMotionArt(song: player.current, isPlaying: player.wantsToPlay, beside: panel != .artwork) { hasTallArt = $0 }
+                    .opacity(showsMotionArt ? 1 : 0)
+                    .animation(.smooth(duration: 0.6), value: showsMotionArt)
+                    .animation(.smooth(duration: 0.45), value: panel)
+            }
+            if !isWide, player.current != nil {
                 // Kept while lyrics or the queue are open, paused, so coming back doesn't load it again.
                 FullScreenMotionArt(song: player.current, isPlaying: player.wantsToPlay && panel == .artwork) { hasTallArt = $0 }
-                    .opacity(showsFullScreenArt ? 1 : 0)
-                    .animation(.smooth(duration: 0.6), value: showsFullScreenArt)
+                    .opacity(showsMotionArt ? 1 : 0)
+                    .animation(.smooth(duration: 0.6), value: showsMotionArt)
             }
             if isWide { wideLayout } else { tallLayout }
         }
@@ -42,6 +53,7 @@ struct NowPlayingView: View {
                 .hidden()
         }
         .onGeometryChange(for: Bool.self) { $0.size.width >= 900 && $0.size.height >= 560 } action: { isWide = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
         .onChange(of: player.current == nil) { _, isEmpty in if isEmpty { close() } }
@@ -98,6 +110,8 @@ struct NowPlayingView: View {
         VStack(spacing: 0) {
             topBar
                 .padding(.horizontal, 28)
+                // Above the art, which reaches up behind it.
+                .zIndex(1)
             HStack(spacing: 64) {
                 VStack(spacing: 0) {
                     Spacer(minLength: 16)
@@ -122,6 +136,8 @@ struct NowPlayingView: View {
                 .overlay {
                     if player.current != nil { floatingArtwork }
                 }
+                // Over the art's middle: the art starts at the window's edge, the row 48 points in.
+                .frame(width: showsMotionArt && panel != .artwork ? max(440, sideArtWidth - 48) : nil)
                 if panel != .artwork {
                     Group {
                         if panel == .lyrics { LyricsPanel() } else { QueuePanel() }
@@ -213,7 +229,7 @@ struct NowPlayingView: View {
         let radius: CGFloat = big ? 18 : 8
         // The animated cover plays only at full size, as in Music, not in the lyrics and queue header.
         return MixingCovers(artwork: player.current?.artwork, mixing: player.mixing, cornerRadius: radius,
-                            animated: big && !showsFullScreenArt ? player.current : nil, isPlaying: player.wantsToPlay)
+                            animated: big && !showsMotionArt ? player.current : nil, isPlaying: player.wantsToPlay)
             // While the song loads the cover waits a little small, then settles to full size
             // the moment sound starts. Nothing is drawn over the art itself.
             .clipShape(.rect(cornerRadius: radius, style: .continuous))
@@ -225,8 +241,8 @@ struct NowPlayingView: View {
             .animation(.smooth(duration: 0.45), value: isLoadingSong)
             .matchedGeometryEffect(id: "artwork", in: artworkSpace, isSource: false)
             // The full-screen loop takes the square cover's place.
-            .opacity(showsFullScreenArt ? 0 : 1)
-            .animation(.smooth(duration: 0.6), value: showsFullScreenArt)
+            .opacity(showsMotionArt && (isWide || panel == .artwork) ? 0 : 1)
+            .animation(.smooth(duration: 0.6), value: showsMotionArt)
             .onTapGesture { if !big { setPanel(.artwork) } }
             .accessibilityHidden(true)
     }

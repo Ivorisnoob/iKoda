@@ -2,7 +2,8 @@ import KodaCore
 import SwiftUI
 
 /// Every play, newest first, under the day it happened: Recently Played keeps one row per song,
-/// this keeps each time. A play can be removed on its own; a song with none left leaves Recently
+/// this keeps each time, except that a song played again and again with nothing between is one
+/// row marked "3×". A row can be removed on its own; a song with no plays left leaves Recently
 /// Played too.
 struct HistoryView: View {
     @Environment(AppModel.self) private var app
@@ -10,8 +11,8 @@ struct HistoryView: View {
     @Environment(Library.self) private var library
     @State private var confirmsClear = false
 
-    /// Plays grouped by calendar day, newest day first.
-    private var days: [(day: Date, plays: [PlayEvent])] {
+    /// Plays grouped by calendar day, newest day first, back-to-back repeats as one run.
+    private var days: [(day: Date, plays: [PlayRun])] {
         let calendar = Calendar.current
         var result: [(day: Date, plays: [PlayEvent])] = []
         for event in library.history {
@@ -22,7 +23,12 @@ struct HistoryView: View {
                 result.append((day, [event]))
             }
         }
-        return result
+        return result.map { ($0.day, PlayRun.runs($0.plays)) }
+    }
+
+    private static func subtitle(_ run: PlayRun) -> String {
+        let time = run.date.formatted(date: .omitted, time: .shortened)
+        return [run.song.artistLine, run.count > 1 ? "\(run.count)×" : nil, time].compactMap { $0 }.joined(separator: " · ")
     }
 
     var body: some View {
@@ -43,7 +49,7 @@ struct HistoryView: View {
                 Section(Self.title(for: day.day)) {
                     let songs = day.plays.map(\.song)
                     ForEach(Array(day.plays.enumerated()), id: \.element.id) { index, event in
-                        SongRow(song: event.song, subtitle: "\(event.song.artistLine) · \(event.date.formatted(date: .omitted, time: .shortened))") {
+                        SongRow(song: event.song, subtitle: Self.subtitle(event)) {
                             player.play(songs, startAt: index)
                         }
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
@@ -53,7 +59,7 @@ struct HistoryView: View {
                         }
                         .swipeActions(edge: .trailing) {
                             Button("Remove", systemImage: "trash", role: .destructive) {
-                                withAnimation { library.removeFromHistory(event.id) }
+                                withAnimation { library.removeFromHistory(event) }
                             }
                         }
                     }
@@ -99,10 +105,14 @@ struct HistoryView: View {
                         MacSectionTitle(title: Self.title(for: day.day))
                         let songs = day.plays.map(\.song)
                         MacTrackList(songs: songs, showsAlbum: false, play: { player.play(songs, startAt: $0) }, rowMenu: { index in
-                            let event = day.plays[index]
-                            return AnyView(Button("Remove from History", systemImage: "trash", role: .destructive) {
-                                library.removeFromHistory(event.id)
+                            let run = day.plays[index]
+                            return AnyView(Button(run.count > 1 ? "Remove \(run.count) Plays from History" : "Remove from History",
+                                                  systemImage: "trash", role: .destructive) {
+                                library.removeFromHistory(run)
                             })
+                        }, badge: { index in
+                            let count = day.plays[index].count
+                            return count > 1 ? "\(count)×" : nil
                         })
                     }
                 }

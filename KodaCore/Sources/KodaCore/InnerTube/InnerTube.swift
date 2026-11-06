@@ -337,6 +337,12 @@ public final class YouTubeMusic: Sendable {
         return Pages.queue(root)
     }
 
+    /// The song as YouTube Music's player knows it, album included: for a song that reached
+    /// Koda without one (some lists leave it out).
+    public func songDetails(_ videoId: String) async throws -> Song? {
+        Pages.queue(try await api.music("next", ["videoId": videoId, "isAudioOnly": true])).songs.first { $0.id == videoId }
+    }
+
     /// A playlist's own play queue (`RDCLAK…` mixes, artist mixes).
     public func watchPlaylist(_ playlistId: String, videoId: String? = nil, params: String? = nil) async throws -> [Song] {
         var payload: [String: Any] = ["playlistId": playlistId, "isAudioOnly": true]

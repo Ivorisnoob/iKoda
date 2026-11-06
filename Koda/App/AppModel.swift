@@ -11,7 +11,7 @@ final class AppModel {
     let library: Library
     let lyrics = LyricsClient()
     /// Animated album covers; the loops live in Caches, which the system may clear.
-    let motionArtwork = MotionArtwork(directory: URL.cachesDirectory.appending(path: "MotionArtwork"))
+    let motionArtwork: MotionArtwork
     let sleepTimer: SleepTimer
     /// Everyone who uses Koda on this device; the library is the active profile's.
     let roster: ProfileRoster
@@ -96,6 +96,10 @@ final class AppModel {
         let keychain = AccountKeychain(directory: directory)
         self.keychain = keychain
         music = YouTubeMusic(accounts: AccountSessions(store: keychain))
+        // A song that reached the player without its album is asked about once, so it can have its cover too.
+        motionArtwork = MotionArtwork(directory: URL.cachesDirectory.appending(path: "MotionArtwork")) { [music] id in
+            try await music.songDetails(id)?.album
+        }
         player = Player(music: music, storageDirectory: directory)
         videos = VideoPlayback(music: music)
         // Before profiles the name lived in the defaults and the library at the top of the folder;

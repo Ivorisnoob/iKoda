@@ -74,6 +74,15 @@ struct MacRootView: View {
             // sidebar button are never changed directly: doing so left the button stuck before.
             page
         }
+        // Lyrics or Up Next beside the page, from the player bar, as Music has them; Now
+        // Playing has its own, so the panel steps aside while it's open. On the split view, a
+        // trailing column of the window: inside the detail column, hiding the sidebar with the
+        // panel open rebuilt the toolbar without the sidebar button.
+        .inspector(isPresented: Binding(get: { model.sidePanel != nil && !showsNowPlaying },
+                                        set: { if !$0 { model.sidePanel = nil } })) {
+            MacSidePanelView()
+                .inspectorColumnWidth(min: 250, ideal: 300, max: 420)
+        }
     }
 
     /// The selected section's pages, with the player bar under them.
@@ -104,13 +113,6 @@ struct MacRootView: View {
         .animation(.smooth(duration: 0.35), value: player.current == nil)
         .animation(.smooth(duration: 0.35), value: showsVideoBar)
         .animation(.smooth(duration: 0.25), value: showsNowPlaying)
-        // Lyrics or Up Next beside the page, from the player bar, as Music has them; Now
-        // Playing has its own, so the panel steps aside while it's open.
-        .inspector(isPresented: Binding(get: { model.sidePanel != nil && !showsNowPlaying },
-                                        set: { if !$0 { model.sidePanel = nil } })) {
-            MacSidePanelView()
-                .inspectorColumnWidth(min: 250, ideal: 300, max: 420)
-        }
         .onChange(of: player.current == nil) { _, isEmpty in if isEmpty { model.sidePanel = nil } }
     }
 
@@ -128,16 +130,6 @@ struct MacRootView: View {
         .searchable(text: $search.query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: (section ?? .home).isVideo ? "Search YouTube" : "Search")
         .searchFocused($searchFocused)
-        .searchSuggestions {
-            if !(section ?? .home).isVideo, search.query != search.submitted {
-                if let link = YouTubeLink(text: search.query) {
-                    Label(link.openTitle, systemImage: "link").searchCompletion(search.query)
-                }
-                ForEach(search.suggestions, id: \.self) { suggestion in
-                    Label(suggestion, systemImage: "magnifyingglass").searchCompletion(suggestion)
-                }
-            }
-        }
         .onSubmit(of: .search) {
             if (section ?? .home).isVideo { submitVideoSearch(search.query) } else { submit(search.query) }
         }
@@ -266,8 +258,12 @@ struct MacRootView: View {
     /// group folds away with the system's disclosure; Videos is there with Video mode on.
     private var sidebar: some View {
         List {
-            musicSidebar
-            if model.settings.videoModeEnabled { videoSidebar }
+            if showsSuggestions {
+                suggestionRows
+            } else {
+                musicSidebar
+                if model.settings.videoModeEnabled { videoSidebar }
+            }
         }
         .listStyle(.sidebar)
         .environment(\.defaultMinListRowHeight, 28)
@@ -434,6 +430,39 @@ struct MacRootView: View {
 
     /// A Mac sidebar row: 13-point text, the symbol in the accent colour, and when selected the
     /// soft rounded fill the Mac's own sidebars use, rather than Catalyst's iPad-sized row.
+    /// Typing a search that isn't sent yet. The suggestions take the sidebar's place, as rows of
+    /// its own list: Catalyst draws `.searchSuggestions` straight over the sidebar with nothing
+    /// behind it, so both lists showed through each other.
+    private var showsSuggestions: Bool {
+        let text = search.query.trimmingCharacters(in: .whitespaces)
+        return !text.isEmpty && search.query != search.submitted && !(section ?? .home).isVideo
+    }
+
+    @ViewBuilder
+    private var suggestionRows: some View {
+        Section("Suggestions") {
+            if let link = YouTubeLink(text: search.query) {
+                suggestionRow(link.openTitle, systemImage: "link") { submit(search.query) }
+            } else {
+                suggestionRow("Search for “\(search.query.trimmingCharacters(in: .whitespaces))”", systemImage: "magnifyingglass") {
+                    submit(search.query)
+                }
+            }
+            ForEach(search.suggestions.filter { $0 != search.query }, id: \.self) { suggestion in
+                suggestionRow(suggestion, systemImage: "magnifyingglass") { submit(suggestion) }
+            }
+        }
+    }
+
+    private func suggestionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            MacSidebarLabel(title: title, systemImage: systemImage, isSelected: false)
+        }
+        .buttonStyle(.plain)
+        .listRowInsets(MacSidebarLabel.insets)
+        .listRowBackground(Color.clear)
+    }
+
     private func sidebarRow(_ title: String, _ systemImage: String, _ target: MacSection, count: Int = 0,
                             avatar: Artwork? = nil) -> some View {
         Button {

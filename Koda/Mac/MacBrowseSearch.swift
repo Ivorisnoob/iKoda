@@ -378,3 +378,82 @@ struct MacLibraryGrid: View {
         sort == .recent ? library.artists : library.artists.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 }
+
+/// What shows under the toolbar's search while a search is typed and not yet sent, in the page's
+/// place, as Music's search page offers it: the search itself, YouTube Music's suggestions, and
+/// what of the listener's own matches. Return or a click sends it and the results take over;
+/// clearing the field gives the page back.
+struct MacSearchSuggestions: View {
+    let query: String
+    let suggestions: [String]
+    let submit: (String) -> Void
+    @Environment(Library.self) private var library
+    @Environment(Downloads.self) private var downloads
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        let mine = library.search(text, extra: downloads.store.completeSongs)
+        let songs = Array(mine.songs.prefix(5))
+        MacPage(spacing: 24) {
+            VStack(alignment: .leading, spacing: 2) {
+                if let link = YouTubeLink(text: query) {
+                    row(link.openTitle, systemImage: "link", prominent: true) { submit(query) }
+                } else {
+                    row("Search for “\(text)”", systemImage: "magnifyingglass", prominent: true) { submit(text) }
+                }
+                ForEach(suggestions.filter { $0.caseInsensitiveCompare(text) != .orderedSame }, id: \.self) { suggestion in
+                    row(suggestion, systemImage: "magnifyingglass") { submit(suggestion) }
+                }
+            }
+            .padding(.horizontal, MacMetrics.gutter - 10)
+            if !songs.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    MacSectionTitle(title: "In Your Library")
+                        .padding(.horizontal, MacMetrics.gutter)
+                    VStack(spacing: 2) {
+                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                            MacSongTile(song: song) { player.play(mine.songs, startAt: index) }
+                        }
+                    }
+                    .padding(.horizontal, MacMetrics.gutter - 6)
+                }
+            }
+        }
+        // Opaque up behind the toolbar too, so the page underneath doesn't show through its glass.
+        .background { Rectangle().fill(.background).ignoresSafeArea() }
+    }
+
+    private func row(_ title: String, systemImage: String, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        SuggestionRow(title: title, systemImage: systemImage, prominent: prominent, action: action)
+    }
+}
+
+private struct SuggestionRow: View {
+    let title: String
+    let systemImage: String
+    let prominent: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+                Text(title)
+                    .fontWeight(prominent ? .semibold : .regular)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 14))
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(.primary.opacity(hovering ? 0.08 : 0), in: .rect(cornerRadius: 8, style: .continuous))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}

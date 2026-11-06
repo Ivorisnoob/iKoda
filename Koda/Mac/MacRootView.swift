@@ -56,7 +56,7 @@ struct MacRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        dialogs(nowPlayingLayer(routing(splitView)))
+        dialogs(nowPlayingLayer(routing(searching(splitView))))
             // A full-screen video gets a window of its own (MacVideoWindow), so this window and
             // its toolbar never change for it; that window closes itself when the video leaves.
             .onChange(of: model.videos.isFullScreen) { _, isFullScreen in
@@ -66,7 +66,7 @@ struct MacRootView: View {
 
     private var splitView: some View {
         NavigationSplitView {
-            searching(sidebar)
+            sidebarColumn
                 .navigationSplitViewColumnWidth(min: 210, ideal: 236, max: 320)
         } detail: {
             // Now Playing is pushed onto the section's stack like any page, zooming out of the
@@ -90,6 +90,13 @@ struct MacRootView: View {
         NavigationStack(path: path) {
             detail
                 .routeDestinations()
+        }
+        // Over whatever page is open, under the toolbar's field: what is typed shows where it was
+        // typed, and clearing it gives the page back as it was.
+        .overlay {
+            if showsSuggestions {
+                MacSearchSuggestions(query: search.query, suggestions: search.suggestions) { submit($0) }
+            }
         }
         .environment(\.nowPlayingZoom, playerZoom)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -125,9 +132,10 @@ struct MacRootView: View {
     private func searching<V: View>(_ content: V) -> some View {
         @Bindable var search = search
         return content
-        // At the head of the sidebar, as Music, Mail and Notes keep it: the toolbar's right end sits
-        // over the lyrics and Up Next panel when that is open.
-        .searchable(text: $search.query, placement: .navigationBarDrawer(displayMode: .always),
+        // At the trailing end of the toolbar, as Mail, Finder and Notes keep it on the Mac. In the
+        // sidebar (a navigation bar drawer, or the .sidebar placement) Catalyst draws it the iPad's
+        // way, a band of its own at the top of the floating sidebar, which never looked right.
+        .searchable(text: $search.query, placement: .toolbar,
                     prompt: (section ?? .home).isVideo ? "Search YouTube" : "Search")
         .searchFocused($searchFocused)
         .onSubmit(of: .search) {
@@ -258,12 +266,8 @@ struct MacRootView: View {
     /// group folds away with the system's disclosure; Videos is there with Video mode on.
     private var sidebar: some View {
         List {
-            if showsSuggestions {
-                suggestionRows
-            } else {
-                musicSidebar
-                if model.settings.videoModeEnabled { videoSidebar }
-            }
+            musicSidebar
+            if model.settings.videoModeEnabled { videoSidebar }
         }
         .listStyle(.sidebar)
         .environment(\.defaultMinListRowHeight, 28)
@@ -282,9 +286,15 @@ struct MacRootView: View {
         .onChange(of: model.settings.videoModeEnabled) { _, enabled in
             if !enabled, (section ?? .home).isVideo { section = .home }
         }
-        // A bar, not an inset: the system draws its scroll edge effect under it, so rows fade
-        // out beneath the glance instead of showing through its translucent card.
-        .safeAreaBar(edge: .bottom, spacing: 0) {
+    }
+
+    /// The list, with Up Next, today's listening and the profile under it. Below the list rather
+    /// than over it (a `safeAreaBar`): Catalyst's sidebar list draws no scroll edge effect, so rows
+    /// showed through the glance's translucent card; here the list ends above the foot and gives
+    /// it room as it appears.
+    private var sidebarColumn: some View {
+        VStack(spacing: 6) {
+            sidebar
             sidebarFoot
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeight = $0 }
@@ -430,37 +440,10 @@ struct MacRootView: View {
 
     /// A Mac sidebar row: 13-point text, the symbol in the accent colour, and when selected the
     /// soft rounded fill the Mac's own sidebars use, rather than Catalyst's iPad-sized row.
-    /// Typing a search that isn't sent yet. The suggestions take the sidebar's place, as rows of
-    /// its own list: Catalyst draws `.searchSuggestions` straight over the sidebar with nothing
-    /// behind it, so both lists showed through each other.
+    /// Typing a search that isn't sent yet: its suggestions cover the page, under the field.
     private var showsSuggestions: Bool {
         let text = search.query.trimmingCharacters(in: .whitespaces)
         return !text.isEmpty && search.query != search.submitted && !(section ?? .home).isVideo
-    }
-
-    @ViewBuilder
-    private var suggestionRows: some View {
-        Section("Suggestions") {
-            if let link = YouTubeLink(text: search.query) {
-                suggestionRow(link.openTitle, systemImage: "link") { submit(search.query) }
-            } else {
-                suggestionRow("Search for “\(search.query.trimmingCharacters(in: .whitespaces))”", systemImage: "magnifyingglass") {
-                    submit(search.query)
-                }
-            }
-            ForEach(search.suggestions.filter { $0 != search.query }, id: \.self) { suggestion in
-                suggestionRow(suggestion, systemImage: "magnifyingglass") { submit(suggestion) }
-            }
-        }
-    }
-
-    private func suggestionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            MacSidebarLabel(title: title, systemImage: systemImage, isSelected: false)
-        }
-        .buttonStyle(.plain)
-        .listRowInsets(MacSidebarLabel.insets)
-        .listRowBackground(Color.clear)
     }
 
     private func sidebarRow(_ title: String, _ systemImage: String, _ target: MacSection, count: Int = 0,

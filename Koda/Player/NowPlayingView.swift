@@ -151,13 +151,13 @@ struct NowPlayingView: View {
                 // A page on the Mac: the toolbar's back button and Esc close it.
                 Color.clear.frame(width: 44, height: 44)
             } else {
+                // Bare symbols, as the transport's are: nothing behind them but a soft circle while held.
                 Button { close() } label: {
                     Image(systemName: "chevron.down")
-                        .font(.body.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
+                .buttonStyle(TransportButtonStyle(diameter: 44))
                 .accessibilityLabel("Close")
             }
             Spacer()
@@ -180,11 +180,10 @@ struct NowPlayingView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.body.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
+                .buttonStyle(TransportButtonStyle(diameter: 44))
                 .menuIndicator(.hidden)
                 .accessibilityLabel("More")
             } else {
@@ -427,12 +426,14 @@ struct TransportControls: View {
 
 /// A soft circle behind the symbol while it is held, as Music's transport buttons show.
 private struct TransportButtonStyle: ButtonStyle {
+    var diameter: CGFloat = 64
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background {
                 Circle()
                     .fill(.white.opacity(configuration.isPressed ? 0.14 : 0))
-                    .frame(width: 64, height: 64)
+                    .frame(width: diameter, height: diameter)
             }
             .contentShape(.rect)
             .scaleEffect(configuration.isPressed ? 0.9 : 1)

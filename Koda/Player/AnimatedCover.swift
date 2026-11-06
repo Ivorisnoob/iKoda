@@ -11,6 +11,10 @@ import UIKit
 struct AnimatedCover: View {
     let song: Song?
     let isPlaying: Bool
+    /// Square over the cover; tall for Now Playing's full-screen art on the iPhone.
+    var shape: MotionArtwork.Shape = .square
+    /// Told whether a loop is showing, so the page can make room for it or give it back.
+    var onShow: ((Bool) -> Void)? = nil
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
     @Environment(\.scenePhase) private var scenePhase
@@ -28,6 +32,7 @@ struct AnimatedCover: View {
         var album: String?
         var art: AppSettings.AnimatedArt
         var allowed: Bool
+        var shape: MotionArtwork.Shape
     }
 
     var body: some View {
@@ -40,9 +45,10 @@ struct AnimatedCover: View {
         }
         .animation(.smooth(duration: 0.6), value: isReady)
         .allowsHitTesting(false)
-        .task(id: Request(songID: song?.id, album: song?.album?.id, art: app.settings.animatedArt, allowed: playsAnimatedImages)) {
+        .task(id: Request(songID: song?.id, album: song?.album?.id, art: app.settings.animatedArt, allowed: playsAnimatedImages, shape: shape)) {
             await find()
         }
+        .onChange(of: loop != nil && isReady, initial: true) { _, showing in onShow?(showing) }
     }
 
     private func find() async {
@@ -54,7 +60,8 @@ struct AnimatedCover: View {
         // Another album's loop never lingers over this song's cover while its own is looked for.
         if loop?.album != album { show(nil) }
         guard let covers = await app.motionArtwork.covers(for: song, allowsCellular: setting.allowsCellular),
-              let file = await app.motionArtwork.loop(covers, shape: .square, pixels: AnimatedCover.pixels,
+              covers.masters[shape] != nil,
+              let file = await app.motionArtwork.loop(covers, shape: shape, pixels: AnimatedCover.pixels,
                                                        allowsCellular: setting.allowsCellular),
               !Task.isCancelled else {
             if !Task.isCancelled { show(nil) }
@@ -73,8 +80,41 @@ struct AnimatedCover: View {
     }
 
     /// One size for every cover: the big cover is about 1000 pixels across on a phone and
-    /// less in a Mac window, and one file per album is shared with the Lock Screen.
+    /// less in a Mac window, the full-screen art about a phone's width, and one file per
+    /// album and shape is shared with the Lock Screen.
     static let pixels = 1080
+}
+
+/// Now Playing's full-screen animated art on the iPhone, as Music shows it: the album's tall
+/// loop across the top of the screen, under the status bar, its lower part blurring and then
+/// melting into the cover's colours so the title and controls sit on it. Drawn only once the
+/// loop's first frame is ready; until then, and for albums without one, the square cover shows.
+struct FullScreenMotionArt: View {
+    let song: Song?
+    let isPlaying: Bool
+    let onShow: (Bool) -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            let height = geometry.size.width / MotionArtwork.Shape.tall.aspect
+            AnimatedCover(song: song, isPlaying: isPlaying, shape: .tall, onShow: onShow)
+                .frame(width: geometry.size.width, height: height)
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: height * 0.42)
+                        .mask(LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .center))
+                }
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.76),
+                                             .init(color: .clear, location: 1)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 /// A muted loop on an AVPlayerLayer. It never keeps the screen awake, never goes to AirPlay
@@ -153,12 +193,8 @@ enum LockScreenAnimatedArt {
             let reply = Reply(send: completion)
             let pixels = Int(max(size.width, size.height * shape.aspect).rounded())
             Task {
-                guard let url = covers.preview(shape, pixels: max(pixels, 1)),
-                      let (data, _) = try? await URLSession.shared.data(from: url) else {
-                    reply.send(nil)
-                    return
-                }
-                reply.send(UIImage(data: data))
+                let data = await motion.previewImage(covers, shape: shape, pixels: pixels, allowsCellular: allowsCellular)
+                reply.send(data.flatMap(UIImage.init(data:)))
             }
         } videoAssetFileURLRequestHandler: { size, completion in
             let reply = Reply(send: completion)

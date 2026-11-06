@@ -128,6 +128,39 @@ import Testing
         #expect(!MotionArtworkCatalog.isMediaURL(URL(string: "https://mzstatic.com.evil.example/a.jpg")!))
     }
 
+    /// The shape `MotionArtwork` keeps its answers in, to seed one without the network.
+    private struct SeededLookup: Codable {
+        var covers: MotionArtwork.Covers?
+        var until: Date
+    }
+
+    @Test func oneSongsCoverServesItsAlbumAndAnswersSurviveARelaunch() async throws {
+        let directory = URL.temporaryDirectory.appending(path: "motion-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let covers = try #require(MotionArtworkCatalog.covers(in: search(), for: song("Espresso", album: "Short n' Sweet")))
+        // As a found cover left it: by song, and by the YouTube album it is on.
+        let seeded: [String: SeededLookup] = [
+            "x": SeededLookup(covers: covers, until: .now + 3600),
+            "album:MPREb_1": SeededLookup(covers: covers, until: .now + 3600),
+            "nothing": SeededLookup(covers: nil, until: .now + 3600),
+        ]
+        try JSONEncoder().encode(seeded).write(to: directory.appending(path: "lookups.json"))
+        try Data([0xFF, 0xD8]).write(to: directory.appending(path: "\(covers.albumID)-tall-preview.jpg"))
+
+        let motion = MotionArtwork(directory: directory)
+        // Another song from the album: no search, the album's cover.
+        var other = song("Taste", album: "Short n' Sweet")
+        other.id = "y"
+        #expect(await motion.covers(for: other, allowsCellular: false) == covers)
+        // A song known to have none isn't asked about again.
+        var none = song("Please Please Please", album: "Short n' Sweet")
+        none.id = "nothing"
+        #expect(await motion.covers(for: none, allowsCellular: false) == nil)
+        // The Lock Screen's still frame comes from disk.
+        #expect(await motion.previewImage(covers, shape: .tall, pixels: 600, allowsCellular: false) == Data([0xFF, 0xD8]))
+    }
+
     /// Real network: Music on the web's token, the catalogue, and the loop download.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["KODA_LIVE"] == "1"))
     func liveAnimatedCover() async throws {

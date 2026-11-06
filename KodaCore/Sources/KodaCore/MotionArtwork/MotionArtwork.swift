@@ -8,8 +8,10 @@ private let log = Logger(subsystem: "Koda", category: "MotionArtwork")
 /// Lock Screen will only take a file and a file loops without going back to the network.
 ///
 /// No account and no listening history leave the device beyond the catalogue search itself;
-/// on disk are the token, which songs had covers, and the loops (oldest dropped past
-/// `budget`). Every failure is the still cover, never a playback problem.
+/// on disk are the token, every lookup's answer (with a cover or without), the loops and
+/// their still frames (oldest dropped past `budget`). Each song is asked about once in a long
+/// while, and an album's cover once found serves every song on it. Every failure is the
+/// still cover, never a playback problem.
 public actor MotionArtwork {
     public typealias Shape = MotionArtworkCatalog.Shape
     public typealias Covers = MotionArtworkCatalog.Covers
@@ -35,7 +37,12 @@ public actor MotionArtwork {
         var until: Date
     }
 
-    public init(directory: URL, budget: Int = 250 << 20) {
+    /// A found cover is trusted for half a year (Apple doesn't take them down); an album
+    /// without one is asked again after two weeks, in case one was added.
+    static let foundFor: TimeInterval = 180 * 86400
+    static let missingFor: TimeInterval = 14 * 86400
+
+    public init(directory: URL, budget: Int = 500 << 20) {
         self.directory = directory
         self.budget = budget
         func session(allowsCellular: Bool) -> URLSession {
@@ -58,6 +65,11 @@ public actor MotionArtwork {
         guard MotionArtworkCatalog.isLookable(song) else { return nil }
         loadLookups()
         if let known = lookups[song.id], known.until > .now { return known.covers }
+        // Another song from the same album already found its cover: the cover is the album's.
+        if let album = song.album?.id, let known = lookups[Self.albumKey(album)], known.until > .now, let covers = known.covers {
+            remember(song.id, known)
+            return covers
+        }
         if let running = inFlight[song.id] { return await running.value }
         guard Date.now >= quietUntil else { return nil }
         let task = Task { await lookUp(song, session: allowsCellular ? anyNetwork : unmetered) }
@@ -78,8 +90,9 @@ public actor MotionArtwork {
         let outcome = await search(song, session: session)
         switch outcome {
         case .found(let covers):
-            // A cover stays a month; an album without one is asked again after six hours.
-            remember(song.id, Lookup(covers: covers, until: .now + (covers == nil ? 6 * 3600 : 30 * 86400)))
+            let lookup = Lookup(covers: covers, until: .now + (covers == nil ? Self.missingFor : Self.foundFor))
+            remember(song.id, lookup)
+            if covers != nil, let album = song.album?.id { remember(Self.albumKey(album), lookup) }
             log.info("\(covers == nil ? "No animated cover" : "Animated cover found") for \(song.title, privacy: .public)")
             return covers
         case .notNow:
@@ -204,6 +217,25 @@ public actor MotionArtwork {
         }
     }
 
+    // MARK: The still frame
+
+    /// The loop's first frame as an image, for the Lock Screen to show while the loop loads:
+    /// kept beside the loops, so it is fetched once per album and shape.
+    public func previewImage(_ covers: Covers, shape: Shape, pixels: Int, allowsCellular: Bool) async -> Data? {
+        let file = directory.appending(path: "\(covers.albumID)-\(shape.rawValue)-preview.jpg")
+        if let kept = try? Data(contentsOf: file), !kept.isEmpty {
+            touch(file)
+            return kept
+        }
+        guard let url = covers.preview(shape, pixels: min(max(pixels, 1), MotionArtworkCatalog.largestWidth)) else { return nil }
+        let session = allowsCellular ? anyNetwork : unmetered
+        guard let (data, response) = try? await session.data(from: url),
+              (200..<300).contains((response as? HTTPURLResponse)?.statusCode ?? 0), !data.isEmpty else { return nil }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: file, options: .atomic)
+        return data
+    }
+
     private func touch(_ file: URL) {
         try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: file.path)
     }
@@ -212,7 +244,7 @@ public actor MotionArtwork {
     private func trim() {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
         guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return }
-        var loops = files.filter { $0.pathExtension == "mp4" }.map { file -> (URL, Int, Date) in
+        var loops = files.filter { ["mp4", "jpg"].contains($0.pathExtension) }.map { file -> (URL, Int, Date) in
             let values = try? file.resourceValues(forKeys: Set(keys))
             return (file, values?.fileSize ?? 0, values?.contentModificationDate ?? .distantPast)
         }
@@ -228,9 +260,8 @@ public actor MotionArtwork {
 
     private var lookupsFile: URL { directory.appending(path: "lookups.json") }
 
-    /// Which songs have covers survives a relaunch, so a kept loop plays offline and on
-    /// cellular without asking the catalogue again. Albums without one are remembered
-    /// only in memory.
+    /// Every answer survives a relaunch: a kept loop plays offline and on cellular without
+    /// asking the catalogue again, and songs without one aren't asked about on every launch.
     private func loadLookups() {
         guard !lookupsLoaded else { return }
         lookupsLoaded = true
@@ -241,12 +272,11 @@ public actor MotionArtwork {
 
     private func remember(_ songID: String, _ lookup: Lookup) {
         lookups[songID] = lookup
-        if lookups.count > 2000 {
-            let oldest = lookups.sorted { $0.value.until < $1.value.until }.prefix(lookups.count - 1500)
+        if lookups.count > 8000 {
+            let oldest = lookups.sorted { $0.value.until < $1.value.until }.prefix(lookups.count - 6000)
             for (id, _) in oldest { lookups[id] = nil }
         }
-        guard lookup.covers != nil else { return }
-        let found = lookups.filter { $0.value.covers != nil }
+        let found = lookups
         let file = lookupsFile
         let directory = directory
         Task.detached(priority: .utility) {
@@ -255,6 +285,8 @@ public actor MotionArtwork {
             try? data.write(to: file, options: .atomic)
         }
     }
+
+    private static func albumKey(_ youTubeAlbum: String) -> String { "album:\(youTubeAlbum)" }
 
     // MARK: The token
 

@@ -17,10 +17,22 @@ struct NowPlayingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Room for the cover and the lyrics or queue side by side: a Mac window, an iPad in landscape.
     @State private var isWide = false
+    /// The album's tall loop is ready to fill the top of the screen.
+    @State private var hasTallArt = false
+
+    /// The phone's player with its cover page open shows a tall loop full screen when the album
+    /// has one, as Music does; the Mac and wide layouts keep the square cover.
+    private var showsFullScreenArt: Bool { !isWide && !Platform.isMac && panel == .artwork && hasTallArt }
 
     var body: some View {
         ZStack {
             MeshBackground(palette: app.nowPlayingPalette.palette, isAnimating: player.wantsToPlay && app.settings.animatesPlayerBackground)
+            if !isWide, !Platform.isMac, player.current != nil {
+                // Kept while lyrics or the queue are open, paused, so coming back doesn't load it again.
+                FullScreenMotionArt(song: player.current, isPlaying: player.wantsToPlay && panel == .artwork) { hasTallArt = $0 }
+                    .opacity(showsFullScreenArt ? 1 : 0)
+                    .animation(.smooth(duration: 0.6), value: showsFullScreenArt)
+            }
             if isWide { wideLayout } else { tallLayout }
         }
         // Escape closes the player, in either layout, as it closes a full view anywhere on the Mac.
@@ -202,7 +214,7 @@ struct NowPlayingView: View {
         let radius: CGFloat = big ? 18 : 8
         // The animated cover plays only at full size, as in Music, not in the lyrics and queue header.
         return MixingCovers(artwork: player.current?.artwork, mixing: player.mixing, cornerRadius: radius,
-                            animated: big ? player.current : nil, isPlaying: player.wantsToPlay)
+                            animated: big && !showsFullScreenArt ? player.current : nil, isPlaying: player.wantsToPlay)
             // While the song loads the cover waits a little small, then settles to full size
             // the moment sound starts. Nothing is drawn over the art itself.
             .clipShape(.rect(cornerRadius: radius, style: .continuous))
@@ -213,6 +225,9 @@ struct NowPlayingView: View {
             // No bounce: sound arriving is not a gesture with momentum behind it.
             .animation(.smooth(duration: 0.45), value: isLoadingSong)
             .matchedGeometryEffect(id: "artwork", in: artworkSpace, isSource: false)
+            // The full-screen loop takes the square cover's place.
+            .opacity(showsFullScreenArt ? 0 : 1)
+            .animation(.smooth(duration: 0.6), value: showsFullScreenArt)
             .onTapGesture { if !big { setPanel(.artwork) } }
             .accessibilityHidden(true)
     }

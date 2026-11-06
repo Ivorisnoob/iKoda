@@ -326,9 +326,36 @@ public final class Library {
     }
 
     public func deletePlaylist(_ id: UUID) {
+        if let cover = playlistCoverFile(id) { try? FileManager.default.removeItem(at: cover) }
         userPlaylists.removeAll { $0.id == id }
         pins.removeAll { $0 == .userPlaylist(id) }
         save()
+    }
+
+    /// Blank clears it.
+    public func setPlaylistSummary(_ id: UUID, to summary: String) {
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        editPlaylist(id) { $0.summary = trimmed.isEmpty ? nil : trimmed }
+    }
+
+    /// Where a playlist's photo is kept, beside this profile's library; nil without a folder.
+    public func playlistCoverFile(_ id: UUID) -> URL? {
+        directory?.appending(path: "PlaylistCovers/\(id.uuidString).jpg")
+    }
+
+    /// Keep `jpeg` as the playlist's photo; nil removes it and the mosaic comes back.
+    public func setPlaylistCover(_ jpeg: Data?, for id: UUID) {
+        guard let file = playlistCoverFile(id), userPlaylist(id) != nil else { return }
+        if let jpeg {
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard (try? jpeg.write(to: file, options: .atomic)) != nil else { return }
+        } else {
+            try? FileManager.default.removeItem(at: file)
+        }
+        editPlaylist(id) {
+            $0.hasCover = jpeg != nil
+            $0.coverVersion += 1
+        }
     }
 
     // MARK: Pins
@@ -829,6 +856,12 @@ public struct UserPlaylist: Identifiable, Hashable, Codable, Sendable {
     public var songs: [Song]
     public var created: Date
     public var modified: Date
+    /// The listener's own words under the name; nil when they wrote none.
+    public var summary: String?
+    /// The listener chose a photo for it (kept at `Library.playlistCoverFile`); else it shows its mosaic.
+    public var hasCover = false
+    /// Bumped whenever the photo changes, so a cached image is never shown as the new one.
+    public var coverVersion = 0
 
     public init(id: UUID = UUID(), name: String, songs: [Song] = [], created: Date = Date()) {
         self.id = id
@@ -836,6 +869,18 @@ public struct UserPlaylist: Identifiable, Hashable, Codable, Sendable {
         self.songs = songs
         self.created = created
         modified = created
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        songs = try container.decode([Song].self, forKey: .songs)
+        created = try container.decode(Date.self, forKey: .created)
+        modified = try container.decodeIfPresent(Date.self, forKey: .modified) ?? created
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        hasCover = try container.decodeIfPresent(Bool.self, forKey: .hasCover) ?? false
+        coverVersion = try container.decodeIfPresent(Int.self, forKey: .coverVersion) ?? 0
     }
 
     public var duration: TimeInterval { songs.compactMap(\.duration).reduce(0, +) }

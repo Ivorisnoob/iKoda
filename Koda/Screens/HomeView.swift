@@ -689,7 +689,7 @@ struct JumpBackIn: View {
                         .padding(8)
                 }
         case .userPlaylist(let p):
-            PlaylistMosaic(songs: p.songs, size: size)
+            PlaylistCover(playlist: p, size: size)
         case .album(let a):
             ArtworkView(artwork: a.artwork, size: size, cornerRadius: 10)
         case .playlist(let p):
@@ -716,7 +716,7 @@ struct JumpBackIn: View {
             }
         case .userPlaylist(let p):
             CoverCard(title: p.name, subtitle: Self.songCount(p.songs.count), width: width) {
-                PlaylistMosaic(songs: p.songs, size: width)
+                PlaylistCover(playlist: p, size: width)
             }
         case .album(let a):
             CoverCard(artwork: a.artwork, title: a.title, subtitle: a.artistLine.isEmpty ? nil : a.artistLine, width: width)

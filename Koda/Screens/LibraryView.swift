@@ -121,7 +121,7 @@ struct LibraryView: View {
                     ForEach(sortedUserPlaylists) { playlist in
                         NavigationLink(value: Route.userPlaylist(playlist.id)) {
                             VStack(alignment: .leading, spacing: 6) {
-                                PlaylistMosaic(songs: playlist.songs, size: 140, cornerRadius: 10)
+                                PlaylistCover(playlist: playlist, size: 140, cornerRadius: 10)
                                 Text(playlist.name).font(.subheadline.weight(.medium)).lineLimit(1)
                                 Text(playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs")
                                     .font(.footnote).foregroundStyle(.secondary)
@@ -243,7 +243,7 @@ private struct PinnedGrid: View {
             }
         case .userPlaylist(let id):
             if let playlist = library.userPlaylist(id) {
-                link(.userPlaylist(id), title: playlist.name, subtitle: "Playlist") { PlaylistMosaic(songs: playlist.songs, size: $0, cornerRadius: 10) }
+                link(.userPlaylist(id), title: playlist.name, subtitle: "Playlist") { PlaylistCover(playlist: playlist, size: $0, cornerRadius: 10) }
             }
         case .liked:
             link(.songs(title: "Liked Songs", source: .liked), title: "Liked Songs", subtitle: "Playlist") { side in

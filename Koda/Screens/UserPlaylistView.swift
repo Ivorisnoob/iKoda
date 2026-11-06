@@ -1,7 +1,10 @@
 import KodaCore
+import PhotosUI
 import SwiftUI
+import UIKit
 
-/// A playlist made on this phone: play it, reorder it, rename or delete it.
+/// A playlist made on this phone: play it, find in it, reorder it, give it a photo, name and
+/// description, or delete it.
 struct UserPlaylistView: View {
     let id: UUID
 
@@ -9,10 +12,13 @@ struct UserPlaylistView: View {
     @Environment(Player.self) private var player
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
-    @State private var renaming = false
+    @State private var editingDetails = false
     @State private var draftName = ""
+    @State private var draftSummary = ""
+    @State private var photo: PhotosPickerItem?
     @State private var confirmDelete = false
     @State private var editMode: EditMode = .inactive
+    @State private var query = ""
 
     var body: some View {
         if let playlist = library.userPlaylist(id) {
@@ -24,22 +30,36 @@ struct UserPlaylistView: View {
 
     private func content(_ playlist: UserPlaylist) -> some View {
         List {
-            header(playlist)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
-
-            ForEach(Array(playlist.songs.enumerated()), id: \.element.id) { index, song in
-                SongRow(song: song) { player.play(playlist.songs, startAt: index) }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
-                    .listRowSeparator(.hidden)
-                    .swipeActions(edge: .leading) {
-                        Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext([song]) }
-                            .tint(.indigo)
-                    }
+            Group {
+                if editMode.isEditing { editableHeader(playlist) } else { header(playlist) }
             }
-            .onDelete { library.removeSongs(atOffsets: $0, fromPlaylist: id) }
-            .onMove { library.moveSongs(fromOffsets: $0, toOffset: $1, inPlaylist: id) }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
+
+            // While finding, rows are the matches: offsets no longer point into the playlist, so
+            // moving and deleting wait until the search is cleared.
+            let finding = !query.isEmpty
+            let shown = finding ? LibrarySearch.songs(playlist.songs, matching: query) : playlist.songs
+            ForEach(shown) { song in
+                SongRow(song: song) {
+                    player.play(playlist.songs, startAt: playlist.songs.firstIndex { $0.id == song.id } ?? 0)
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
+                .listRowSeparator(.hidden)
+                .swipeActions(edge: .leading) {
+                    Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext([song]) }
+                        .tint(.indigo)
+                }
+            }
+            .onDelete(perform: finding ? nil : { library.removeSongs(atOffsets: $0, fromPlaylist: id) })
+            .onMove(perform: finding ? nil : { library.moveSongs(fromOffsets: $0, toOffset: $1, inPlaylist: id) })
+
+            if finding, shown.isEmpty {
+                ContentUnavailableView.search(text: query)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
             if playlist.songs.isEmpty {
                 ContentUnavailableView {
@@ -58,17 +78,25 @@ struct UserPlaylistView: View {
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
+        .searchable(text: $query, placement: .navigationBarDrawer, prompt: "Find in Playlist")
         .background { PlaylistGlow(songs: playlist.songs) }
         .navigationBarTitleDisplayMode(.inline)
         .revealsTitle(playlist.name, after: 300)
         .toolbar {
-            if !playlist.songs.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(editMode.isEditing ? "Done" : "Edit") {
-                        withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(editMode.isEditing ? "Done" : "Edit") {
+                    if editMode.isEditing {
+                        saveDetails()
+                    } else {
+                        draftName = playlist.name
+                        draftSummary = playlist.summary ?? ""
+                        query = ""
                     }
-                    .fontWeight(editMode.isEditing ? .semibold : .regular)
+                    withAnimation { editMode = editMode.isEditing ? .inactive : .active }
                 }
+                .fontWeight(editMode.isEditing ? .semibold : .regular)
+            }
+            if !playlist.songs.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     DownloadButton(songs: playlist.songs)
                 }
@@ -80,19 +108,16 @@ struct UserPlaylistView: View {
                         Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { player.addToQueue(playlist.songs) }
                     }
                     PinMenuItem(pin: .userPlaylist(playlist.id))
-                    Button("Rename", systemImage: "pencil") {
-                        draftName = playlist.name
-                        renaming = true
-                    }
                     Button("Delete Playlist", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 }
             }
         }
-        .alert("Rename Playlist", isPresented: $renaming) {
-            TextField("Name", text: $draftName)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") { library.renamePlaylist(id, to: draftName) }
+        .onChange(of: photo) { _, item in
+            guard let item else { return }
+            Task { await setPhoto(from: item) }
         }
+        // Leaving mid-edit keeps what was typed, as Done would.
+        .onDisappear { if editMode.isEditing { saveDetails() } }
         .confirmationDialog("Delete “\(playlist.name)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Playlist", role: .destructive) {
                 dismiss()
@@ -112,11 +137,12 @@ struct UserPlaylistView: View {
                 title: playlist.name,
                 byline: nil,
                 detail: detail(playlist),
+                description: playlist.summary,
                 canPlay: !playlist.songs.isEmpty,
                 play: { player.play(playlist.songs) },
                 shuffle: { player.play(playlist.songs, startAt: Int.random(in: 0..<max(playlist.songs.count, 1)), shuffled: true) }
             ) { side in
-                PlaylistMosaic(songs: playlist.songs, size: side, cornerRadius: 12)
+                PlaylistCover(playlist: playlist, size: side, cornerRadius: 12)
             } actions: {
                 if !playlist.songs.isEmpty {
                     DownloadButton(songs: playlist.songs)
@@ -129,10 +155,7 @@ struct UserPlaylistView: View {
                         Divider()
                     }
                     PinMenuItem(pin: .userPlaylist(playlist.id))
-                    Button("Rename…", systemImage: "pencil") {
-                        draftName = playlist.name
-                        renaming = true
-                    }
+                    Button("Edit Details…", systemImage: "pencil") { editingDetails = true }
                     Button("Delete Playlist…", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 }
             }
@@ -163,10 +186,8 @@ struct UserPlaylistView: View {
         }
         .background { PlaylistGlow(songs: playlist.songs) }
         .navigationTitle(playlist.name)
-        .alert("Rename Playlist", isPresented: $renaming) {
-            TextField("Name", text: $draftName)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") { library.renamePlaylist(id, to: draftName) }
+        .sheet(isPresented: $editingDetails) {
+            MacPlaylistDetailsSheet(playlist: playlist).appEnvironment(app)
         }
         .confirmationDialog("Delete “\(playlist.name)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Playlist", role: .destructive) { library.deletePlaylist(id) }
@@ -177,7 +198,7 @@ struct UserPlaylistView: View {
 
     private func header(_ playlist: UserPlaylist) -> some View {
         VStack(spacing: 14) {
-            PlaylistMosaic(songs: playlist.songs, size: 232, cornerRadius: 16)
+            PlaylistCover(playlist: playlist, size: 232, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
             VStack(spacing: 4) {
                 Text(playlist.name)
@@ -187,6 +208,13 @@ struct UserPlaylistView: View {
                 Text(detail(playlist))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if let summary = playlist.summary {
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
             }
             if !playlist.songs.isEmpty {
                 PlayShuffleButtons(play: { player.play(playlist.songs) }, shuffle: {
@@ -196,6 +224,51 @@ struct UserPlaylistView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// The header while editing, as Music's: the cover opens a menu to choose or remove a photo,
+    /// and the name and description become fields. Saved with Done.
+    private func editableHeader(_ playlist: UserPlaylist) -> some View {
+        VStack(spacing: 14) {
+            Menu {
+                PhotosPicker(playlist.hasCover ? "Choose Another Photo" : "Choose Photo", selection: $photo, matching: .images)
+                if playlist.hasCover {
+                    Button("Remove Photo", systemImage: "trash", role: .destructive) { library.setPlaylistCover(nil, for: id) }
+                }
+            } label: {
+                PlaylistCover(playlist: playlist, size: 232, cornerRadius: 16)
+                    .overlay {
+                        Image(systemName: "camera.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 64, height: 64)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                    }
+                    .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+            }
+            .accessibilityLabel("Playlist Photo")
+            TextField("Playlist Name", text: $draftName)
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+                .submitLabel(.done)
+            TextField("Description", text: $draftSummary, axis: .vertical)
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .lineLimit(1...5)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func saveDetails() {
+        library.renamePlaylist(id, to: draftName)
+        library.setPlaylistSummary(id, to: draftSummary)
+    }
+
+    private func setPhoto(from item: PhotosPickerItem) async {
+        defer { photo = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        let jpeg = await Task.detached { PlaylistCoverImages.squareJPEG(data) }.value
+        if let jpeg { library.setPlaylistCover(jpeg, for: id) }
     }
 
     private func detail(_ playlist: UserPlaylist) -> String {
@@ -249,6 +322,58 @@ struct PlaylistMosaic: View {
     }
 }
 
+/// One of the listener's playlists drawn as its photo when they chose one, else its mosaic.
+struct PlaylistCover: View {
+    let playlist: UserPlaylist
+    var size: CGFloat
+    var cornerRadius: CGFloat = 10
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        if playlist.hasCover, let image = PlaylistCoverImages.image(for: playlist, in: library) {
+            Color.clear
+                .frame(width: size, height: size)
+                .overlay { Image(uiImage: image).resizable().scaledToFill() }
+                .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(.primary.opacity(0.06), lineWidth: 0.5))
+        } else {
+            PlaylistMosaic(songs: playlist.songs, size: size, cornerRadius: cornerRadius)
+        }
+    }
+}
+
+/// Playlist photos, read once each and kept by playlist and photo version, so a new photo is
+/// never shown as the old one.
+@MainActor
+enum PlaylistCoverImages {
+    private static var cache: [String: UIImage] = [:]
+
+    static func image(for playlist: UserPlaylist, in library: Library) -> UIImage? {
+        let key = "\(playlist.id)-\(playlist.coverVersion)"
+        if let hit = cache[key] { return hit }
+        guard let file = library.playlistCoverFile(playlist.id),
+              let image = (try? Data(contentsOf: file)).flatMap(UIImage.init(data:)) else { return nil }
+        cache[key] = image
+        return image
+    }
+
+    /// A picked photo cropped to a square 1024 pixels wide, as JPEG; nil if it isn't an image.
+    nonisolated static func squareJPEG(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let side = min(image.size.width, image.size.height)
+        guard side > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let target = CGSize(width: min(1024, side), height: min(1024, side))
+        let scale = target.width / side
+        let squared = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(x: -(image.size.width - side) / 2 * scale, y: -(image.size.height - side) / 2 * scale,
+                                  width: image.size.width * scale, height: image.size.height * scale))
+        }
+        return squared.jpegData(compressionQuality: 0.85)
+    }
+}
+
 /// The colour of the playlist's first cover behind its header, as album pages have.
 private struct PlaylistGlow: View {
     let songs: [Song]
@@ -292,17 +417,23 @@ struct AddToPlaylistSheet: View {
                 if !library.userPlaylists.isEmpty {
                     Section("Your Playlists") {
                         ForEach(library.userPlaylists) { playlist in
-                            let containsAll = Set(target.songs.map(\.id)).isSubset(of: Set(playlist.songs.map(\.id)))
+                            let inside = Set(playlist.songs.map(\.id))
+                            let already = Set(target.songs.map(\.id)).intersection(inside).count
+                            let containsAll = already == Set(target.songs.map(\.id)).count
                             Button {
                                 added += 1
                                 library.add(target.songs, toPlaylist: playlist.id)
                                 dismiss()
                             } label: {
                                 HStack(spacing: 14) {
-                                    PlaylistMosaic(songs: playlist.songs, size: 52, cornerRadius: 8)
+                                    PlaylistCover(playlist: playlist, size: 52, cornerRadius: 8)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(playlist.name).font(.body.weight(.medium)).lineLimit(1)
-                                        Text(playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs")
+                                        // Songs already in it are skipped, never added twice; said before the tap.
+                                        Text([playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs",
+                                              containsAll ? (target.songs.count == 1 ? "Already added" : "All already added")
+                                                  : already > 0 ? "\(already) already in it" : nil]
+                                            .compactMap { $0 }.joined(separator: " · "))
                                             .font(.subheadline).foregroundStyle(.secondary)
                                     }
                                     Spacer()
@@ -444,5 +575,67 @@ struct MacNewPlaylistSheet: View {
         let playlist = library.createPlaylist(named: trimmed, songs: target.songs)
         dismiss()
         app.requestedMacSection = .userPlaylist(playlist.id)
+    }
+}
+
+/// The Mac's Edit Details sheet: the photo with Choose and Remove beside it, then the name and
+/// description, saved with Done.
+struct MacPlaylistDetailsSheet: View {
+    let playlist: UserPlaylist
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var summary = ""
+    @State private var photo: PhotosPickerItem?
+
+    private var current: UserPlaylist { library.userPlaylist(playlist.id) ?? playlist }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 18) {
+                PlaylistCover(playlist: current, size: 120, cornerRadius: 10)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Edit Details").font(.headline)
+                    PhotosPicker(current.hasCover ? "Choose Another Photo…" : "Choose Photo…", selection: $photo, matching: .images)
+                    if current.hasCover {
+                        Button("Remove Photo", role: .destructive) { library.setPlaylistCover(nil, for: playlist.id) }
+                    }
+                }
+            }
+            Form {
+                TextField("Name", text: $name)
+                TextField("Description", text: $summary, axis: .vertical)
+                    .lineLimit(3...6)
+            }
+            .formStyle(.columns)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Done") {
+                    library.renamePlaylist(playlist.id, to: name)
+                    library.setPlaylistSummary(playlist.id, to: summary)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .onAppear {
+            name = playlist.name
+            summary = playlist.summary ?? ""
+        }
+        .onChange(of: photo) { _, item in
+            guard let item else { return }
+            Task {
+                defer { photo = nil }
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                let jpeg = await Task.detached { PlaylistCoverImages.squareJPEG(data) }.value
+                if let jpeg { library.setPlaylistCover(jpeg, for: playlist.id) }
+            }
+        }
     }
 }

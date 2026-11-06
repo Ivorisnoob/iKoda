@@ -123,14 +123,27 @@ struct MacSearchResultsView: View {
     var body: some View {
         MacPage(spacing: 32) {
             MacPageTitle(title: model.submitted ?? "Search", subtitle: "Results for") {
-                Picker("Show", selection: $model.filter) {
-                    ForEach(SearchFilter.allCases) { Text($0.title).tag($0) }
+                // Where to look, as Music's search page offers Apple Music or the library.
+                HStack(spacing: 12) {
+                    Picker("Search In", selection: $model.scope) {
+                        Text("YouTube Music").tag(SearchModel.Scope.catalog)
+                        Text("Your Library").tag(SearchModel.Scope.library)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    if model.scope == .catalog {
+                        Picker("Show", selection: $model.filter) {
+                            ForEach(SearchFilter.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
             }
-            if let results = model.results {
+            if model.scope == .library {
+                MacLibrarySearchResults(query: model.submitted ?? model.query)
+            } else if let results = model.results {
                 AsyncContent(state: results, retry: { await model.run(music: app.music) }) { found in
                     if found.isEmpty {
                         ContentUnavailableView.search(text: model.submitted ?? "")
@@ -307,7 +320,7 @@ struct MacLibraryGrid: View {
                                              subtitle: playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs",
                                              width: side,
                                              onPlay: playlist.songs.isEmpty ? nil : { player.play(playlist.songs) }) {
-                                    PlaylistMosaic(songs: playlist.songs, size: side, cornerRadius: 10)
+                                    PlaylistCover(playlist: playlist, size: side, cornerRadius: 10)
                                 }
                             }
                             .buttonStyle(.plain)

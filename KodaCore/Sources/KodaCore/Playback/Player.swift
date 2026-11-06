@@ -103,6 +103,33 @@ public final class Player {
         }
     }
 
+    /// The equalizer preset every song plays through. Songs get a mixer channel while it is on;
+    /// turning it on mid-song gives the playing song one at once rather than from the next.
+    public var equalizer: EqualizerPreset = .off {
+        didSet {
+            persistSettings()
+            guard equalizer != oldValue else { return }
+            TransitionDSP.setEqualizer(equalizer.gains)
+            if equalizer != .off { giveLoadedSongsChannels() }
+        }
+    }
+
+    /// Stream quality on Wi‑Fi and other unmetered networks.
+    public var unmeteredQuality: StreamQuality = .high {
+        didSet { persistSettings() }
+    }
+    /// Stream quality on mobile data or a personal hotspot. Low Data Mode always streams the lighter format.
+    public var meteredQuality: StreamQuality = .high {
+        didSet { persistSettings() }
+    }
+
+    /// The quality for a stream asked for now, on whatever network the device is on.
+    private var streamQuality: StreamQuality {
+        let path = NetworkPath.shared
+        if path.isConstrained { return .dataSaver }
+        return path.isExpensive ? meteredQuality : unmeteredQuality
+    }
+
     /// How songs change over: the three choices of Settings' Song Transitions.
     public enum Transitions: String, CaseIterable, Sendable {
         case autoMix, crossfade, off
@@ -263,6 +290,8 @@ public final class Player {
     static let autoMixLead: TimeInterval = 0.3
     /// Crossfade or AutoMix: the next song waits on the standby player.
     private var usesStandby: Bool { crossfades || autoMix }
+    /// Songs play through a mixer channel (`TransitionDSP`) for AutoMix's moves or the equalizer.
+    private var usesChannels: Bool { autoMix || equalizer != .off }
 
     public init(music: YouTubeMusic, storageDirectory: URL? = nil) {
         self.music = music
@@ -546,7 +575,7 @@ public final class Player {
                 let stream = try await audio(for: item.song)
                 guard token == generation, queue.current?.id == item.id else { return }
                 let playerItem = makeItem(stream, song: item.song)
-                if autoMix {
+                if usesChannels {
                     // Its channel goes on before it plays; adding one to a playing item can glitch.
                     _ = await TransitionDSP.attach(to: playerItem, label: item.song.title)
                     guard token == generation, queue.current?.id == item.id else { return }
@@ -630,15 +659,17 @@ public final class Player {
             return
         }
         let onStandby = usesStandby
-        let withChannel = autoMix
+        let withMix = autoMix
+        let withChannel = usesChannels
         Task {
             guard let stream = try? await audio(for: wanted.song) else { return }
             let item = makeItem(stream, song: wanted.song)
-            if withChannel { _ = await TransitionDSP.attach(to: item, label: wanted.song.title) }
+            // Checked again after the stream: the equalizer may have gone on while it loaded.
+            if withChannel || usesChannels { _ = await TransitionDSP.attach(to: item, label: wanted.song.title) }
             guard token == nextGeneration, queue.current?.id == currentId,
                   queue.peekNext(automatic: true)?.id == wanted.id,
                   let playing = avPlayer.currentItem, occurrences[ObjectIdentifier(playing)] == currentId,
-                  avPlayer.items().count == 1, standby == nil, usesStandby == onStandby, autoMix == withChannel else { return }
+                  avPlayer.items().count == 1, standby == nil, usesStandby == onStandby, autoMix == withMix else { return }
             occurrences[ObjectIdentifier(item)] = wanted.id
             preloaded.insert(ObjectIdentifier(item))
             trace("preloaded \(wanted.song.title)\(onStandby ? " on standby" : "")")
@@ -647,13 +678,23 @@ public final class Player {
                 let player = AVQueuePlayer()
                 player.isMuted = isMuted
                 // AutoMix starts it at a set moment on the clock, which needs it not to wait on its own.
-                if withChannel { player.automaticallyWaitsToMinimizeStalling = false }
+                if withMix { player.automaticallyWaitsToMinimizeStalling = false }
                 player.insert(item, after: nil)
                 standby = (player, item, wanted.id, stream)
-                if withChannel { planAutoMix() }
+                if withMix { planAutoMix() }
             } else {
                 avPlayer.insert(item, after: playing)
             }
+        }
+    }
+
+    /// Channels for the songs already loaded, so the equalizer is heard on the playing one now.
+    private func giveLoadedSongsChannels() {
+        var items = avPlayer.items()
+        if let standby { items.append(standby.item) }
+        for item in items where TransitionDSP.of(item) == nil {
+            let title = occurrences[ObjectIdentifier(item)].flatMap { id in queue.items.first { $0.id == id }?.song.title } ?? "song"
+            Task { _ = await TransitionDSP.attach(to: item, label: title) }
         }
     }
 
@@ -676,13 +717,14 @@ public final class Player {
     /// The song's audio: its file when the phone holds all of it, else a stream from YouTube.
     private func audio(for song: Song) async throws -> ResolvedStream {
         if let file = audioStore?.completeStream(song.id) { return file }
-        return try await music.stream(for: song.id)
+        return try await music.stream(for: song.id, quality: streamQuality)
     }
 
     private func makeItem(_ original: ResolvedStream, song: Song) -> AVPlayerItem {
         let stream = streamRewriter?(original) ?? original
         let asset: AVURLAsset
-        if !stream.url.isFileURL, cachesWhileStreaming, streamRewriter == nil, let audioStore,
+        // A Data Saver stream isn't kept: the song's file should be the best it can be.
+        if !stream.url.isFileURL, cachesWhileStreaming, !stream.isDataSaver, streamRewriter == nil, let audioStore,
            let loader = CachingLoader(stream: stream, song: song, store: audioStore) {
             asset = loader.makeAsset()
         } else {
@@ -1625,6 +1667,9 @@ public final class Player {
         UserDefaults.standard.set(crossfades, forKey: "koda.crossfade")
         UserDefaults.standard.set(crossfadeDuration, forKey: "koda.crossfadeDuration")
         UserDefaults.standard.set(autoMix, forKey: "koda.autoMix")
+        UserDefaults.standard.set(equalizer.rawValue, forKey: "koda.equalizer")
+        UserDefaults.standard.set(unmeteredQuality.rawValue, forKey: "koda.streaming.unmetered")
+        UserDefaults.standard.set(meteredQuality.rawValue, forKey: "koda.streaming.metered")
     }
 
     /// The last queue comes back paused; nothing loads until play is pressed.
@@ -1637,6 +1682,12 @@ public final class Player {
         let savedCrossfade = defaults.object(forKey: "koda.crossfade") as? Bool
         let savedCrossfadeDuration = defaults.object(forKey: "koda.crossfadeDuration") as? Double
         let savedAutoMix = defaults.object(forKey: "koda.autoMix") as? Bool
+        let savedEqualizer = defaults.string(forKey: "koda.equalizer").flatMap(EqualizerPreset.init(rawValue:))
+        let savedUnmetered = defaults.string(forKey: "koda.streaming.unmetered").flatMap(StreamQuality.init(rawValue:))
+        let savedMetered = defaults.string(forKey: "koda.streaming.metered").flatMap(StreamQuality.init(rawValue:))
+        if let savedEqualizer { equalizer = savedEqualizer }
+        if let savedUnmetered { unmeteredQuality = savedUnmetered }
+        if let savedMetered { meteredQuality = savedMetered }
         if let savedAutoMix { autoMix = savedAutoMix }
         if let savedAutoplay { autoplay = savedAutoplay }
         if let savedNormalize { normalizesVolume = savedNormalize }

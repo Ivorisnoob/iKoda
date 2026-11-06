@@ -347,8 +347,8 @@ public final class YouTubeMusic: Sendable {
 
     // MARK: Streams
 
-    public func stream(for videoId: String) async throws -> ResolvedStream {
-        try await streams.resolve(videoId)
+    public func stream(for videoId: String, quality: StreamQuality = .high) async throws -> ResolvedStream {
+        try await streams.resolve(videoId, quality: quality)
     }
 
     /// Forget a stream googlevideo refused mid-play, so the next resolve starts fresh.

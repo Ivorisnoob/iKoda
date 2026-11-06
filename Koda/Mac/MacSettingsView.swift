@@ -458,6 +458,24 @@ private struct MacPlaybackPane: View {
             }
             .disabled(player.transitions != .crossfade)
         }
+        MacSettingsGroup(title: "Sound", footer: "Data Saver streams use about a third of the data, and Low Data Mode always uses it. Downloads and songs kept as you play them are always high quality.") {
+            MacSettingsRow(title: "Equalizer", detail: "Shapes every song you play. Boosted songs play a little quieter, so loud ones never distort.") {
+                Picker("Equalizer", selection: $player.equalizer) {
+                    ForEach(EqualizerPreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
+                        if preset == .off { Divider() }
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            MacSettingsRow(title: "Streaming", detail: "On Wi‑Fi and Ethernet.") {
+                qualityPicker("Streaming", selection: $player.unmeteredQuality)
+            }
+            MacSettingsRow(title: "Streaming on a personal hotspot", detail: "Or any network macOS marks as metered.") {
+                qualityPicker("Streaming on a personal hotspot", selection: $player.meteredQuality)
+            }
+        }
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled
                          ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
                          : nil) {
@@ -498,6 +516,14 @@ private struct MacPlaybackPane: View {
                 .controlSize(.small)
             }
         }
+    }
+
+    private func qualityPicker(_ title: String, selection: Binding<StreamQuality>) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(StreamQuality.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        .labelsHidden()
+        .fixedSize()
     }
 }
 

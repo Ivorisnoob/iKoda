@@ -82,6 +82,7 @@ struct SavedSongsView: View {
     @Environment(Library.self) private var library
     @Environment(Downloads.self) private var downloads
     @AppStorage("koda.likedSort") private var sort: SongSort = .recent
+    @State private var query = ""
 
     private var songs: [Song] {
         switch source {
@@ -186,16 +187,19 @@ struct SavedSongsView: View {
     static let offlineNote = "Songs you download, and songs you play all the way through while Keep Songs You Play is on, are kept on this device and play without a connection."
 
     private var phoneBody: some View {
-        List {
-            if !songs.isEmpty {
-                PlayShuffleButtons(play: { player.play(songs) }, shuffle: {
-                    player.play(songs, startAt: Int.random(in: 0..<songs.count), shuffled: true)
+        let songs = songs
+        // Finding plays the matches, as Music does from a filtered list.
+        let shown = LibrarySearch.songs(songs, matching: query)
+        return List {
+            if !shown.isEmpty {
+                PlayShuffleButtons(play: { player.play(shown) }, shuffle: {
+                    player.play(shown, startAt: Int.random(in: 0..<shown.count), shuffled: true)
                 })
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
-            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                SongRow(song: song) { player.play(songs, startAt: index) }
+            ForEach(Array(shown.enumerated()), id: \.element.id) { index, song in
+                SongRow(song: song) { player.play(shown, startAt: index) }
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
                     .swipeActions(edge: .leading) {
                         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext([song]) }
@@ -215,7 +219,11 @@ struct SavedSongsView: View {
             }
         }
         .listStyle(.plain)
+        .searchable(text: $query, placement: .navigationBarDrawer, prompt: "Find in \(title)")
         .overlay {
+            if !songs.isEmpty, shown.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
             if songs.isEmpty {
                 switch source {
                 case .liked:

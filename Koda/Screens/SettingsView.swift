@@ -42,6 +42,20 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                         }
                     }
+                    NavigationLink {
+                        EqualizerSettingsView()
+                    } label: {
+                        LabeledContent {
+                            Text(player.equalizer.title)
+                        } label: {
+                            SettingLabel("Equalizer", systemImage: "slider.vertical.3", tint: .blue)
+                        }
+                    }
+                    NavigationLink {
+                        AudioQualitySettingsView()
+                    } label: {
+                        SettingLabel("Audio Quality", systemImage: "waveform", tint: .green)
+                    }
                     Toggle(isOn: $settings.showsSkipButtons) {
                         SettingLabel("Skip Buttons", systemImage: settings.skipInterval.forwardSymbol, tint: .orange)
                     }

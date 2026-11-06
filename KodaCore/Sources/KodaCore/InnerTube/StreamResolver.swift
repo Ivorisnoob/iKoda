@@ -12,11 +12,18 @@ public struct ResolvedStream: Sendable, Equatable {
     public var loudnessDb: Double?
     /// When googlevideo stops honouring the URL (its `expire` parameter).
     public var expiresAt: Date?
+    /// The lighter format Data Saver picked: never kept as the song's file, which should be the best one.
+    public var isDataSaver = false
 
     func isFresh(at now: Date = Date()) -> Bool {
         guard let expiresAt else { return true }
         return expiresAt.timeIntervalSince(now) > 10 * 60
     }
+}
+
+/// How much audio to stream: YouTube's 128 kbps AAC, or its 48 kbps HE-AAC for metered networks.
+public enum StreamQuality: String, CaseIterable, Sendable {
+    case high, dataSaver
 }
 
 /// Turns a video id into a playable AAC URL.
@@ -30,8 +37,16 @@ public struct ResolvedStream: Sendable, Equatable {
 actor StreamResolver {
     private let session: URLSession
     private let identity: VisitorIdentity
-    private var cache: [String: ResolvedStream] = [:]
-    private var inFlight: [String: Task<ResolvedStream, Error>] = [:]
+    /// Both formats come from one `/player` answer, so both are kept and either is served.
+    private struct Choices {
+        var best: ResolvedStream
+        var light: ResolvedStream
+
+        func pick(_ quality: StreamQuality) -> ResolvedStream { quality == .high ? best : light }
+    }
+
+    private var cache: [String: Choices] = [:]
+    private var inFlight: [String: Task<Choices, Error>] = [:]
     private var videoCache: [String: VideoStream] = [:]
 
     init(session: URLSession, identity: VisitorIdentity) {
@@ -39,16 +54,16 @@ actor StreamResolver {
         self.identity = identity
     }
 
-    func resolve(_ videoId: String) async throws -> ResolvedStream {
-        if let cached = cache[videoId], cached.isFresh() { return cached }
-        if let running = inFlight[videoId] { return try await running.value }
+    func resolve(_ videoId: String, quality: StreamQuality = .high) async throws -> ResolvedStream {
+        if let cached = cache[videoId], cached.best.isFresh() { return cached.pick(quality) }
+        if let running = inFlight[videoId] { return try await running.value.pick(quality) }
         let task = Task { try await self.fetch(videoId) }
         inFlight[videoId] = task
         defer { inFlight[videoId] = nil }
-        let stream = try await task.value
-        cache[videoId] = stream
-        if cache.count > 200 { cache = cache.filter { $0.value.isFresh() } }
-        return stream
+        let choices = try await task.value
+        cache[videoId] = choices
+        if cache.count > 200 { cache = cache.filter { $0.value.best.isFresh() } }
+        return choices.pick(quality)
     }
 
     // MARK: Video
@@ -93,7 +108,7 @@ actor StreamResolver {
         }
     }
 
-    private func fetch(_ videoId: String) async throws -> ResolvedStream {
+    private func fetch(_ videoId: String) async throws -> Choices {
         guard let token = await identity.current() else { throw MusicError.network }
         switch try await attempt(videoId, token: token) {
         case .stream(let stream):
@@ -108,7 +123,7 @@ actor StreamResolver {
     }
 
     private enum Attempt {
-        case stream(ResolvedStream)
+        case stream(Choices)
         case refused
     }
 
@@ -124,13 +139,14 @@ actor StreamResolver {
         guard let stream = Self.pickAudio(root, videoId: videoId) else {
             throw MusicError.unplayable("No playable audio")
         }
-        if await identity.isVetted(token) { return .stream(stream) }
+        let choices = Choices(best: stream, light: Self.pickAudio(root, videoId: videoId, quality: .dataSaver) ?? stream)
+        if await identity.isVetted(token) { return .stream(choices) }
         switch await servesLastByte(stream) {
         case .some(false): return .refused
         case .some(true): await identity.markVetted(token)
         case .none: break
         }
-        return .stream(stream)
+        return .stream(choices)
     }
 
     private func player(_ videoId: String, token: String) async throws -> JSON {
@@ -187,9 +203,9 @@ actor StreamResolver {
         }
     }
 
-    /// The best AAC/M4A audio-only format of the original soundtrack.
-    /// AVPlayer cannot play the Opus/WebM formats, so they are never candidates.
-    static func pickAudio(_ root: JSON, videoId: String) -> ResolvedStream? {
+    /// The best AAC/M4A audio-only format of the original soundtrack, or with Data Saver the
+    /// lightest. AVPlayer cannot play the Opus/WebM formats, so they are never candidates.
+    static func pickAudio(_ root: JSON, videoId: String, quality: StreamQuality = .high) -> ResolvedStream? {
         let formats = root["streamingData"]["adaptiveFormats"].array.filter {
             let mime = $0["mimeType"].string ?? ""
             return mime.hasPrefix("audio/mp4") && $0["url"].nonEmpty != nil
@@ -198,7 +214,8 @@ actor StreamResolver {
         let originals = formats.filter { $0["audioTrack"]["audioIsDefault"].bool == true }
         let candidates = originals.isEmpty ? formats.filter { !$0["audioTrack"].exists } : originals
         let pool = candidates.isEmpty ? formats : candidates
-        guard let best = pool.max(by: { ($0["bitrate"].int ?? 0) < ($1["bitrate"].int ?? 0) }),
+        let byBitrate: (JSON, JSON) -> Bool = { ($0["bitrate"].int ?? 0) < ($1["bitrate"].int ?? 0) }
+        guard let best = quality == .high ? pool.max(by: byBitrate) : pool.min(by: byBitrate),
               let url = best["url"].string.flatMap(URL.init(string:)) else { return nil }
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let expire = query.first { $0.name == "expire" }?.value.flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
@@ -211,7 +228,8 @@ actor StreamResolver {
             contentLength: best["contentLength"].string.flatMap { Int64($0) },
             duration: durationMs.map { $0 / 1000 } ?? root["videoDetails"]["lengthSeconds"].double,
             loudnessDb: best["loudnessDb"].double,
-            expiresAt: expire)
+            expiresAt: expire,
+            isDataSaver: quality == .dataSaver)
     }
 
     private static func nonce(_ length: Int) -> String {

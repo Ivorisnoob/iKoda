@@ -4,9 +4,10 @@ import MediaToolbox
 import ObjectiveC
 import os
 
-/// The mixer channel each song plays through with AutoMix on: an `MTAudioProcessingTap` on
-/// the item's audio that applies an `Automation` (gain, high-pass, low-pass) by the item's
-/// own time, sample by sample, so fades never step and filter sweeps never zipper.
+/// The mixer channel each song plays through with AutoMix or the equalizer on: an
+/// `MTAudioProcessingTap` on the item's audio that applies the equalizer's curve, then an
+/// `Automation` (gain, high-pass, low-pass) by the item's own time, sample by sample, so
+/// fades never step and filter sweeps never zipper.
 ///
 /// The render thread never waits: it takes the newest automation only when the lock is free
 /// and otherwise keeps the one it has. Levels it measures are left for the player to read
@@ -43,6 +44,9 @@ final class TransitionDSP: @unchecked Sendable {
     private var lastHighPass: Float = 0
     private var lastLowPass: Float = 0
     private var formatNoted = false
+    private var equalizerVersion = -1
+    private var equalizer: Equalizer.Design?
+    private var equalizerStages: [[Biquad]] = []
 
     init(label: String) {
         self.label = label
@@ -73,6 +77,18 @@ final class TransitionDSP: @unchecked Sendable {
     func clear() { set(Automation()) }
 
     var meter: Meter { shared.withLock { $0.meter } }
+
+    // MARK: Equalizer
+
+    /// One curve for every channel: a change reaches the playing song at its next block.
+    private static let equalizerGains = OSAllocatedUnfairLock(initialState: (gains: [Float](), version: 0))
+
+    static func setEqualizer(_ gains: [Float]) {
+        equalizerGains.withLock {
+            $0.gains = gains
+            $0.version += 1
+        }
+    }
 
     // MARK: Attaching
 
@@ -147,6 +163,8 @@ final class TransitionDSP: @unchecked Sendable {
         lowPassStage = (0..<channels).map { _ in Biquad() }
         highPassOn = false
         lowPassOn = false
+        // Redesigned for this rate at the next block.
+        equalizerVersion = -1
         if !formatNoted {
             formatNoted = true
             let interleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
@@ -169,6 +187,7 @@ final class TransitionDSP: @unchecked Sendable {
         let offset = MemoryLayout<AudioBufferList>.offset(of: \AudioBufferList.mBuffers) ?? MemoryLayout<UInt32>.stride * 2
         let first = UnsafeMutableRawPointer(list).advanced(by: offset).assumingMemoryBound(to: AudioBuffer.self)
         let buffers = UnsafeMutableBufferPointer(start: first, count: Int(list.pointee.mNumberBuffers))
+        applyEqualizer(buffers, frames: frames)
         let start = range.start.seconds
         // Item seconds per frame: faster than 1 / sampleRate while the song plays sped up.
         let step = range.duration.isValid && range.duration.seconds > 0 ? range.duration.seconds / Double(frames) : 1 / sampleRate
@@ -230,6 +249,43 @@ final class TransitionDSP: @unchecked Sendable {
                           gain: automation.gain(at: start), highPass: highPassOn ? lastHighPass : Automation.highPassOff,
                           lowPass: lowPassOn ? lastLowPass : 20_000)
         _ = shared.withLockIfAvailable { $0.meter = meter }
+    }
+
+    /// Runs the equalizer's sections over the block in place. The curve is redesigned only when
+    /// it or the sample rate changed; the filters keep their state across a change, so moving
+    /// between presets mid-song doesn't click.
+    private func applyEqualizer(_ buffers: UnsafeMutableBufferPointer<AudioBuffer>, frames: Int) {
+        if let fresh = Self.equalizerGains.withLockIfAvailable({ $0.version == equalizerVersion ? nil : $0 }), let fresh {
+            equalizerVersion = fresh.version
+            equalizer = Equalizer.design(fresh.gains, sampleRate: sampleRate)
+            let count = equalizer?.sections.count ?? 0
+            let channels = lowPassStage.count
+            if equalizerStages.count != channels || equalizerStages.first?.count != count {
+                equalizerStages = (0..<channels).map { _ in Array(repeating: Biquad(), count: count) }
+            }
+            if let equalizer {
+                for c in equalizerStages.indices {
+                    for (i, coefficients) in equalizer.sections.enumerated() { equalizerStages[c][i].coefficients = coefficients }
+                }
+            }
+        }
+        guard let equalizer else { return }
+        let preamp = equalizer.preamp
+        let sections = equalizer.sections.count
+        for (c, buffer) in buffers.enumerated() {
+            guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
+            let stride = Int(buffer.mNumberChannels)
+            for ch in 0..<stride {
+                let channel = buffers.count > 1 ? c : ch
+                guard channel < equalizerStages.count else { continue }
+                for i in 0..<frames {
+                    let index = i * stride + ch
+                    var x = data[index]
+                    for s in 0..<sections { x = equalizerStages[channel][s].run(x) }
+                    data[index] = x * preamp
+                }
+            }
+        }
     }
 
     private func updateFilters(highPass: Float, lowPass: Float) {

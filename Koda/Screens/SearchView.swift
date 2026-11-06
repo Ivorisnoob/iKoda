@@ -4,9 +4,15 @@ import SwiftUI
 @MainActor
 @Observable
 final class SearchModel {
+    /// YouTube Music's catalogue, or the listener's own library, as Music's two search scopes.
+    enum Scope: Hashable {
+        case catalog, library
+    }
+
     var query = ""
     var submitted: String?
     var filter: SearchFilter = .all
+    var scope: Scope = .catalog
     private(set) var suggestions: [String] = []
     private(set) var results: LoadState<SearchResults>?
     /// Last launch's moods first, so the tiles are there at once; refreshed once per model.
@@ -26,7 +32,7 @@ final class SearchModel {
 
     func suggest(music: YouTubeMusic) async {
         let text = query.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty, submitted != text else {
+        guard scope == .catalog, !text.isEmpty, submitted != text else {
             suggestions = []
             return
         }
@@ -78,7 +84,9 @@ struct SearchView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if model.submitted != nil, model.query == model.submitted {
+            if model.scope == .library, !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                LibrarySearchResults(query: model.query)
+            } else if model.submitted != nil, model.query == model.submitted {
                 SearchResultsView(model: model)
             } else if !model.query.isEmpty {
                 suggestionsList
@@ -87,7 +95,11 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
-        .searchable(text: $model.query, prompt: "Songs, artists, albums or a link")
+        .searchable(text: $model.query, prompt: model.scope == .library ? "Your Library" : "Songs, artists, albums or a link")
+        .searchScopes($model.scope, activation: .onSearchPresentation) {
+            Text("YouTube Music").tag(SearchModel.Scope.catalog)
+            Text("Your Library").tag(SearchModel.Scope.library)
+        }
         .onSubmit(of: .search) { submit(model.query) }
         .onChange(of: model.query) { _, text in
             if text.isEmpty { model.clear() }
@@ -111,7 +123,7 @@ struct SearchView: View {
             }
             .appEnvironment(app)
         }
-        .task(id: model.query) { await model.suggest(music: app.music) }
+        .task(id: [model.query, model.scope == .library ? "library" : ""]) { await model.suggest(music: app.music) }
         .task { await model.loadMoods(music: app.music) }
     }
 
@@ -122,6 +134,8 @@ struct SearchView: View {
             app.openLink(link)
             return
         }
+        // The library's matches are already showing as you type.
+        guard model.scope == .catalog else { return }
         if app.settings.savesSearchHistory { library.recordSearch(text) }
         Task { await model.search(text, music: app.music) }
     }

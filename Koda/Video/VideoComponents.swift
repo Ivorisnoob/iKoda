@@ -102,6 +102,36 @@ struct VideoThumbnail: View {
     }
 }
 
+/// The spinner at the end of a list that pages. It asks for the next page whenever it comes into
+/// view, and again after each page while it's still in view. A `.task` on the spinner ran once,
+/// when it was made: in a page that isn't lazy (the Mac's) that was at once, so scrolling down
+/// found a spinner that never loaded anything.
+struct LoadMoreTrigger: View {
+    let load: () async -> Void
+    @State private var isVisible = false
+    @State private var round = 0
+
+    private struct Key: Equatable {
+        let visible: Bool
+        let round: Int
+    }
+
+    var body: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
+            .task(id: Key(visible: isVisible, round: round)) {
+                guard isVisible else { return }
+                await load()
+                // A breath between pages, so a page that adds nothing (or fails) isn't asked again at once.
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                round += 1
+            }
+    }
+}
+
 /// A channel's round picture.
 struct ChannelAvatar: View {
     let avatar: Artwork?

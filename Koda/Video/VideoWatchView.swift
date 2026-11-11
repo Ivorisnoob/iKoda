@@ -325,9 +325,7 @@ struct VideoWatchView: View {
                         .contextMenu { VideoMenuItems(video: related) }
                     }
                     if page.related.continuation != nil {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .task { await watch.loadMore(music: app.music) }
+                        LoadMoreTrigger { await watch.loadMore(music: app.music) }
                     }
                 }
             }
@@ -645,10 +643,8 @@ struct CommentsSheet: View {
                     .listRowSeparator(.hidden)
             }
             if model.canLoadMore {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
+                LoadMoreTrigger { await model.loadMore(music: app.music) }
                     .listRowSeparator(.hidden)
-                    .task { await model.loadMore(music: app.music) }
             }
         }
         .listStyle(.plain)

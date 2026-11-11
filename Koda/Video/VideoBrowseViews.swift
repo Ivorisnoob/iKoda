@@ -172,9 +172,7 @@ struct VideoPlaylistView: View {
         case .loaded(let page):
             list(shown(page.videos))
             if page.continuation != nil {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .task { await loadMore() }
+                LoadMoreTrigger { await loadMore() }
             }
         }
     }

@@ -279,9 +279,7 @@ struct ChannelView: View {
     @ViewBuilder
     private func more(_ page: ChannelPage) -> some View {
         if page.videos.continuation != nil, page.videos.videos.first?.id.hasPrefix("placeholder") != true {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .task { await model.loadMore(music: app.music) }
+            LoadMoreTrigger { await model.loadMore(music: app.music) }
         } else if page.videos.videos.isEmpty {
             ContentUnavailableView(page.tab == .live ? "No Live Streams" : "No Videos", systemImage: "play.rectangle",
                                    description: Text("Nothing here yet."))

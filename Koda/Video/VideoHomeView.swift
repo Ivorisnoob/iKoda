@@ -71,9 +71,7 @@ struct VideoHomeView: View {
                     .padding(.horizontal, VideoMetrics.side)
                 }
                 if model.canLoadMore {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .task { await model.loadMore(music: app.music, library: library) }
+                    LoadMoreTrigger { await model.loadMore(music: app.music, library: library) }
                 }
             }
         }
@@ -153,9 +151,7 @@ struct VideoGrid: View {
                 VideoCardGrid(videos: shown)
                     .animation(.smooth, value: filter)
                 if model.canLoadMore {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .task { await model.loadMore(music: app.music, library: library) }
+                    LoadMoreTrigger { await model.loadMore(music: app.music, library: library) }
                 }
             }
         }
@@ -323,9 +319,7 @@ struct VideoSearchResultsView: View {
                 }
             }
             if results.videos.continuation != nil {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .task { await model.loadMore(music: app.music) }
+                LoadMoreTrigger { await model.loadMore(music: app.music) }
             }
         }
         .padding(.vertical, 8)

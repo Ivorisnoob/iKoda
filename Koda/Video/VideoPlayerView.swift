@@ -1356,7 +1356,7 @@ private struct MacTimeline: View {
 }
 
 /// The timeline's line, broken where each chapter after the first starts.
-private struct ChapterTrack: Shape {
+private nonisolated struct ChapterTrack: Shape {
     /// Where chapters start, as fractions of the video.
     let starts: [CGFloat]
 

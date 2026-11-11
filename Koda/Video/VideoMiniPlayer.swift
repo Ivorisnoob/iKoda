@@ -22,11 +22,11 @@ struct VideoMiniPlayer: View {
                         .clipShape(.rect(cornerRadius: isInline ? 5 : 7, style: .continuous))
                     VStack(alignment: .leading, spacing: 0) {
                         Text(video.title)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.scaled(.subheadline).weight(.semibold))
                             .lineLimit(1)
                         if !isInline {
                             Text(subtitle(video))
-                                .font(.caption)
+                                .font(.scaled(.caption))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .contentTransition(.numericText(countsDown: true))
@@ -45,7 +45,7 @@ struct VideoMiniPlayer: View {
                     } label: {
                         Image(systemName: playback.hasEnded && playback.autoplayCountdown == nil ? "arrow.counterclockwise"
                               : playback.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 20))
+                            .font(.scaledSystem(size: 20))
                             .contentTransition(.symbolEffect(.replace.downUp))
                             .frame(width: 36, height: 36)
                             .contentShape(.rect)
@@ -58,7 +58,7 @@ struct VideoMiniPlayer: View {
                         withAnimation(.smooth) { playback.stop() }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.scaledSystem(size: 16, weight: .semibold))
                             .frame(width: 36, height: 36)
                             .contentShape(.rect)
                     }
@@ -113,9 +113,9 @@ struct MacVideoBar: View {
                         .frame(width: 80, height: 45)
                         .clipShape(.rect(cornerRadius: 8, style: .continuous))
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(video.title).font(.headline).lineLimit(1)
+                            Text(video.title).font(.scaled(.headline)).lineLimit(1)
                             Text(playback.autoplayCountdown.map { "Up next in \($0)" } ?? video.channel?.name ?? "")
-                                .font(.subheadline)
+                                .font(.scaled(.subheadline))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -159,8 +159,8 @@ struct MacVideoBar: View {
             .frame(height: 68)
             // The whole bar takes the click: glass alone doesn't, and a click between its
             // buttons went through to the page scrolled under it.
-            .contentShape(.rect(cornerRadius: 22, style: .continuous))
-            .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+            .contentShape(.capsule)
+            .glassEffect(.regular, in: .capsule)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
         }
@@ -171,7 +171,7 @@ struct MacVideoBar: View {
                             style: HierarchicalShapeStyle = .primary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: size, weight: weight))
+                .font(.scaledSystem(size: size, weight: weight))
                 .foregroundStyle(style)
                 .frame(width: 32, height: 32)
                 .contentShape(.rect)

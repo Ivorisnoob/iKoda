@@ -32,7 +32,7 @@ struct DownloadIndicator: View {
             EmptyView()
         case .waiting:
             Image(systemName: "arrow.down.circle.dotted")
-                .font(.footnote)
+                .font(.scaled(.footnote))
                 .foregroundStyle(.tertiary)
                 .accessibilityLabel("Waiting to download")
         case .downloading(let progress):
@@ -40,7 +40,7 @@ struct DownloadIndicator: View {
                 .frame(width: 13, height: 13)
         case .downloaded:
             Image(systemName: "arrow.down.circle.fill")
-                .font(.footnote)
+                .font(.scaled(.footnote))
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Downloaded")
         }

@@ -41,18 +41,18 @@ struct CollectionHeader: View {
                 .padding(.bottom, 4)
             VStack(spacing: 4) {
                 Text(title)
-                    .font(.title2.bold())
+                    .font(.scaled(.title2).bold())
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                 if let byline, !byline.isEmpty {
                     let opens = !ArtistRef.linked(bylineArtists).isEmpty
                     ArtistLinks(line: byline, artists: bylineArtists, open: openArtist) {
-                        Text(byline).font(.title3).foregroundStyle(opens ? readableAccent : .secondary).lineLimit(1)
+                        Text(byline).font(.scaled(.title3)).foregroundStyle(opens ? readableAccent : .secondary).lineLimit(1)
                     }
                 }
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.footnote.weight(.medium))
+                        .font(.scaled(.footnote).weight(.medium))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                 }
@@ -63,7 +63,7 @@ struct CollectionHeader: View {
                 .padding(.top, 4)
             if let description, !description.isEmpty {
                 Text(description)
-                    .font(.footnote)
+                    .font(.scaled(.footnote))
                     .foregroundStyle(.secondary)
                     .lineLimit(expanded ? nil : 3)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -325,7 +325,7 @@ struct SongListView: View {
         List {
             VStack(alignment: .leading, spacing: 14) {
                 if let subtitle {
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    Text(subtitle).font(.scaled(.subheadline)).foregroundStyle(.secondary)
                 }
                 PlayShuffleButtons(play: { player.play(songs) }, shuffle: {
                     player.play(songs, startAt: Int.random(in: 0..<max(songs.count, 1)), shuffled: true)

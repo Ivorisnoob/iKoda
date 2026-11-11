@@ -111,7 +111,7 @@ struct AlbumView: View {
 
                         if let detail = page.detailLine {
                             Text(detail)
-                                .font(.footnote)
+                                .font(.scaled(.footnote))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 20)
                         }

@@ -66,7 +66,7 @@ struct Scrubber: View {
                     Spacer()
                     Text("-" + format(max(0, duration - fraction * duration)))
                 }
-                .font(.caption.monospacedDigit().weight(.medium))
+                .font(.scaled(.caption).monospacedDigit().weight(.medium))
                 .foregroundStyle(.white.opacity(0.6))
                 // Where Music says it: under the bar, between the times.
                 .overlay {
@@ -112,7 +112,7 @@ struct VolumeSlider: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "speaker.fill")
-                .font(.caption)
+                .font(.scaled(.caption))
                 .accessibilityHidden(true)
             GeometryReader { geometry in
                 let width = geometry.size.width
@@ -143,7 +143,7 @@ struct VolumeSlider: View {
             .frame(height: 24)
             .animation(.smooth, value: dragging)
             Image(systemName: "speaker.wave.3.fill")
-                .font(.caption)
+                .font(.scaled(.caption))
                 .accessibilityHidden(true)
         }
         .foregroundStyle(.white.opacity(0.6))

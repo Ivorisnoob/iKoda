@@ -19,11 +19,11 @@ struct SongRow: View {
                 leading
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
-                        .font(.body)
+                        .font(.scaled(.body))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
                     Text(subtitle ?? song.artistLine)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -31,7 +31,7 @@ struct SongRow: View {
                 DownloadIndicator(song: song)
                 if song.isVideo {
                     Image(systemName: "play.rectangle")
-                        .font(.caption)
+                        .font(.scaled(.caption))
                         .foregroundStyle(.tertiary)
                         .accessibilityLabel("Music video")
                 }
@@ -58,7 +58,7 @@ struct SongRow: View {
                     NowPlayingBars(isPlaying: player.wantsToPlay)
                 } else {
                     Text("\(number)")
-                        .font(.body.monospacedDigit())
+                        .font(.scaled(.body).monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
@@ -81,7 +81,7 @@ struct NowPlayingBars: View {
 
     var body: some View {
         Image(systemName: "waveform")
-            .font(.body.weight(.semibold))
+            .font(.scaled(.body).weight(.semibold))
             .foregroundStyle(Color.accentColor)
             .symbolEffect(.variableColor.iterative.reversing, options: .repeat(.continuous), isActive: isPlaying)
             .accessibilityLabel(isPlaying ? "Playing" : "Paused")
@@ -109,10 +109,10 @@ struct SongPreview: View {
         VStack(alignment: .leading, spacing: 12) {
             ArtworkView(artwork: song.artwork, size: 260, cornerRadius: 12)
             VStack(alignment: .leading, spacing: 2) {
-                Text(song.title).font(.headline).lineLimit(2)
-                Text(song.artistLine).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(song.title).font(.scaled(.headline)).lineLimit(2)
+                Text(song.artistLine).font(.scaled(.subheadline)).foregroundStyle(.secondary).lineLimit(1)
                 if let album = song.album?.title {
-                    Text(album).font(.subheadline).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(album).font(.scaled(.subheadline)).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
         }

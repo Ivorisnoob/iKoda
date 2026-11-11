@@ -85,7 +85,7 @@ private struct WelcomePage: View {
                         .frame(width: 104, height: 104)
                         .accessibilityHidden(true)
                     Text("Welcome to Koda")
-                        .font(.largeTitle.bold())
+                        .font(.scaled(.largeTitle).bold())
                         .multilineTextAlignment(.center)
                 }
                 .padding(.top, 48)
@@ -122,13 +122,13 @@ private struct WelcomeFeature: View {
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             Image(systemName: systemImage)
-                .font(.title)
+                .font(.scaled(.title))
                 .foregroundStyle(.tint)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 44)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline)
+                Text(title).font(.scaled(.headline))
                 Text(detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -152,14 +152,14 @@ private struct OnboardingAccountPage: View {
         ScrollView {
             VStack(spacing: 22) {
                 Image(systemName: profile.isSignedIn ? "checkmark.circle.fill" : "music.note.house.fill")
-                    .font(.system(size: 64))
+                    .font(.scaledSystem(size: 64))
                     .foregroundStyle(.tint)
                     .symbolRenderingMode(.hierarchical)
                     .contentTransition(.symbolEffect(.replace))
                     .padding(.top, 32)
                     .accessibilityHidden(true)
                 Text(profile.isSignedIn ? "You're Signed In" : "Bring Your YouTube Music")
-                    .font(.largeTitle.bold())
+                    .font(.scaled(.largeTitle).bold())
                     .multilineTextAlignment(.center)
                 Text(profile.isSignedIn
                      ? "Your likes, playlists and saved albums are coming in now, and stay in step from here on."
@@ -172,8 +172,8 @@ private struct OnboardingAccountPage: View {
                         HStack(spacing: 14) {
                             ProfileAvatar(profile: profile, size: 48)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(profile.displayName).font(.headline)
-                                Text(profile.handle ?? "YouTube Music").font(.subheadline).foregroundStyle(.secondary)
+                                Text(profile.displayName).font(.scaled(.headline))
+                                Text(profile.handle ?? "YouTube Music").font(.scaled(.subheadline)).foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
                         }
@@ -184,7 +184,7 @@ private struct OnboardingAccountPage: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Add Plays to YouTube History")
                                 Text("Songs you play for 15 seconds appear in your YouTube Music history and shape its recommendations.")
-                                    .font(.footnote)
+                                    .font(.scaled(.footnote))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -199,7 +199,7 @@ private struct OnboardingAccountPage: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Videos Too")
                         Text("Add YouTube itself beside your music, with a Music and Video switch on Home. You can change this in Settings.")
-                            .font(.footnote)
+                            .font(.scaled(.footnote))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -220,7 +220,7 @@ private struct OnboardingAccountPage: View {
                     NavigationLink {
                         YouTubeSignInView(into: profile.id)
                     } label: {
-                        Text("Sign In to YouTube Music").font(.headline).frame(maxWidth: .infinity)
+                        Text("Sign In to YouTube Music").font(.scaled(.headline)).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.glassProminent)
                     .controlSize(.extraLarge)
@@ -250,13 +250,13 @@ private struct OnboardingDonePage: View {
         VStack(spacing: 18) {
             Spacer()
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 72))
+                .font(.scaledSystem(size: 72))
                 .foregroundStyle(.tint)
                 .symbolRenderingMode(.hierarchical)
                 .symbolEffect(.bounce, value: appeared)
                 .accessibilityHidden(true)
             Text(isFirstLaunch ? "You're All Set" : "Taste Updated")
-                .font(.largeTitle.bold())
+                .font(.scaled(.largeTitle).bold())
             Text(summary)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -296,7 +296,7 @@ struct OnboardingButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title).font(.headline).frame(maxWidth: .infinity)
+            Text(title).font(.scaled(.headline)).frame(maxWidth: .infinity)
         }
         .buttonStyle(.glassProminent)
         .controlSize(.extraLarge)
@@ -314,7 +314,7 @@ struct OnboardingHeader: View {
     var body: some View {
         VStack(spacing: 8) {
             Text(title)
-                .font(.largeTitle.bold())
+                .font(.scaled(.largeTitle).bold())
                 .multilineTextAlignment(.center)
             Text(detail)
                 .foregroundStyle(.secondary)

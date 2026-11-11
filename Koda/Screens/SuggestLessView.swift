@@ -29,7 +29,7 @@ struct SuggestLessView: View {
                             ArtworkView(artwork: song.artwork, size: 40, cornerRadius: 6)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(song.title).lineLimit(1)
-                                Text(song.artistLine).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                Text(song.artistLine).font(.scaled(.subheadline)).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
                         .swipeActions {

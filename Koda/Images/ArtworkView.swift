@@ -29,7 +29,7 @@ struct ArtworkView: View {
             .overlay {
                 if image == nil {
                     Image(systemName: circle ? "music.mic" : "music.note")
-                        .font(.system(size: size * 0.3, weight: .medium))
+                        .font(.scaledSystem(size: size * 0.3, weight: .medium))
                         .foregroundStyle(.tertiary)
                 }
             }

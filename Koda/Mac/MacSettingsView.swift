@@ -17,9 +17,9 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .lastFM: "Last.fm"
         case .discord: "Discord"
-        case .privacy: "History & Privacy"
+        case .privacy: Platform.isNativeMac ? "Privacy" : "History & Privacy"
         case .storage: "Storage"
-        case .backup: "Back Up & Restore"
+        case .backup: Platform.isNativeMac ? "Backup" : "Back Up & Restore"
         case .about: "About Koda"
         }
     }
@@ -61,9 +61,38 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
 struct MacSettingsView: View {
     static let windowID = "settings"
     @Environment(AppModel.self) private var app
+    #if os(macOS)
+    /// Reopens on the pane last used, as the Mac's Settings windows do.
+    @AppStorage("koda.mac.settingsPane") private var pane: MacSettingsPane = .playback
+    #else
     @State private var pane: MacSettingsPane = .playback
+    #endif
 
     var body: some View {
+        #if os(macOS)
+        // The Mac's Settings window: a pane per toolbar button, the window titled after the pane.
+        TabView(selection: $pane) {
+            ForEach(MacSettingsPane.allCases) { item in
+                Tab(item.title, systemImage: item.systemImage, value: item) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) { paneContent(item) }
+                            .padding(24)
+                    }
+                }
+            }
+        }
+        .frame(width: 780, height: 600)
+        .onChange(of: app.requestedSettingsPane, initial: true) { _, requested in
+            guard let requested else { return }
+            pane = requested
+            app.requestedSettingsPane = nil
+        }
+        #else
+        catalystBody
+        #endif
+    }
+
+    private var catalystBody: some View {
         NavigationSplitView {
             List {
                 ForEach(MacSettingsPane.allCases) { item in
@@ -83,7 +112,7 @@ struct MacSettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(spacing: 12) {
                         MacSettingsTile(systemImage: pane.systemImage, tint: pane.tint, size: 32)
-                        Text(pane.title).font(.title2.bold())
+                        Text(pane.title).font(.scaled(.title2).bold())
                     }
                     content
                 }
@@ -103,8 +132,10 @@ struct MacSettingsView: View {
         }
     }
 
+    private var content: some View { paneContent(pane) }
+
     @ViewBuilder
-    private var content: some View {
+    private func paneContent(_ pane: MacSettingsPane) -> some View {
         switch pane {
         case .profile: MacProfilePane()
         case .playback: MacPlaybackPane()
@@ -130,7 +161,7 @@ struct MacSettingsTile: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: size * 0.52, weight: .semibold))
+            .font(.scaledSystem(size: size * 0.52, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(tint.gradient, in: .rect(cornerRadius: size * 0.24, style: .continuous))
@@ -146,7 +177,7 @@ private struct MacSettingsSidebarRow: View {
         HStack(spacing: 9) {
             MacSettingsTile(systemImage: pane.systemImage, tint: pane.tint)
             Text(pane.title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .font(.scaledSystem(size: 13, weight: isSelected ? .semibold : .regular))
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -171,7 +202,7 @@ struct MacSettingsGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 6) {
             if let title {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.scaledSystem(size: 13, weight: .semibold))
                     .padding(.leading, 2)
             }
             VStack(spacing: 0) {
@@ -186,7 +217,7 @@ struct MacSettingsGroup<Content: View>: View {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
             if let footer {
                 Text(footer)
-                    .font(.system(size: 11))
+                    .font(.scaledSystem(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 2)
@@ -204,10 +235,10 @@ struct MacSettingsRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13))
+                Text(title).font(.scaledSystem(size: 13))
                 if let detail {
                     Text(detail)
-                        .font(.system(size: 11))
+                        .font(.scaledSystem(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -305,7 +336,7 @@ private struct MacProfilePane: View {
                     TextField("Name", text: Binding(get: { profile.name }, set: { name in app.roster.update(id) { $0.name = name } }))
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
-                    Text(profile.subtitle).font(.system(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
+                    Text(profile.subtitle).font(.scaledSystem(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
                 }
                 Spacer()
             }
@@ -402,12 +433,12 @@ private struct MacProfileRow: View {
         HStack(spacing: 10) {
             ProfileAvatar(profile: profile, size: 30)
             VStack(alignment: .leading, spacing: 1) {
-                Text(profile.displayName).font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                Text(profile.subtitle).font(.system(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
+                Text(profile.displayName).font(.scaledSystem(size: 13, weight: isSelected ? .semibold : .regular))
+                Text(profile.subtitle).font(.scaledSystem(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
             }
             Spacer()
             if profile.id == app.roster.activeID {
-                Text("Current").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                Text("Current").font(.scaledSystem(size: 11, weight: .medium)).foregroundStyle(.secondary)
             } else {
                 Button("Switch") { app.switchProfile(to: profile.id) }
                     .controlSize(.small)
@@ -594,6 +625,12 @@ private struct MacAppearancePane: View {
                 .pickerStyle(.segmented)
                 .fixedSize()
             }
+            #if os(macOS)
+            MacSettingsRow(title: "Interface size",
+                           detail: "How large Koda's text is. View → Zoom In and Zoom Out (⌘+ and ⌘−) change it too. The sidebar follows the Sidebar icon size in System Settings → Appearance.") {
+                InterfaceSizeSlider()
+            }
+            #endif
             MacSettingsToggle(title: "Moving player colours",
                               detail: "The playing song's colours drift behind Now Playing. They always hold still with Reduce Motion on.",
                               isOn: $settings.animatesPlayerBackground)
@@ -607,12 +644,37 @@ private struct MacAppearancePane: View {
             }
         }
         MacSettingsGroup(title: "Home") {
+            MacSettingsToggle(title: "Your Mix",
+                              detail: "A mix of radios from the artists you play most, at the top of Home.",
+                              isOn: $settings.showsMixOnHome)
             MacSettingsToggle(title: "Charts on Home",
                               detail: "YouTube Music's global and local charts as a row on Home.",
                               isOn: $settings.showsChartsOnHome)
         }
     }
 }
+
+#if os(macOS)
+/// System Settings' Text Size control: a small A and a large A either side of the steps.
+private struct InterfaceSizeSlider: View {
+    @Bindable private var scale = InterfaceScale.shared
+
+    var body: some View {
+        let steps = InterfaceScale.steps
+        let index = Binding<Double>(
+            get: { Double(steps.firstIndex(of: scale.factor) ?? 2) },
+            set: { scale.factor = steps[min(steps.count - 1, max(0, Int($0.rounded())))] })
+        HStack(spacing: 8) {
+            Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
+            Slider(value: index, in: 0...Double(steps.count - 1), step: 1)
+                .frame(width: 180)
+                .accessibilityLabel("Interface size")
+                .accessibilityValue(Text(scale.factor, format: .percent.precision(.fractionLength(0))))
+            Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
+        }
+    }
+}
+#endif
 
 private struct MacLastFMPane: View {
     @Environment(AppModel.self) private var app

@@ -38,7 +38,7 @@ struct SettingsView: View {
                             } maximumValueLabel: {
                                 Text("12 s")
                             }
-                            .font(.caption)
+                            .font(.scaled(.caption))
                             .foregroundStyle(.secondary)
                         }
                     }
@@ -165,13 +165,16 @@ struct SettingsView: View {
                         SettingLabel("Your Taste", systemImage: "sparkles", tint: .pink)
                     }
                     .foregroundStyle(.primary)
+                    Toggle(isOn: $settings.showsMixOnHome) {
+                        SettingLabel("Your Mix", systemImage: "square.stack.3d.up.fill", tint: .purple)
+                    }
                     Toggle(isOn: $settings.showsChartsOnHome) {
                         SettingLabel("Charts on Home", systemImage: "chart.line.uptrend.xyaxis", tint: .red)
                     }
                 } header: {
                     Text("Home")
                 } footer: {
-                    Text("Your Taste is the artists, genres and songs Home starts from. Charts on Home adds YouTube Music's global and local charts to Home.")
+                    Text("Your Taste is the artists, genres and songs Home starts from. Your Mix is a mix of radios from the artists you play most. Charts on Home adds YouTube Music's global and local charts to Home.")
                 }
 
                 Section {
@@ -245,7 +248,7 @@ struct SettingLabel: View {
             Text(title)
         } icon: {
             Image(systemName: systemImage)
-                .font(.footnote.weight(.semibold))
+                .font(.scaled(.footnote).weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 29, height: 29)
                 .background(tint.gradient, in: .rect(cornerRadius: 7, style: .continuous))
@@ -266,7 +269,7 @@ struct LyricsSettingsView: View {
                     Toggle(isOn: Binding(get: { settings.isEnabled(source) }, set: { settings.setEnabled(source, $0) })) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(source.title)
-                            Text(source.detail).font(.footnote).foregroundStyle(.secondary)
+                            Text(source.detail).font(.scaled(.footnote)).foregroundStyle(.secondary)
                         }
                     }
                     .disabled(settings.isEnabled(source) && settings.lyricsSources.count == 1)

@@ -54,6 +54,9 @@ struct MacRootView: View {
     @AppStorage("koda.mac.sidebar.channels") private var channelsExpanded = true
     @AppStorage("koda.mac.sidebar.explore") private var exploreExpanded = false
     @Environment(\.openWindow) private var openWindow
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
 
     var body: some View {
         dialogs(nowPlayingLayer(routing(searching(splitView))))
@@ -144,7 +147,6 @@ struct MacRootView: View {
         .onChange(of: search.query) { _, text in
             if text.isEmpty {
                 search.clear()
-                if section == .search { section = .browse }
                 if section == .videoSearch {
                     videoSearch.clear()
                     section = .videos
@@ -178,7 +180,8 @@ struct MacRootView: View {
             case .videoSearch: section = .videos
                 searchFocused = true
             case .search:
-                if section != .search { section = .browse }
+                musicExpanded = true
+                section = .search
                 searchFocused = true
             }
         }
@@ -224,7 +227,17 @@ struct MacRootView: View {
         .onChange(of: model.isProfilePresented) { _, asked in
             guard asked else { return }
             model.isProfilePresented = false
+            #if os(macOS)
+            openSettings()
+            #else
             openWindow(id: MacSettingsView.windowID, value: MacSettingsView.windowID)
+            #endif
+        }
+        .onChange(of: model.isNamingPlaylist) { _, asked in
+            guard asked else { return }
+            model.isNamingPlaylist = false
+            draftName = ""
+            namingPlaylist = true
         }
     }
 
@@ -265,12 +278,11 @@ struct MacRootView: View {
     /// switch, you go where you want and the toolbar's search and the player bar follow. Each
     /// group folds away with the system's disclosure; Videos is there with Video mode on.
     private var sidebar: some View {
-        List {
-            musicSidebar
-            if model.settings.videoModeEnabled { videoSidebar }
-        }
+        sidebarList
         .listStyle(.sidebar)
+        #if !os(macOS)
         .environment(\.defaultMinListRowHeight, 28)
+        #endif
         // The channels under Subscriptions: one call (YouTube's sidebar), once there is a place for them.
         .task(id: "\(model.roster.activeID)|\(model.settings.videoModeEnabled)|\(model.subscribedChannels == nil)") {
             if model.settings.videoModeEnabled, model.subscribedChannels == nil { await model.loadSubscribedChannels() }
@@ -282,11 +294,42 @@ struct MacRootView: View {
         // Remembered for the next launch (and the iPhone's tabs follow the same setting there).
         .onChange(of: section) { _, section in
             model.settings.mode = (section ?? .home).isVideo ? .video : .music
+            // Search in the sidebar puts the cursor in the field, ready to type.
+            if section == .search { searchFocused = true }
         }
         .onChange(of: model.settings.videoModeEnabled) { _, enabled in
             if !enabled, (section ?? .home).isVideo { section = .home }
         }
     }
+
+    /// The Mac's own selectable sidebar natively: AppKit sizes its rows, text and symbols from
+    /// System Settings → Appearance → Sidebar icon size, and draws the selection and the
+    /// symbols in the accent colour. Catalyst drew it iPad-sized, so there the rows are Koda's.
+    @ViewBuilder
+    private var sidebarList: some View {
+        #if os(macOS)
+        List(selection: sidebarSelection) {
+            musicSidebar
+            if model.settings.videoModeEnabled { videoSidebar }
+        }
+        #else
+        List {
+            musicSidebar
+            if model.settings.videoModeEnabled { videoSidebar }
+        }
+        #endif
+    }
+
+    #if os(macOS)
+    /// A click in the sidebar always lands on its page, closing Now Playing if it's open.
+    private var sidebarSelection: Binding<MacSection?> {
+        Binding(get: { section }, set: { target in
+            guard let target else { return }
+            if showsNowPlaying { closeNowPlaying() }
+            section = target
+        })
+    }
+    #endif
 
     /// The list, with Up Next, today's listening and the profile under it. Below the list rather
     /// than over it (a `safeAreaBar`): Catalyst's sidebar list draws no scroll edge effect, so rows
@@ -363,12 +406,7 @@ struct MacRootView: View {
     private func pinnedRow(_ pin: Pin) -> some View {
         switch pin {
         case .song(let song):
-            Button { player.play([song]) } label: {
-                MacSidebarLabel(title: song.title, systemImage: "music.note", isSelected: false)
-            }
-            .buttonStyle(.plain)
-            .listRowInsets(MacSidebarLabel.insets)
-            .listRowBackground(Color.clear)
+            sidebarAction(song.title, "music.note") { player.play([song]) }
         case .album(let album): sidebarRow(album.title, "square.stack", .pinned(pin))
         case .playlist(let playlist): sidebarRow(playlist.title, "music.note.list", .pinned(pin))
         case .artist(let artist): sidebarRow(artist.name, "music.mic", .pinned(pin))
@@ -381,13 +419,12 @@ struct MacRootView: View {
     @ViewBuilder
     private var musicSidebar: some View {
         pinnedSidebar
+        // Search first, as Music's sidebar has it: one place that shows moods and genres to
+        // browse until something is searched, then the results.
         Section("Music", isExpanded: $musicExpanded) {
+            sidebarRow("Search", "magnifyingglass", .search)
             sidebarRow("Home", "house", .home)
             sidebarRow("Radio", "dot.radiowaves.left.and.right", .radio)
-            sidebarRow("Browse", "square.grid.2x2", .browse)
-            if search.submitted != nil {
-                sidebarRow("Search Results", "magnifyingglass", .search)
-            }
         }
         Section("Library", isExpanded: $libraryExpanded) {
             sidebarRow("Recently Played", "clock", .recent)
@@ -415,15 +452,10 @@ struct MacRootView: View {
                         Button("Delete Playlist…", systemImage: "trash", role: .destructive) { deleting = playlist }
                     }
             }
-            Button {
+            sidebarAction("New Playlist", "plus", dimmed: true) {
                 draftName = ""
                 namingPlaylist = true
-            } label: {
-                MacSidebarLabel(title: "New Playlist", systemImage: "plus", isSelected: false, dimmed: true)
             }
-            .buttonStyle(.plain)
-            .listRowInsets(MacSidebarLabel.insets)
-            .listRowBackground(Color.clear)
         }
     }
 
@@ -448,6 +480,18 @@ struct MacRootView: View {
 
     private func sidebarRow(_ title: String, _ systemImage: String, _ target: MacSection, count: Int = 0,
                             avatar: Artwork? = nil) -> some View {
+        #if os(macOS)
+        Label {
+            Text(title)
+        } icon: {
+            if let avatar { ChannelAvatar(avatar: avatar, size: 16) } else { Image(systemName: systemImage) }
+        }
+        .badge(count)
+        // The symbol in Koda's colour, or in the one chosen in System Settings when it isn't
+        // Multicolour, as the Mac's sidebars have them.
+        .listItemTint(.preferred(.accentColor))
+        .tag(target)
+        #else
         Button {
             // A click in the sidebar always lands on its page, closing Now Playing if it's open;
             // clicking the section you're in goes back to its first page, as Music's sidebar does.
@@ -466,6 +510,25 @@ struct MacRootView: View {
         .listRowInsets(MacSidebarLabel.insets)
         .listRowBackground(Color.clear)
         .accessibilityAddTraits(section == target ? .isSelected : [])
+        #endif
+    }
+
+    /// A sidebar row that does something rather than going somewhere (play a pinned song, make a
+    /// playlist): never selected.
+    private func sidebarAction(_ title: String, _ systemImage: String, dimmed: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            #if os(macOS)
+            Label(title, systemImage: systemImage)
+                .foregroundStyle(dimmed ? .secondary : .primary)
+            #else
+            MacSidebarLabel(title: title, systemImage: systemImage, isSelected: false, dimmed: dimmed)
+            #endif
+        }
+        .buttonStyle(.plain)
+        #if !os(macOS)
+        .listRowInsets(MacSidebarLabel.insets)
+        .listRowBackground(Color.clear)
+        #endif
     }
 
     /// The listener, at the foot of the sidebar: a menu of the profiles to switch between, as
@@ -495,12 +558,12 @@ struct MacRootView: View {
             HStack(spacing: 10) {
                 ProfileAvatar(profile: active, size: 28)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(active.displayName).font(.callout.weight(.semibold)).lineLimit(1)
-                    Text(active.subtitle).font(.caption).foregroundStyle(active.isExpired ? .red : .secondary).lineLimit(1)
+                    Text(active.displayName).font(.scaled(.callout).weight(.semibold)).lineLimit(1)
+                    Text(active.subtitle).font(.scaled(.caption)).foregroundStyle(active.isExpired ? .red : .secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .foregroundStyle(.secondary)
             }
             .padding(8)
@@ -522,8 +585,12 @@ struct MacRootView: View {
         switch section ?? .home {
         case .home: MacHomeView(model: model.home).id(model.roster.activeID)
         case .radio: RadioView()
-        case .browse: MacBrowseView(search: search) { submit($0) }
-        case .search: MacSearchResultsView(model: search)
+        case .search, .browse:
+            if search.submitted == nil {
+                MacBrowseView(search: search) { submit($0) }
+            } else {
+                MacSearchResultsView(model: search)
+            }
         case .recent: SavedSongsView(title: "Recently Played", source: .recent)
         case .liked: SavedSongsView(title: "Liked Songs", source: .liked)
         case .downloads: SavedSongsView(title: "Downloads", source: .downloaded)
@@ -637,18 +704,18 @@ struct MacSidebarLabel: View {
                 ChannelAvatar(avatar: avatar, size: 18)
             } else {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .regular))
+                    .font(.scaledSystem(size: 14, weight: .regular))
                     .foregroundStyle(dimmed ? Color.secondary : Color.accentColor)
                     .frame(width: 18)
             }
             Text(title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .font(.scaledSystem(size: 13, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(dimmed ? Color.secondary : Color.primary)
                 .lineLimit(1)
             Spacer(minLength: 4)
             if count > 0 {
                 Text("\(count)")
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .font(.scaledSystem(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
@@ -678,11 +745,11 @@ private struct MacSidebarGlance: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("Up Next")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.scaledSystem(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button("Show All", action: openQueue)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.scaledSystem(size: 11, weight: .medium))
                             .buttonStyle(.plain)
                             .foregroundStyle(Color.accentColor)
                     }
@@ -696,16 +763,16 @@ private struct MacSidebarGlance: View {
             Button(action: openStats) {
                 HStack(spacing: 10) {
                     Image(systemName: "headphones")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.scaledSystem(size: 13, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 28, height: 28)
                         .background(Color.accentColor.opacity(0.15), in: .rect(cornerRadius: 7, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(library.listening(on: Date()).listeningText) today")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.scaledSystem(size: 12, weight: .semibold))
                         let streak = library.streak()
                         Text(streak == 0 ? "Play something to start a streak" : streak == 1 ? "1-day streak" : "\(streak)-day streak")
-                            .font(.system(size: 11))
+                            .font(.scaledSystem(size: 11))
                             .foregroundStyle(.secondary)
                     }
                     .lineLimit(1)
@@ -732,15 +799,15 @@ private struct MacUpNextRow: View {
     var body: some View {
         Button { player.jump(to: item.id) } label: {
             HStack(spacing: 8) {
-                ArtworkView(artwork: item.song.artwork, size: 28, cornerRadius: 5)
+                ArtworkView(artwork: item.song.artwork, size: CGFloat(28).scaled, cornerRadius: 5)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(item.song.title).font(.system(size: 12, weight: .medium))
-                    Text(item.song.artistLine).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(item.song.title).font(.scaledSystem(size: 12, weight: .medium))
+                    Text(item.song.artistLine).font(.scaledSystem(size: 11)).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
                 Spacer(minLength: 0)
                 if hovering {
-                    Image(systemName: "play.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    Image(systemName: "play.fill").font(.scaledSystem(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 }
             }
             .padding(4)

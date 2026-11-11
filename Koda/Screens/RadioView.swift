@@ -225,8 +225,8 @@ private struct StationCard<Cover: View>: View {
                     .overlay { GeometryReader { cover($0.size.width) } }
                     .clipShape(.rect(cornerRadius: 14, style: .continuous))
                     .overlay(alignment: .bottomLeading) { StationBadge(isStarting: stations.starting == id).padding(10) }
-                Text(title).font(.headline).lineLimit(1)
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.scaled(.headline)).lineLimit(1)
+                Text(subtitle).font(.scaled(.subheadline)).foregroundStyle(.secondary).lineLimit(1)
             }
             .contentShape(.rect)
         }
@@ -246,7 +246,7 @@ private struct StationBadge: View {
                 ProgressView().controlSize(.small).tint(.white)
             } else {
                 Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.footnote.weight(.bold))
+                    .font(.scaled(.footnote).weight(.bold))
                     .foregroundStyle(.white)
             }
         }
@@ -273,7 +273,7 @@ private struct ArtistStationButton: View {
             VStack(spacing: 8) {
                 ArtworkView(artwork: artist.artwork, size: 104, circle: true)
                     .overlay(alignment: .bottomTrailing) { StationBadge(isStarting: stations.starting == id) }
-                Text(artist.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                Text(artist.name).font(.scaled(.subheadline).weight(.medium)).lineLimit(1)
             }
             .frame(width: 104)
             .contentShape(.rect)

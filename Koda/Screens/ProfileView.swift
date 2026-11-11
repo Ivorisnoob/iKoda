@@ -95,7 +95,7 @@ struct ProfileView: View {
                     topArtists(summary)
                     NavigationLink(value: Route.stats) {
                         Label("All Listening Stats", systemImage: "chart.bar.xaxis")
-                            .font(.body.weight(.semibold))
+                            .font(.scaled(.body).weight(.semibold))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.glass)
@@ -133,7 +133,7 @@ struct ProfileView: View {
                 ProfileAvatar(profile: profile, size: 112)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "pencil")
-                            .font(.footnote.weight(.semibold))
+                            .font(.scaled(.footnote).weight(.semibold))
                             .foregroundStyle(.primary)
                             .frame(width: 32, height: 32)
                             .glassEffect(.regular.interactive(), in: .circle)
@@ -144,19 +144,19 @@ struct ProfileView: View {
             .accessibilityLabel("Edit Profile")
 
             VStack(spacing: 2) {
-                Text(profile.displayName).font(.title.bold())
+                Text(profile.displayName).font(.scaled(.title).bold())
                 Text(profile.subtitle)
-                    .font(.subheadline.weight(.medium))
+                    .font(.scaled(.subheadline).weight(.medium))
                     .foregroundStyle(profile.isExpired ? .red : .secondary)
             }
 
             if let first = summary.firstPlayed {
                 Text("Listening since \(first.formatted(.dateTime.month(.wide).year()))")
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
             } else {
                 Text("Play something and your stats start here.")
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
             }
         }
@@ -217,18 +217,18 @@ struct StatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Image(systemName: systemImage)
-                .font(.subheadline.weight(.semibold))
+                .font(.scaled(.subheadline).weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
                 .background(tint.gradient, in: .rect(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.title3.weight(.bold))
+                    .font(.scaled(.title3).weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
                 Text(title)
-                    .font(.footnote)
+                    .font(.scaled(.footnote))
                     .foregroundStyle(.secondary)
             }
         }
@@ -253,16 +253,16 @@ struct WeekChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.headline)
+                Text(title).font(.scaled(.headline))
                 Spacer()
                 if let shown {
                     Text("\(shown.date.formatted(.dateTime.weekday(.wide))) · \((shown.minutes * 60).listeningText)")
-                        .font(.subheadline.monospacedDigit())
+                        .font(.scaled(.subheadline).monospacedDigit())
                         .foregroundStyle(.secondary)
                         .transition(.opacity)
                 } else {
                     Text("Average \((days.reduce(0) { $0 + $1.minutes } * 60 / Double(max(days.count, 1))).listeningText) a day")
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -307,7 +307,7 @@ struct TopSongsList: View {
                 }
                 .overlay(alignment: .leading) {
                     Text("\(index + 1)")
-                        .font(.caption2.weight(.bold).monospacedDigit())
+                        .font(.scaled(.caption2).weight(.bold).monospacedDigit())
                         .foregroundStyle(.white)
                         .frame(minWidth: 18, minHeight: 18)
                         .background(.black.opacity(0.55), in: .capsule)
@@ -328,13 +328,13 @@ private struct TopArtistCard: View {
                 ArtworkView(artwork: artist.artwork, size: 96, circle: true)
                     .overlay(alignment: .topLeading) {
                         Text("\(rank)")
-                            .font(.caption.weight(.bold).monospacedDigit())
+                            .font(.scaled(.caption).weight(.bold).monospacedDigit())
                             .frame(width: 26, height: 26)
                             .glassEffect(.regular, in: .circle)
                     }
                 VStack(spacing: 1) {
-                    Text(artist.name).font(.subheadline.weight(.medium)).lineLimit(1)
-                    Text(artist.seconds.listeningText).font(.caption).foregroundStyle(.secondary)
+                    Text(artist.name).font(.scaled(.subheadline).weight(.medium)).lineLimit(1)
+                    Text(artist.seconds.listeningText).font(.scaled(.caption)).foregroundStyle(.secondary)
                 }
             }
             .frame(width: 104)
@@ -435,14 +435,14 @@ struct StatsView: View {
                             ForEach(Array(summary.topArtists.prefix(10).enumerated()), id: \.element.id) { index, artist in
                                 HStack(spacing: 12) {
                                     Text("\(index + 1)")
-                                        .font(.callout.monospacedDigit().weight(.semibold))
+                                        .font(.scaled(.callout).monospacedDigit().weight(.semibold))
                                         .foregroundStyle(.secondary)
                                         .frame(width: 24)
                                     ArtworkView(artwork: artist.artwork, size: 40, circle: true)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(artist.name).font(.callout.weight(.medium)).lineLimit(1)
+                                        Text(artist.name).font(.scaled(.callout).weight(.medium)).lineLimit(1)
                                         Text("\(artist.seconds.listeningText) · \(artist.plays == 1 ? "1 play" : "\(artist.plays) plays")")
-                                            .font(.subheadline).foregroundStyle(.secondary)
+                                            .font(.scaled(.subheadline)).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                 }
@@ -500,14 +500,14 @@ struct StatsView: View {
                         ForEach(Array(summary.topArtists.prefix(10).enumerated()), id: \.element.id) { index, artist in
                             HStack(spacing: 12) {
                                 Text("\(index + 1)")
-                                    .font(.body.monospacedDigit().weight(.semibold))
+                                    .font(.scaled(.body).monospacedDigit().weight(.semibold))
                                     .foregroundStyle(.secondary)
                                     .frame(width: 24)
                                 ArtworkView(artwork: artist.artwork, size: 44, circle: true)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(artist.name).font(.body).lineLimit(1)
+                                    Text(artist.name).font(.scaled(.body)).lineLimit(1)
                                     Text("\(artist.seconds.listeningText) · \(artist.plays == 1 ? "1 play" : "\(artist.plays) plays")")
-                                        .font(.subheadline).foregroundStyle(.secondary)
+                                        .font(.scaled(.subheadline)).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                             }

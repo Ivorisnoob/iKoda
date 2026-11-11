@@ -120,6 +120,8 @@ final class AppSettings {
     /// The cover's colours drift behind Now Playing; off, they hold still.
     var animatesPlayerBackground: Bool { didSet { defaults.set(animatesPlayerBackground, forKey: Keys.animatedBackground) } }
     var animatedArt: AnimatedArt { didSet { defaults.set(animatedArt.rawValue, forKey: Keys.animatedArt) } }
+    /// Your Mix at the top of Home; off, it isn't made at all, so it costs no requests.
+    var showsMixOnHome: Bool { didSet { defaults.set(showsMixOnHome, forKey: Keys.homeMix) } }
     /// YouTube Music's charts as a row on Home: the one row there not built from the listener.
     var showsChartsOnHome: Bool { didSet { defaults.set(showsChartsOnHome, forKey: Keys.homeCharts) } }
     /// Every lyrics service, best first; the order decides which answer wins.
@@ -172,6 +174,7 @@ final class AppSettings {
         static let animatedBackground = "koda.player.animatedBackground"
         static let animatedArt = "koda.player.animatedArt"
         static let homeCharts = "koda.home.charts"
+        static let homeMix = "koda.home.mix"
         static let lyricsOrder = "koda.lyrics.order"
         static let lyricsDisabled = "koda.lyrics.disabled"
         static let lyricsMotion = "koda.lyrics.motion"
@@ -202,6 +205,7 @@ final class AppSettings {
         // Wi-Fi only to begin with: a new album's loop is a few megabytes, about a song's worth.
         animatedArt = d.string(forKey: Keys.animatedArt).flatMap(AnimatedArt.init(rawValue:)) ?? .wifiOnly
         showsChartsOnHome = d.object(forKey: Keys.homeCharts) as? Bool ?? true
+        showsMixOnHome = d.object(forKey: Keys.homeMix) as? Bool ?? true
         // Services added in a later version join at the end of a saved order.
         let saved = (d.stringArray(forKey: Keys.lyricsOrder) ?? []).compactMap(LyricsSource.init(rawValue:))
         lyricsSourceOrder = saved + LyricsSource.allCases.filter { !saved.contains($0) }

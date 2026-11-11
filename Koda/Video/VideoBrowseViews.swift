@@ -234,7 +234,7 @@ struct SubscribedChannelsView: View {
                             NavigationLink(value: Route.channel(id: id, name: channel.name)) {
                                 HStack(spacing: 12) {
                                     ChannelAvatar(avatar: channel.avatar, size: 40)
-                                    Text(channel.name).font(.body.weight(.medium))
+                                    Text(channel.name).font(.scaled(.body).weight(.medium))
                                 }
                             }
                         }
@@ -260,7 +260,7 @@ struct SubscribedChannelsView: View {
                 VStack(spacing: 8) {
                     ChannelAvatar(avatar: channel.avatar, size: 96)
                     Text(channel.name)
-                        .font(.subheadline.weight(.medium))
+                        .font(.scaled(.subheadline).weight(.medium))
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                 }

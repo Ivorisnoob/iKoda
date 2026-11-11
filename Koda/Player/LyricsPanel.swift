@@ -19,7 +19,7 @@ struct LyricsPanel: View {
             case .loaded(.plain(let text)?):
                 ScrollView {
                     Text(text)
-                        .font(.title3.weight(.semibold))
+                        .font(.scaled(.title3).weight(.semibold))
                         .lineSpacing(6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 12)

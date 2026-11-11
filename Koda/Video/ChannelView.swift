@@ -137,9 +137,9 @@ struct ChannelView: View {
                             Text(description)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.right").font(.scaled(.caption).weight(.semibold)).foregroundStyle(.tertiary)
                         }
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                         .contentShape(.rect)
                     }
@@ -185,13 +185,13 @@ struct ChannelView: View {
                     .textSelection(.enabled)
                 if page.isVerified {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.title3)
+                        .font(.scaled(.title3))
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Verified")
                 }
             }
             Text([page.channel.handle, page.channel.subscribers, page.videoCount].compactMap { $0 }.joined(separator: " · "))
-                .font(.subheadline)
+                .font(.scaled(.subheadline))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
@@ -213,7 +213,7 @@ struct ChannelView: View {
                     identity(page, nameFont: .largeTitle.bold())
                     if let description = page.description {
                         Text(description)
-                            .font(.subheadline)
+                            .font(.scaled(.subheadline))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .frame(maxWidth: 640, alignment: .leading)
@@ -250,7 +250,7 @@ struct ChannelView: View {
                     .pickerStyle(.segmented)
                     .fixedSize()
                 } else {
-                    Text(page.tab.title).font(.title3.bold())
+                    Text(page.tab.title).font(.scaled(.title3).bold())
                 }
                 Spacer(minLength: 0)
                 if !page.sorts.isEmpty {
@@ -264,7 +264,7 @@ struct ChannelView: View {
                         }
                     } label: {
                         Label(selected.title, systemImage: "arrow.up.arrow.down")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.scaled(.subheadline).weight(.semibold))
                     }
                     .menuStyle(.button)
                     .buttonStyle(.glass)
@@ -337,7 +337,7 @@ private struct ChannelAboutSheet: View {
             if let description = about.description {
                 Section("Description") {
                     Text(description)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .textSelection(.enabled)
                 }
             }
@@ -346,7 +346,7 @@ private struct ChannelAboutSheet: View {
                     ForEach(about.links) { link in
                         Link(destination: link.url) {
                             LabeledContent {
-                                Image(systemName: "arrow.up.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                Image(systemName: "arrow.up.right").font(.scaled(.footnote).weight(.semibold)).foregroundStyle(.tertiary)
                             } label: {
                                 Text(link.title)
                                 Text(link.label)

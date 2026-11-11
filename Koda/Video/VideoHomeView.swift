@@ -268,11 +268,11 @@ private struct ChannelCell: View {
         VStack(spacing: 6) {
             ChannelAvatar(avatar: channel.avatar, size: 72)
             Text(channel.name)
-                .font(.subheadline.weight(.medium))
+                .font(.scaled(.subheadline).weight(.medium))
                 .lineLimit(1)
             if let subscribers = channel.subscribers {
                 Text(subscribers.replacingOccurrences(of: " subscribers", with: ""))
-                    .font(.caption)
+                    .font(.scaled(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

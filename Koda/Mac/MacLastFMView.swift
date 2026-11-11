@@ -70,21 +70,21 @@ private struct MacLastFMConnected: View {
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(lastFM.profile?.realName.isEmpty == false ? lastFM.profile!.realName : lastFM.user)
-                        .font(.title2.bold())
-                    Text("@\(lastFM.user)").font(.callout).foregroundStyle(.secondary)
+                        .font(.scaled(.title2).bold())
+                    Text("@\(lastFM.user)").font(.scaled(.callout)).foregroundStyle(.secondary)
                 }
                 if let profile = lastFM.profile {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(profile.playCount.formatted())
-                            .font(.system(size: 30, weight: .bold).monospacedDigit())
+                            .font(.scaledSystem(size: 30, weight: .bold).monospacedDigit())
                             .foregroundStyle(.red)
                             .contentTransition(.numericText())
                         Text(profile.playCount == 1 ? "scrobble" : "scrobbles")
-                            .font(.callout)
+                            .font(.scaled(.callout))
                             .foregroundStyle(.secondary)
                     }
                     if let since = LastFMUI.since(profile) {
-                        Text(since).font(.caption).foregroundStyle(.secondary)
+                        Text(since).font(.scaled(.caption)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -93,9 +93,9 @@ private struct MacLastFMConnected: View {
 
             Toggle(isOn: Binding(get: { lastFM.isEnabled }, set: { lastFM.setEnabled($0) })) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Scrobble").font(.body.weight(.semibold))
+                    Text("Scrobble").font(.scaled(.body).weight(.semibold))
                     Text(LastFMUI.status(lastFM))
-                        .font(.caption)
+                        .font(.scaled(.caption))
                         .foregroundStyle(lastFM.isPaused ? .orange : .secondary)
                 }
             }
@@ -103,17 +103,17 @@ private struct MacLastFMConnected: View {
 
             if let error = lastFM.error {
                 Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .font(.scaled(.caption))
                     .foregroundStyle(.orange)
             }
             if let notice = lastFM.notice {
                 Label(notice, systemImage: "info.circle")
-                    .font(.caption)
+                    .font(.scaled(.caption))
                     .foregroundStyle(.secondary)
             }
 
             Text("A song counts once you've heard half of it, or four minutes. Videos aren't scrobbled. Offline plays wait on this Mac and send in order later.")
-                .font(.caption)
+                .font(.scaled(.caption))
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -149,7 +149,7 @@ private struct MacLastFMConnected: View {
             ForEach(days, id: \.title) { day in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(day.title)
-                        .font(.caption.weight(.semibold))
+                        .font(.scaled(.caption).weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .padding(.leading, 8)
@@ -192,14 +192,14 @@ private struct MacLastFMConnect: View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 16) {
                 Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.scaledSystem(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 60, height: 60)
                     .background(Color.red.gradient, in: .rect(cornerRadius: 15, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Scrobble to Last.fm").font(.title2.bold())
+                    Text("Scrobble to Last.fm").font(.scaled(.title2).bold())
                     Text("Keep a record of what you play in Koda on your Last.fm profile. Koda never sees your password: you approve it on Last.fm's own page.")
-                        .font(.callout)
+                        .font(.scaled(.callout))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -227,7 +227,7 @@ private struct MacLastFMConnect: View {
                         }
                     }
                     .textFieldStyle(.roundedBorder)
-                    .font(.body.monospaced())
+                    .font(.scaled(.body).monospaced())
                     .autocorrectionDisabled()
                     .frame(maxWidth: 440)
                 }
@@ -247,11 +247,11 @@ private struct MacLastFMConnect: View {
 
             if let error = lastFM.error {
                 Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(.scaled(.callout))
                     .foregroundStyle(.orange)
             }
             Text("Your API keys and session stay in this Mac's Keychain, out of backups. Turn scrobbling off any time; pausing listening history pauses it too.")
-                .font(.caption)
+                .font(.scaled(.caption))
                 .foregroundStyle(.secondary)
         }
         .padding(28)
@@ -265,9 +265,9 @@ private struct MacLastFMConnect: View {
     private var waiting: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Waiting for you to approve Koda on Last.fm", systemImage: "hourglass")
-                .font(.headline)
+                .font(.scaled(.headline))
             Text("The approval page is good for an hour.")
-                .font(.callout)
+                .font(.scaled(.callout))
                 .foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 Button("I've Approved Koda") { Task { try? await lastFM.finishSignIn() } }
@@ -285,14 +285,14 @@ private struct MacLastFMConnect: View {
     private func step<Content: View>(_ number: Int, _ title: String, _ detail: String, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(number)")
-                .font(.callout.weight(.bold).monospacedDigit())
+                .font(.scaled(.callout).weight(.bold).monospacedDigit())
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .background(Color.accentColor, in: .circle)
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
-                    Text(detail).font(.callout).foregroundStyle(.secondary)
+                    Text(title).font(.scaled(.headline))
+                    Text(detail).font(.scaled(.callout)).foregroundStyle(.secondary)
                 }
                 content()
             }

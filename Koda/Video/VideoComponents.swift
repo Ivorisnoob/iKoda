@@ -70,7 +70,7 @@ struct VideoThumbnail: View {
         if video.isLive {
             Label("Live", systemImage: "dot.radiowaves.left.and.right")
                 .labelStyle(.titleAndIcon)
-                .font(.caption2.weight(.bold))
+                .font(.scaled(.caption2).weight(.bold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(.red, in: .capsule)
@@ -78,7 +78,7 @@ struct VideoThumbnail: View {
                 .padding(6)
         } else if let duration = video.duration {
             Text(Duration.seconds(duration).formatted(duration >= 3600 ? .time(pattern: .hourMinuteSecond) : .time(pattern: .minuteSecond)))
-                .font(.caption2.weight(.semibold).monospacedDigit())
+                .font(.scaled(.caption2).weight(.semibold).monospacedDigit())
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(.black.opacity(0.75), in: .rect(cornerRadius: 5, style: .continuous))
@@ -115,13 +115,13 @@ struct VideoCard: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(video.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.scaled(.subheadline).weight(.semibold))
                         .lineLimit(2, reservesSpace: true)
                         .multilineTextAlignment(.leading)
                         // A grid cell otherwise held the title to one line and an ellipsis.
                         .fixedSize(horizontal: false, vertical: true)
                     Text(showsChannel ? video.byline : [video.views, video.published].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
+                        .font(.scaled(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -145,15 +145,15 @@ struct VideoRow: View {
                 .frame(width: thumbnailWidth)
             VStack(alignment: .leading, spacing: 3) {
                 Text(video.title)
-                    .font(.subheadline.weight(.medium))
+                    .font(.scaled(.subheadline).weight(.medium))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 if let channel = video.channel?.name {
-                    Text(channel).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(channel).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 let stats = [video.views, video.published].compactMap { $0 }.joined(separator: " · ")
                 if !stats.isEmpty {
-                    Text(stats).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(stats).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)

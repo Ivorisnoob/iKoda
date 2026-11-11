@@ -147,7 +147,7 @@ struct SearchView: View {
             if let link = YouTubeLink(text: model.query) {
                 Button { submit(model.query) } label: {
                     Label(link.openTitle, systemImage: "link")
-                        .font(.body.weight(.semibold))
+                        .font(.scaled(.body).weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
             }
@@ -169,7 +169,7 @@ struct SearchView: View {
                         HStack {
                             SectionHeader(title: "Recent")
                             Spacer()
-                            Button("Clear") { library.clearSearches() }.font(.subheadline)
+                            Button("Clear") { library.clearSearches() }.font(.scaled(.subheadline))
                         }
                         ForEach(library.searches.prefix(8), id: \.self) { query in
                             Button { submit(query) } label: {
@@ -221,7 +221,7 @@ struct MoodTile: View {
 
     var body: some View {
         Text(title)
-            .font(.headline)
+            .font(.scaled(.headline))
             .foregroundStyle(.white)
             .multilineTextAlignment(.leading)
             .lineLimit(2)
@@ -343,9 +343,9 @@ struct SearchResultsView: View {
                     HStack(spacing: 14) {
                         ArtworkView(artwork: artist.artwork, size: 56, circle: true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(artist.name).font(.body).foregroundStyle(.primary)
+                            Text(artist.name).font(.scaled(.body)).foregroundStyle(.primary)
                             if let subtitle = artist.subtitle {
-                                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                                Text(subtitle).font(.scaled(.subheadline)).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
@@ -378,7 +378,7 @@ private struct FilterChips: View {
                 ForEach(SearchFilter.allCases) { filter in
                     let selected = filter == selection
                     Button(filter.title) { selection = filter }
-                        .font(.subheadline.weight(.medium))
+                        .font(.scaled(.subheadline).weight(.medium))
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .tint(selected ? .accentColor : .secondary)
@@ -434,8 +434,8 @@ private struct TopResultCard: View {
                 ArtworkView(artwork: item.artwork, size: 84, cornerRadius: 10)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title).font(.title3.bold()).foregroundStyle(.primary).lineLimit(2)
-                Text(kind).font(.subheadline).foregroundStyle(.secondary)
+                Text(item.title).font(.scaled(.title3).bold()).foregroundStyle(.primary).lineLimit(2)
+                Text(kind).font(.scaled(.subheadline)).foregroundStyle(.secondary)
             }
             Spacer()
         }

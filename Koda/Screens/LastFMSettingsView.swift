@@ -25,13 +25,13 @@ struct LastFMSettingsView: View {
                 Section {
                     Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                 }
             }
             if let notice = lastFM.notice {
                 Section {
                     Label(notice, systemImage: "info.circle.fill")
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -65,16 +65,16 @@ struct LastFMSettingsView: View {
                 LastFMImage(url: lastFM.profile?.avatar, size: 64, circle: true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(lastFM.profile?.realName.isEmpty == false ? lastFM.profile!.realName : lastFM.user)
-                        .font(.title3.bold())
+                        .font(.scaled(.title3).bold())
                     if let profile = lastFM.profile {
                         Text(LastFMUI.scrobbles(profile.playCount))
-                            .font(.subheadline.weight(.medium))
+                            .font(.scaled(.subheadline).weight(.medium))
                             .foregroundStyle(.red)
                         if let since = LastFMUI.since(profile) {
-                            Text(since).font(.caption).foregroundStyle(.secondary)
+                            Text(since).font(.scaled(.caption)).foregroundStyle(.secondary)
                         }
                     } else {
-                        Text("@\(lastFM.user)").font(.subheadline).foregroundStyle(.secondary)
+                        Text("@\(lastFM.user)").font(.scaled(.subheadline)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -98,7 +98,7 @@ struct LastFMSettingsView: View {
                     Button("Sync Now") { Task { await lastFM.refresh() } }
                 }
             }
-            .font(.subheadline)
+            .font(.scaled(.subheadline))
         } footer: {
             Text("A song counts once you've heard half of it, or four minutes, whichever is first. Videos aren't scrobbled. Plays wait on this iPhone while you're offline and send in order later, with the time you played them.")
         }
@@ -124,13 +124,13 @@ struct LastFMSettingsView: View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.scaledSystem(size: 30, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 56, height: 56)
                     .background(Color.red.gradient, in: .rect(cornerRadius: 14, style: .continuous))
-                Text("Scrobble to Last.fm").font(.title3.bold())
+                Text("Scrobble to Last.fm").font(.scaled(.title3).bold())
                 Text("Keep a record of what you play in Koda on your Last.fm profile. Koda never sees your password: you sign in on Last.fm's own page.")
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 6)
@@ -176,7 +176,7 @@ struct LastFMSettingsView: View {
             .textInputAutocapitalization(.never)
             #endif
             .autocorrectionDisabled()
-            .font(.body.monospaced())
+            .font(.scaled(.body).monospaced())
 
             Section {
                 Button {

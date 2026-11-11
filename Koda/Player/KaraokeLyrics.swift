@@ -152,7 +152,7 @@ struct SyncedLyrics: View {
         .overlay(alignment: .bottomTrailing) {
             if userScrolled {
                 Button("Follow", systemImage: "arrow.down.to.line") { userScrolled = false }
-                    .font(.footnote.weight(.semibold))
+                    .font(.scaled(.footnote).weight(.semibold))
                     .buttonStyle(.glass)
                     .padding(.vertical, 8)
                     .padding(.horizontal, Self.bleed + 8)
@@ -187,7 +187,7 @@ extension SyncedLyrics {
             }
         } label: {
             Image(systemName: "translate")
-                .font(.footnote.weight(.semibold))
+                .font(.scaled(.footnote).weight(.semibold))
                 .frame(width: 34, height: 34)
         }
         .menuIndicator(.hidden)

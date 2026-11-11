@@ -38,7 +38,7 @@ struct YouTubeSignInView: View {
             case .finishing:
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Bringing in your YouTube Music…").font(.headline)
+                    Text("Bringing in your YouTube Music…").font(.scaled(.headline))
                 }
                 .padding(24)
                 .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
@@ -74,7 +74,7 @@ struct YouTubeSignInView: View {
             ToolbarItem(placement: .principal) {
                 Label("accounts.google.com", systemImage: "lock.fill")
                     .labelStyle(.titleAndIcon)
-                    .font(.footnote.weight(.medium))
+                    .font(.scaled(.footnote).weight(.medium))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Secure Google sign-in page")
             }

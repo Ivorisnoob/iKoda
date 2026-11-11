@@ -30,17 +30,17 @@ struct QueuePanel: View {
             // of their own, which showed as an outline over the songs scrolling under it.
             HStack {
                 Text(player.upcoming.isEmpty ? "Nothing Up Next" : "Up Next")
-                    .font(.headline)
+                    .font(.scaled(.headline))
                     .foregroundStyle(Color.primary)
                 Spacer()
                 if let undo {
                     Button(undo.label) { perform(undo) }
-                        .font(.subheadline.weight(.semibold))
+                        .font(.scaled(.subheadline).weight(.semibold))
                         .foregroundStyle(Color.primary)
                         .transition(.opacity)
                 } else if !player.upcoming.isEmpty {
                     Button("Clear") { clear() }
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(Color.secondary)
                         .transition(.opacity)
                 }
@@ -168,7 +168,7 @@ struct QueuePanel: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
-                .font(.body.weight(.semibold))
+                .font(.scaled(.body).weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 40)
                 .contentTransition(.symbolEffect(.replace))
         }
@@ -186,8 +186,8 @@ private struct QueueRow: View {
         HStack(spacing: 12) {
             ArtworkView(artwork: song.artwork, size: 44, cornerRadius: 6)
             VStack(alignment: .leading, spacing: 2) {
-                Text(song.title).font(.subheadline.weight(.medium)).lineLimit(1)
-                Text(song.artistLine).font(.caption).foregroundStyle(Color.secondary).lineLimit(1)
+                Text(song.title).font(.scaled(.subheadline).weight(.medium)).lineLimit(1)
+                Text(song.artistLine).font(.scaled(.caption)).foregroundStyle(Color.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }

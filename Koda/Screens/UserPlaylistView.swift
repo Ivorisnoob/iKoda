@@ -214,15 +214,15 @@ struct UserPlaylistView: View {
                 .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
             VStack(spacing: 4) {
                 Text(playlist.name)
-                    .font(.title2.bold())
+                    .font(.scaled(.title2).bold())
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 Text(detail(playlist))
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
                 if let summary = playlist.summary {
                     Text(summary)
-                        .font(.footnote)
+                        .font(.scaled(.footnote))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 4)
@@ -251,7 +251,7 @@ struct UserPlaylistView: View {
                 PlaylistCover(playlist: playlist, size: 232, cornerRadius: 16)
                     .overlay {
                         Image(systemName: "camera.fill")
-                            .font(.title2)
+                            .font(.scaled(.title2))
                             .foregroundStyle(.white)
                             .frame(width: 64, height: 64)
                             .glassEffect(.regular.interactive(), in: .circle)
@@ -260,11 +260,11 @@ struct UserPlaylistView: View {
             }
             .accessibilityLabel("Playlist Photo")
             TextField("Playlist Name", text: $draftName)
-                .font(.title2.bold())
+                .font(.scaled(.title2).bold())
                 .multilineTextAlignment(.center)
                 .submitLabel(.done)
             TextField("Description", text: $draftSummary, axis: .vertical)
-                .font(.subheadline)
+                .font(.scaled(.subheadline))
                 .multilineTextAlignment(.center)
                 .lineLimit(1...5)
         }
@@ -324,7 +324,7 @@ struct PlaylistMosaic: View {
                 LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.accentColor.opacity(0.35)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                 Image(systemName: "music.note.list")
-                    .font(.system(size: size * 0.32, weight: .medium))
+                    .font(.scaledSystem(size: size * 0.32, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
             }
         }
@@ -406,11 +406,11 @@ struct AddToPlaylistSheet: View {
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "plus")
-                                .font(.title3.weight(.semibold))
+                                .font(.scaled(.title3).weight(.semibold))
                                 .foregroundStyle(Color.accentColor)
                                 .frame(width: 52, height: 52)
                                 .background(.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
-                            Text("New Playlist").font(.body.weight(.medium))
+                            Text("New Playlist").font(.scaled(.body).weight(.medium))
                         }
                     }
                     .buttonStyle(.plain)
@@ -429,13 +429,13 @@ struct AddToPlaylistSheet: View {
                                 HStack(spacing: 14) {
                                     PlaylistCover(playlist: playlist, size: 52, cornerRadius: 8)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(playlist.name).font(.body.weight(.medium)).lineLimit(1)
+                                        Text(playlist.name).font(.scaled(.body).weight(.medium)).lineLimit(1)
                                         // Songs already in it are skipped, never added twice; said before the tap.
                                         Text([playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs",
                                               containsAll ? (target.songs.count == 1 ? "Already added" : "All already added")
                                                   : already > 0 ? "\(already) already in it" : nil]
                                             .compactMap { $0 }.joined(separator: " · "))
-                                            .font(.subheadline).foregroundStyle(.secondary)
+                                            .font(.scaled(.subheadline)).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     if containsAll {
@@ -543,9 +543,9 @@ struct MacNewPlaylistSheet: View {
             HStack(spacing: 14) {
                 PlaylistMosaic(songs: target.songs, size: 64, cornerRadius: 8)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("New Playlist").font(.headline)
+                    Text("New Playlist").font(.scaled(.headline))
                     Text(target.songs.count == 1 ? "With “\(target.songs[0].title)”" : "With these \(target.songs.count) songs")
-                        .font(.callout)
+                        .font(.scaled(.callout))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -598,7 +598,7 @@ struct MacPlaylistDetailsSheet: View {
             HStack(alignment: .top, spacing: 18) {
                 PlaylistCover(playlist: current, size: 120, cornerRadius: 10)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Edit Details").font(.headline)
+                    Text("Edit Details").font(.scaled(.headline))
                     PhotosPicker(current.hasCover ? "Choose Another Photo…" : "Choose Photo…", selection: $photo, matching: .images)
                     if current.hasCover {
                         Button("Remove Photo", role: .destructive) { library.setPlaylistCover(nil, for: playlist.id) }

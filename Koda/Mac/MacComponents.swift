@@ -5,8 +5,8 @@ import SwiftUI
 enum MacMetrics {
     /// The page's side margin, and the gap a shelf scrolls into.
     static let gutter: CGFloat = 32
-    static let card: CGFloat = 176
-    static let artistCard: CGFloat = 156
+    @MainActor static var card: CGFloat { CGFloat(176).scaled }
+    @MainActor static var artistCard: CGFloat { CGFloat(156).scaled }
     static let sectionSpacing: CGFloat = 40
     /// Past this a page stops widening and centres, so lines and rows stay readable.
     static let maxContentWidth: CGFloat = 1500
@@ -63,12 +63,12 @@ struct MacPageTitle<Accessory: View>: View {
         VStack(alignment: .leading, spacing: 2) {
             if let subtitle {
                 Text(subtitle)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.scaled(.subheadline).weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
             }
             Text(title)
-                .font(.system(size: 30, weight: .bold))
+                .font(.scaledSystem(size: 30, weight: .bold))
                 .lineLimit(1)
         }
     }
@@ -102,7 +102,7 @@ struct MacCoverCard<Cover: View>: View {
                     if let onPlay, hovering {
                         Button(action: onPlay) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.scaledSystem(size: 15, weight: .bold))
                                 .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.glassProminent)
@@ -115,12 +115,12 @@ struct MacCoverCard<Cover: View>: View {
                 .scaleEffect(hovering ? 1.02 : 1)
             VStack(alignment: circle ? .center : .leading, spacing: 1) {
                 Text(title)
-                    .font(.callout.weight(.medium))
+                    .font(.scaled(.callout).weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -258,7 +258,7 @@ struct MacShelf<Content: View>: View {
     private func pageButton(_ symbol: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
+                .font(.scaledSystem(size: 12, weight: .bold))
                 .frame(width: 26, height: 26)
         }
         .buttonStyle(.glass)
@@ -278,15 +278,15 @@ struct MacSectionTitle: View {
         VStack(alignment: .leading, spacing: 1) {
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(title).font(.title2.bold())
+                Text(title).font(.scaled(.title2).bold())
                 if let seeAll {
                     NavigationLink(value: seeAll) {
-                        Text("See All").font(.callout.weight(.medium))
+                        Text("See All").font(.scaled(.callout).weight(.medium))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
@@ -377,13 +377,13 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let kind, !kind.isEmpty {
                     Text(kind)
-                        .font(.caption.weight(.semibold))
+                        .font(.scaled(.caption).weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .padding(.bottom, 4)
                 }
                 Text(title)
-                    .font(.system(size: width < 620 ? 24 : 32, weight: .bold))
+                    .font(.scaledSystem(size: width < 620 ? 24 : 32, weight: .bold))
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                     .textSelection(.enabled)
@@ -391,7 +391,7 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
                     let opens = !ArtistRef.linked(bylineArtists).isEmpty
                     ArtistLinks(line: byline, artists: bylineArtists, open: openArtist) {
                         Text(byline)
-                            .font(.title3.weight(.semibold))
+                            .font(.scaled(.title3).weight(.semibold))
                             .foregroundStyle(opens ? accent.readable(in: colorScheme) : .secondary)
                             .lineLimit(1)
                     }
@@ -399,7 +399,7 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
                 }
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.callout)
+                        .font(.scaled(.callout))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
@@ -411,7 +411,7 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
                                 .multilineTextAlignment(.leading)
                             Text("More").fontWeight(.semibold).foregroundStyle(.primary)
                         }
-                        .font(.callout)
+                        .font(.scaled(.callout))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 560, alignment: .leading)
                     }
@@ -420,7 +420,7 @@ struct MacCollectionHeader<Cover: View, Actions: View>: View {
                     .popover(isPresented: $showsDescription) {
                         ScrollView {
                             Text(description)
-                                .font(.callout)
+                                .font(.scaled(.callout))
                                 .textSelection(.enabled)
                                 .padding(20)
                         }
@@ -464,7 +464,7 @@ struct MacPlayButtons: View {
             }
             .buttonStyle(.glass)
         }
-        .font(.body.weight(.semibold))
+        .font(.scaled(.body).weight(.semibold))
         .controlSize(.large)
         .buttonBorderShape(.capsule)
     }
@@ -475,7 +475,7 @@ struct MacIconButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Button(configuration)
             .labelStyle(.iconOnly)
-            .font(.body.weight(.semibold))
+            .font(.scaled(.body).weight(.semibold))
             .controlSize(.large)
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
@@ -550,7 +550,7 @@ private struct MacTrackHeader: View {
                 Image(systemName: "clock").frame(width: 44, alignment: .trailing)
                 Color.clear.frame(width: 28)
             }
-            .font(.caption.weight(.semibold))
+            .font(.scaled(.caption).weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
@@ -587,13 +587,13 @@ private struct MacTrackRow: View {
                     .lineLimit(1)
                 if song.isVideo {
                     Image(systemName: "play.rectangle")
-                        .font(.caption)
+                        .font(.scaled(.caption))
                         .foregroundStyle(.tertiary)
                         .help("Music video")
                 }
                 if let badge {
                     Text(badge)
-                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .font(.scaled(.caption).weight(.semibold).monospacedDigit())
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -630,7 +630,7 @@ private struct MacTrackRow: View {
             }
             .frame(width: 40, alignment: .trailing)
             Text(duration)
-                .font(.callout.monospacedDigit())
+                .font(.scaled(.callout).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 44, alignment: .trailing)
             MacMoreMenu(size: 28, isGlass: false) {
@@ -639,7 +639,7 @@ private struct MacTrackRow: View {
             }
             .opacity(hovering ? 1 : 0)
         }
-        .font(.callout)
+        .font(.scaled(.callout))
         .padding(.horizontal, 12)
         .frame(height: numbered ? 40 : 52)
         .background {
@@ -661,7 +661,7 @@ private struct MacTrackRow: View {
     @ViewBuilder
     private var leading: some View {
         let playButton = Button(action: play) {
-            Image(systemName: "play.fill").font(.system(size: 12, weight: .bold))
+            Image(systemName: "play.fill").font(.scaledSystem(size: 12, weight: .bold))
         }
         .buttonStyle(.plain)
         .help("Play")
@@ -670,21 +670,21 @@ private struct MacTrackRow: View {
                 if hovering, !isCurrent {
                     playButton
                 } else if isCurrent {
-                    NowPlayingBars(isPlaying: player.wantsToPlay).font(.callout)
+                    NowPlayingBars(isPlaying: player.wantsToPlay).font(.scaled(.callout))
                 } else {
-                    Text("\(index + 1)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                    Text("\(index + 1)").font(.scaled(.callout).monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
             .frame(width: 28, alignment: .trailing)
         } else {
-            ArtworkView(artwork: song.artwork, size: 40, cornerRadius: 5)
+            ArtworkView(artwork: song.artwork, size: CGFloat(40).scaled, cornerRadius: 5)
                 .overlay {
                     if hovering || isCurrent {
                         RoundedRectangle(cornerRadius: 5, style: .continuous).fill(.black.opacity(0.45))
                         if hovering, !isCurrent {
                             playButton.foregroundStyle(.white)
                         } else {
-                            NowPlayingBars(isPlaying: player.wantsToPlay).font(.callout).foregroundStyle(.white)
+                            NowPlayingBars(isPlaying: player.wantsToPlay).font(.scaled(.callout)).foregroundStyle(.white)
                         }
                     }
                 }
@@ -697,7 +697,7 @@ private struct MacTrackRow: View {
         if liked || hovering {
             Button { library.toggleLike(song) } label: {
                 Image(systemName: liked ? "heart.fill" : "heart")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.scaledSystem(size: 12, weight: .semibold))
                     .foregroundStyle(liked ? Color.pink : .secondary)
                     .contentTransition(.symbolEffect(.replace))
             }
@@ -725,23 +725,23 @@ struct MacSongTile: View {
     var body: some View {
         Button(action: play) {
             HStack(spacing: 12) {
-                ArtworkView(artwork: song.artwork, size: 46, cornerRadius: 6)
+                ArtworkView(artwork: song.artwork, size: CGFloat(46).scaled, cornerRadius: 6)
                     .overlay {
                         if hovering || isCurrent {
                             RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.black.opacity(0.45))
                             if isCurrent {
                                 NowPlayingBars(isPlaying: player.wantsToPlay).foregroundStyle(.white)
                             } else {
-                                Image(systemName: "play.fill").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+                                Image(systemName: "play.fill").font(.scaledSystem(size: 14, weight: .bold)).foregroundStyle(.white)
                             }
                         }
                     }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
-                        .font(.callout.weight(.medium))
+                        .font(.scaled(.callout).weight(.medium))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                     Text(song.artistLine)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
@@ -773,7 +773,7 @@ struct MacSymbolCover: View {
             .fill(LinearGradient(colors: [tint, tint.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay {
                 Image(systemName: systemImage)
-                    .font(.system(size: size * 0.34, weight: .semibold))
+                    .font(.scaledSystem(size: size * 0.34, weight: .semibold))
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
             }
@@ -795,7 +795,7 @@ struct MacMoreMenu<Items: View>: View {
             items()
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: isGlass ? 15 : 13, weight: .semibold))
+                .font(.scaledSystem(size: isGlass ? 15 : 13, weight: .semibold))
                 .foregroundStyle(isGlass ? Color.primary : Color.secondary)
                 .frame(width: size, height: size)
                 .background {

@@ -151,9 +151,9 @@ struct VideoPlayerView: View {
                 ControlButton(systemImage: "xmark", label: "Exit Full Screen") { playback.isFullScreen = false }
                     .keyboardShortcut(.cancelAction)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(playback.current?.title ?? video.title).font(.headline).lineLimit(1)
+                    Text(playback.current?.title ?? video.title).font(.scaled(.headline)).lineLimit(1)
                     if let channel = (playback.current ?? video).channel?.name {
-                        Text(channel).font(.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                        Text(channel).font(.scaled(.caption)).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
                     }
                 }
                 .padding(.leading, 4)
@@ -163,6 +163,10 @@ struct VideoPlayerView: View {
             Spacer(minLength: 0)
             if hasPicture {
                 RoutePicker()
+                    #if os(macOS)
+                    // AppKit's route button fills its view; the symbol keeps the others' size.
+                    .frame(width: 18, height: 18)
+                    #endif
                     .frame(width: 36, height: 36)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("AirPlay")
@@ -234,7 +238,7 @@ struct VideoPlayerView: View {
                 if hasPicture {
                     if playback.isLive {
                         Label("Live", systemImage: "dot.radiowaves.left.and.right")
-                            .font(.caption.weight(.bold))
+                            .font(.scaled(.caption).weight(.bold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(.red, in: .capsule)
@@ -266,7 +270,7 @@ struct VideoPlayerView: View {
                 } icon: {
                     Image(systemName: "forward.fill")
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(.scaled(.subheadline).weight(.semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .glassEffect(.regular, in: .capsule)
@@ -282,7 +286,7 @@ struct VideoPlayerView: View {
             }
             if let note {
                 Text(note)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.scaled(.subheadline).weight(.semibold))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .glassEffect(.regular, in: .capsule)
@@ -556,10 +560,10 @@ private struct SkipBadge: View {
                 .offset(x: skipping.forward ? 70 : -70)
             VStack(spacing: 6) {
                 Image(systemName: skipping.forward ? "forward.fill" : "backward.fill")
-                    .font(.system(size: isFullScreen ? 26 : 20, weight: .semibold))
+                    .font(.scaledSystem(size: isFullScreen ? 26 : 20, weight: .semibold))
                     .symbolEffect(.bounce, value: skipping.pulse)
                 Text("\(skipping.seconds) seconds")
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .monospacedDigit()
                     .contentTransition(.numericText(value: Double(skipping.seconds)))
             }
@@ -587,7 +591,7 @@ private struct LevelIndicator: View {
                 .overlay(alignment: .bottom) {
                     Capsule().fill(.white).frame(width: 6, height: 120 * value)
                 }
-            Image(systemName: systemImage).font(.subheadline.weight(.semibold))
+            Image(systemName: systemImage).font(.scaled(.subheadline).weight(.semibold))
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 12)
@@ -606,10 +610,10 @@ private struct ResumedNote: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("Resumed at \(VideoScrubber.format(from))")
-                .font(.footnote.weight(.medium))
+                .font(.scaled(.footnote).weight(.medium))
                 .monospacedDigit()
             Button("Start Over", action: startOver)
-                .font(.footnote.weight(.semibold))
+                .font(.scaled(.footnote).weight(.semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(.white)
                 .underline()
@@ -638,15 +642,15 @@ private struct UpNextCountdown: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Up Next in \(seconds)")
-                        .font(.caption.weight(.semibold))
+                        .font(.scaled(.caption).weight(.semibold))
                         .foregroundStyle(.white.opacity(0.75))
                         .monospacedDigit()
                         .contentTransition(.numericText(countsDown: true))
                     Text(next.title)
-                        .font(isCompact ? .subheadline.weight(.semibold) : .headline)
+                        .font(isCompact ? .scaled(.subheadline).weight(.semibold) : .scaled(.headline))
                         .lineLimit(2)
                     if let channel = next.channel?.name {
-                        Text(channel).font(.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                        Text(channel).font(.scaled(.caption)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
                     }
                     HStack(spacing: 8) {
                         Button("Cancel", action: cancel).buttonStyle(.glass)
@@ -674,7 +678,7 @@ private struct ControlButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: size * 0.42, weight: .semibold))
+                .font(.scaledSystem(size: size * 0.42, weight: .semibold))
                 .frame(width: size, height: size)
                 .contentShape(.circle)
         }
@@ -731,7 +735,7 @@ private struct VideoSettingsMenu: View {
             }
         } label: {
             Image(systemName: playback.caption == nil ? "gearshape.fill" : "captions.bubble.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.scaledSystem(size: 15, weight: .semibold))
                 .frame(width: 36, height: 36)
                 .contentShape(.circle)
         }
@@ -794,7 +798,7 @@ struct VideoScrubber: View {
                 Spacer()
                 Text("-" + Self.format(max(0, duration - shown)))
             }
-            .font(.caption2.weight(.medium).monospacedDigit())
+            .font(.scaled(.caption2).weight(.medium).monospacedDigit())
             .foregroundStyle(.white.opacity(0.85))
         }
         .accessibilityElement()

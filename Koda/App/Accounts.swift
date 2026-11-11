@@ -190,7 +190,8 @@ extension AppModel {
     /// for as the right account (or as none), not the one being left.
     func loadHome(_ model: HomeModel) async {
         await accountWork?.value
-        await model.load(music: music, library: library, signedIn: roster.profile(model.profile)?.isSignedIn == true)
+        await model.load(music: music, library: library, signedIn: roster.profile(model.profile)?.isSignedIn == true,
+                         includesMix: settings.showsMixOnHome)
     }
 
     /// A sync now, for pull to refresh, finishing when it does.

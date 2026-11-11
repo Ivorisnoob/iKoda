@@ -21,12 +21,12 @@ struct CoverCard<Cover: View>: View {
             cover
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.subheadline.weight(.medium))
+                    .font(.scaled(.subheadline).weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.footnote)
+                        .font(.scaled(.footnote))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -54,7 +54,7 @@ struct ArtistCard: View {
         VStack(spacing: 8) {
             ArtworkView(artwork: artist.artwork, size: width, circle: true)
             Text(artist.name)
-                .font(.subheadline.weight(.medium))
+                .font(.scaled(.subheadline).weight(.medium))
                 .lineLimit(1)
                 .foregroundStyle(.primary)
         }

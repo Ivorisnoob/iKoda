@@ -188,7 +188,7 @@ struct VoiceSearchSheet: View {
                         .animation(.spring(response: 0.18, dampingFraction: 0.6), value: voice.level)
                 }
                 Image(systemName: isListening ? "mic.fill" : "mic.slash.fill")
-                    .font(.system(size: 34, weight: .semibold))
+                    .font(.scaledSystem(size: 34, weight: .semibold))
                     .foregroundStyle(isListening ? Color.accentColor : .secondary)
                     .frame(width: 92, height: 92)
                     .glassEffect(.regular.interactive(), in: .circle)
@@ -211,7 +211,7 @@ struct VoiceSearchSheet: View {
                     Text(message).foregroundStyle(.secondary)
                 }
             }
-            .font(.title3.weight(.semibold))
+            .font(.scaled(.title3).weight(.semibold))
             .multilineTextAlignment(.center)
             .padding(.horizontal, 28)
             .frame(minHeight: 60)

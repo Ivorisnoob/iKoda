@@ -34,6 +34,8 @@ final class AppModel {
     var sidePanel: MacSidePanel?
     /// Profile and Settings, opened from Home or from the Mac's Settings menu item.
     var isProfilePresented = false
+    /// File → New Playlist… on the Mac: the window asks for the name.
+    var isNamingPlaylist = false
     /// A sidebar place for the Mac's window to go to, asked for from elsewhere, e.g. Settings.
     var requestedMacSection: MacSection?
     /// The playing song's colours, kept ready for Now Playing while it is closed.

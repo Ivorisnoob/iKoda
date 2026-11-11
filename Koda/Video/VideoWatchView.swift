@@ -199,7 +199,7 @@ struct VideoWatchView: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(shown.title)
-                .font(Platform.isMac ? .title2.bold() : .title3.bold())
+                .font(Platform.isMac ? .scaled(.title2).bold() : .scaled(.title3).bold())
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             switch watch.state {
@@ -228,7 +228,7 @@ struct VideoWatchView: View {
                         ActionCapsule(title: "Share", systemImage: "square.and.arrow.up") {}
                     }
                     Text("1,234,567 views · Jan 1, 2026\nA description that runs to a couple of lines while it loads.")
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                         .background(.fill.quinary, in: .rect(cornerRadius: 16, style: .continuous))
@@ -246,7 +246,7 @@ struct VideoWatchView: View {
                 RatingCapsule(videoId: video.id, page: page)
                 ShareLink(item: video.watchURL, subject: Text(shown.title)) {
                     Label("Share", systemImage: "square.and.arrow.up")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.scaled(.subheadline).weight(.semibold))
                         .padding(.horizontal, 14)
                         .frame(height: 36)
                 }
@@ -269,7 +269,7 @@ struct VideoWatchView: View {
         switch watch.state {
         case .loaded(let page) where !page.related.videos.isEmpty:
             VStack(alignment: .leading, spacing: 14) {
-                Text("Up Next").font(.title3.bold())
+                Text("Up Next").font(.scaled(.title3).bold())
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(page.related.videos) { related in
                         NavigationLink(value: Route.video(related)) {
@@ -287,7 +287,7 @@ struct VideoWatchView: View {
             }
         case .loading:
             VStack(alignment: .leading, spacing: 14) {
-                Text("Up Next").font(.title3.bold())
+                Text("Up Next").font(.scaled(.title3).bold())
                 ForEach(Video.placeholders.prefix(5)) { VideoRow(video: $0, thumbnailWidth: Platform.isMac ? 168 : 156) }
             }
             .loadingPlaceholder()
@@ -325,9 +325,9 @@ private struct ChannelLine: View {
         HStack(spacing: 12) {
             ChannelAvatar(avatar: channel.avatar, size: 42)
             VStack(alignment: .leading, spacing: 2) {
-                Text(channel.name).font(.headline).lineLimit(1)
+                Text(channel.name).font(.scaled(.headline)).lineLimit(1)
                 if let subscribers {
-                    Text(subscribers).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subscribers).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }
@@ -354,7 +354,7 @@ struct SubscribeButton: View {
                 if isSubscribed { confirmsUnsubscribe = true } else { send(true) }
             } label: {
                 Label(isSubscribed ? "Subscribed" : "Subscribe", systemImage: isSubscribed ? "checkmark" : "plus")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.scaled(.subheadline).weight(.semibold))
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(isSubscribed ? AnyPrimitiveButtonStyle(.glass) : AnyPrimitiveButtonStyle(.glassProminent))
@@ -417,7 +417,7 @@ private struct RatingCapsule: View {
             }
             .accessibilityLabel(status == .dislike ? "Remove Dislike" : "Dislike")
         }
-        .font(.subheadline.weight(.semibold))
+        .font(.scaled(.subheadline).weight(.semibold))
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
         .sensoryFeedback(.impact(weight: .light), trigger: status)
@@ -452,7 +452,7 @@ private struct ActionCapsule: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
+                .font(.scaled(.subheadline).weight(.semibold))
                 .padding(.horizontal, 14)
                 .frame(height: 36)
                 .contentShape(.capsule)
@@ -470,14 +470,14 @@ private struct VideoDescription: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text([page.viewCount ?? page.video.views, expanded ? page.date : page.video.published ?? page.date].compactMap { $0 }.joined(separator: " · "))
-                .font(.subheadline.weight(.semibold))
+                .font(.scaled(.subheadline).weight(.semibold))
             if !page.description.isEmpty {
                 Text(Self.linked(page.description))
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .lineLimit(expanded ? nil : 3)
                     .textSelection(.enabled)
                 Text(expanded ? "Show Less" : "Show More")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.scaled(.subheadline).weight(.semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -518,15 +518,15 @@ private struct CommentsCard: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Text("Comments").font(.subheadline.weight(.semibold))
-                    if let count { Text(count).font(.subheadline).foregroundStyle(.secondary) }
+                    Text("Comments").font(.scaled(.subheadline).weight(.semibold))
+                    if let count { Text(count).font(.scaled(.subheadline)).foregroundStyle(.secondary) }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").font(.scaled(.footnote).weight(.semibold)).foregroundStyle(.tertiary)
                 }
                 HStack(alignment: .top, spacing: 10) {
                     CommentAvatar(url: top?.avatar, size: 24)
                     Text(top?.text ?? "A comment that runs to two lines while it loads, about the video.")
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -612,19 +612,19 @@ private struct CommentRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text(comment.author)
-                        .font(.footnote.weight(.semibold))
+                        .font(.scaled(.footnote).weight(.semibold))
                         .padding(.horizontal, comment.isCreator ? 6 : 0)
                         .padding(.vertical, comment.isCreator ? 1 : 0)
                         .background(comment.isCreator ? AnyShapeStyle(.fill.secondary) : AnyShapeStyle(.clear), in: .capsule)
                     if comment.isVerified {
-                        Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.secondary)
+                        Image(systemName: "checkmark.seal.fill").font(.scaled(.caption2)).foregroundStyle(.secondary)
                             .accessibilityLabel("Verified")
                     }
-                    Text("· \(comment.published)").font(.footnote).foregroundStyle(.secondary)
+                    Text("· \(comment.published)").font(.scaled(.footnote)).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
                 Text(comment.text)
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 16) {
@@ -633,7 +633,7 @@ private struct CommentRow: View {
                         Label(comment.replies == "1" ? "1 reply" : "\(comment.replies) replies", systemImage: "arrowshape.turn.up.left")
                     }
                 }
-                .font(.caption)
+                .font(.scaled(.caption))
                 .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
                 .padding(.top, 2)

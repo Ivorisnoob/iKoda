@@ -68,6 +68,10 @@ struct VideoPlayerView: View {
                 VideoThumbnail(video: video, cornerRadius: 0, width: 800, showsProgress: false)
             }
             gestureLayer
+            if Platform.isMac, isThis, playback.isInPictureInPicture {
+                // As the Mac's players show it: the picture is floating, so this one says so.
+                PictureInPicturePlaceholder { playback.togglePictureInPicture() }
+            }
             if isThis, let error = playback.error {
                 errorView(error)
             } else if counting, let next = playback.upNext {
@@ -1147,6 +1151,27 @@ struct InteractivePopEnabler: UIViewControllerRepresentable {
     }
 }
 #endif
+
+/// Where the picture was, while it floats in picture in picture.
+private struct PictureInPicturePlaceholder: View {
+    let bringBack: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black
+            VStack(spacing: 12) {
+                Image(systemName: "pip").font(.system(size: 44, weight: .light))
+                Text("This video is playing in Picture in Picture.")
+                    .font(.system(size: 13, weight: .medium))
+                Button("Return to Window", action: bringBack)
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+            }
+            .foregroundStyle(.white.opacity(0.75))
+            .environment(\.colorScheme, .dark)
+        }
+    }
+}
 
 /// The playing time as its own view: the timeline is the only part of the controls that changes
 /// four times a second. Reading it in the player's body redrew the whole of it each time, and

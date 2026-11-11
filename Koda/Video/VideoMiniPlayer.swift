@@ -104,7 +104,14 @@ struct MacVideoBar: View {
                 Button(action: open) {
                     HStack(spacing: 12) {
                         Group {
-                            if playback.player.currentItem != nil {
+                            if playback.isInPictureInPicture {
+                                // Floating already: a second picture here would only draw it twice.
+                                VideoThumbnail(video: video, cornerRadius: 0, width: 160, showsProgress: false)
+                                    .overlay { Color.black.opacity(0.45) }
+                                    .overlay {
+                                        Image(systemName: "pip.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                                    }
+                            } else if playback.player.currentItem != nil {
                                 VideoSurface(player: playback.player, role: .mini, register: playback.register)
                             } else {
                                 VideoThumbnail(video: video, cornerRadius: 0, width: 160, showsProgress: false)

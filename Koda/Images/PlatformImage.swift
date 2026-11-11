@@ -80,6 +80,17 @@ enum PlatformImages {
         #endif
     }
 
+    /// Puts a link on the clipboard.
+    static func copy(_ url: URL) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        #else
+        UIPasteboard.general.url = url
+        #endif
+    }
+
     /// A picked photo cropped to its centre square, at most `maxSide` pixels wide, as JPEG; nil
     /// if it isn't an image. Done with ImageIO, so it is the same on every platform and never
     /// decodes the full photo.

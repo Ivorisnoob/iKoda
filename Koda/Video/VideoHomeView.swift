@@ -9,6 +9,7 @@ struct VideoHomeView: View {
     let feed: VideoFeedModel
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
+    @State private var filter: VideoFeedFilter = .all
 
     var body: some View {
         if Platform.isMac { macBody } else { phoneBody }
@@ -83,11 +84,28 @@ struct VideoHomeView: View {
     private var macBody: some View {
         MacPage {
             MacPageTitle(title: feed.kind == .subscriptions ? "Subscriptions" : "Videos") {
-                Button("Refresh", systemImage: "arrow.clockwise") { Task { await load(feed) } }
-                    .labelStyle(.iconOnly)
+                HStack(spacing: 12) {
+                    Picker("Show", selection: $filter) {
+                        ForEach(VideoFeedFilter.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    // Refreshing keeps the feed on screen; the button turns into the spinner.
+                    ZStack {
+                        if feed.isRefreshing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button("Refresh", systemImage: "arrow.clockwise") { Task { await load(feed) } }
+                                .labelStyle(.iconOnly)
+                                .help("Refresh (⌘R)")
+                        }
+                    }
+                    .frame(width: 28)
                     .keyboardShortcut("r", modifiers: .command)
+                }
             }
-            VideoGrid(model: feed) { await load(feed) }
+            VideoGrid(model: feed, filter: filter) { await load(feed) }
         }
         .navigationTitle(feed.kind == .subscriptions ? "Subscriptions" : "Videos")
         .task { if feed.needsLoad { await load(feed) } }
@@ -102,6 +120,7 @@ struct VideoHomeView: View {
 /// A feed as the Mac's grid of cards, paging as its end comes into view.
 struct VideoGrid: View {
     let model: VideoFeedModel
+    var filter: VideoFeedFilter = .all
     let retry: () async -> Void
     @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
@@ -125,7 +144,14 @@ struct VideoGrid: View {
                                        description: Text(model.kind == .subscriptions ? "Videos from channels you subscribe to appear here." : "Search YouTube from the toolbar."))
                     .frame(maxWidth: .infinity, minHeight: 320)
             } else {
-                VideoCardGrid(videos: videos)
+                let shown = videos.filter { filter.includes($0, library: library) }
+                if shown.isEmpty, !model.canLoadMore {
+                    ContentUnavailableView("No \(filter.title) Videos", systemImage: "line.3.horizontal.decrease.circle",
+                                           description: Text("Nothing in this feed matches. Choose All to see everything."))
+                        .frame(maxWidth: .infinity, minHeight: 320)
+                }
+                VideoCardGrid(videos: shown)
+                    .animation(.smooth, value: filter)
                 if model.canLoadMore {
                     ProgressView()
                         .frame(maxWidth: .infinity)
@@ -144,10 +170,12 @@ struct VideoCardGrid: View {
     var remove: ((Video) -> Void)?
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 20, alignment: .top)], spacing: 28) {
+        // Columns as wide as Interface Size makes them, so zooming in gives bigger cards, fewer to a row.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: CGFloat(250).scaled, maximum: CGFloat(380).scaled),
+                                     spacing: CGFloat(20).scaled, alignment: .top)], spacing: CGFloat(28).scaled) {
             ForEach(videos) { video in
                 NavigationLink(value: Route.video(video)) {
-                    VideoCard(video: video, width: 360, showsChannel: showsChannel)
+                    VideoCard(video: video, width: CGFloat(380).scaled, showsChannel: showsChannel)
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
@@ -159,6 +187,35 @@ struct VideoCardGrid: View {
             }
         }
         .padding(.horizontal, VideoMetrics.side)
+    }
+}
+
+/// What a feed shows: everything, or only some of it, worked out from what's loaded (YouTube's
+/// own chips change with every feed; these mean the same thing each time).
+enum VideoFeedFilter: String, CaseIterable, Identifiable {
+    case all, unwatched, short, long, live
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .unwatched: "Not Watched"
+        case .short: "Under 4 Minutes"
+        case .long: "Over 20 Minutes"
+        case .live: "Live"
+        }
+    }
+
+    @MainActor
+    func includes(_ video: Video, library: Library) -> Bool {
+        switch self {
+        case .all: true
+        case .unwatched: library.videoProgress[video.id] == nil && !library.watched.contains { $0.id == video.id }
+        case .short: !video.isLive && (video.duration ?? .infinity) < 240
+        case .long: !video.isLive && (video.duration ?? 0) > 1200
+        case .live: video.isLive
+        }
     }
 }
 

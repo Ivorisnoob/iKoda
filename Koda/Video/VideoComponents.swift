@@ -118,13 +118,22 @@ struct VideoCard: View {
     let video: Video
     var width: CGFloat = 400
     var showsChannel = true
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VideoThumbnail(video: video, width: width)
+                .overlay(alignment: .topTrailing) {
+                    // Save for later without opening it, under the pointer, as YouTube's cards offer.
+                    if Platform.isMac, hovering {
+                        WatchLaterBadge(video: video)
+                            .padding(8)
+                            .transition(.opacity)
+                    }
+                }
             HStack(alignment: .top, spacing: 10) {
                 if showsChannel {
-                    ChannelAvatar(avatar: video.channel?.avatar, size: 34)
+                    ChannelAvatar(avatar: video.channel?.avatar, size: Platform.isMac ? CGFloat(34).scaled : 34)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(video.title)
@@ -142,6 +151,7 @@ struct VideoCard: View {
             }
         }
         .contentShape(.rect)
+        .onHover { over in withAnimation(.easeOut(duration: 0.15)) { hovering = over } }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(video.title), \(video.byline)")
     }
@@ -181,11 +191,47 @@ struct VideoMenuItems: View {
     let video: Video
     @Environment(AppModel.self) private var app
 
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
         WatchLaterButton(video: video)
+        Divider()
         ShareLink(item: video.watchURL, subject: Text(video.title)) { Label("Share", systemImage: "square.and.arrow.up") }
+        Button("Copy Link", systemImage: "link") { PlatformImages.copy(video.watchURL) }
+        Button("Open on YouTube", systemImage: "safari") { openURL(video.watchURL) }
         if let channel = video.channel, let id = channel.id {
             Button("Go to Channel", systemImage: "person.crop.square") { app.open(.channel(id: id, name: channel.name)) }
+        }
+    }
+}
+
+/// The clock on a card's thumbnail: one click saves it to Watch Later (or takes it out).
+struct WatchLaterBadge: View {
+    let video: Video
+    @Environment(AppModel.self) private var app
+    @State private var sending = false
+
+    var body: some View {
+        if app.roster.active.isSignedIn, !video.id.hasPrefix("placeholder") {
+            let saved = app.watchLater[video.id] == true
+            Button {
+                sending = true
+                Task {
+                    _ = await app.setWatchLater(video.id, !saved)
+                    sending = false
+                }
+            } label: {
+                Image(systemName: saved ? "checkmark" : "clock")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .contentTransition(.symbolEffect(.replace))
+                    .opacity(sending ? 0.5 : 1)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.tint(.black.opacity(0.35)).interactive(), in: .circle)
+            .help(saved ? "Remove from Watch Later" : "Save to Watch Later")
+            .accessibilityLabel(saved ? "Remove from Watch Later" : "Save to Watch Later")
         }
     }
 }

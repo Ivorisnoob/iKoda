@@ -15,6 +15,8 @@ final class VideoFeedModel {
     let kind: Kind
     private(set) var state: LoadState<[Video]> = .loading
     private(set) var isLoadingMore = false
+    /// Loading again over what's shown, which stays until the new feed replaces it.
+    private(set) var isRefreshing = false
     @ObservationIgnored private var loadedAt: Date?
 
     /// Never loaded, or loaded over half an hour ago: what YouTube recommends has moved on.
@@ -31,7 +33,8 @@ final class VideoFeedModel {
     var videos: [Video] { state.value ?? [] }
 
     func load(music: YouTubeMusic, library: Library, signedIn: Bool) async {
-        if state.value == nil { state = .loading }
+        if state.value == nil { state = .loading } else { isRefreshing = true }
+        defer { isRefreshing = false }
         continuation = nil
         seedOffset = 0
         loadedAt = Date()

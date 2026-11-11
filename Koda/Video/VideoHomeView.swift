@@ -168,14 +168,25 @@ struct VideoCardGrid: View {
     var showsChannel = true
     /// A context menu item that takes the video off this list (Watched).
     var remove: ((Video) -> Void)?
+    @State private var width: CGFloat = 0
+
+    /// Cards fill the row, as many as are nearest a card 300 points wide at the Interface Size.
+    /// Rounded rather than as many as fit: a zoom step then changes the count (and the cards'
+    /// size) much sooner, where filling the row kept wide windows looking the same.
+    private var columns: Int {
+        guard Platform.isMac else { return 1 }
+        let spacing = CGFloat(20).scaled
+        return max(1, Int(((width + spacing) / (CGFloat(300).scaled + spacing)).rounded()))
+    }
 
     var body: some View {
-        // Columns as wide as Interface Size makes them, so zooming in gives bigger cards, fewer to a row.
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: CGFloat(250).scaled, maximum: CGFloat(380).scaled),
-                                     spacing: CGFloat(20).scaled, alignment: .top)], spacing: CGFloat(28).scaled) {
+        let spacing = CGFloat(20).scaled
+        let cardWidth = width > 0 ? (width - spacing * CGFloat(columns - 1)) / CGFloat(columns) : 400
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: spacing, alignment: .top), count: columns),
+                  spacing: CGFloat(28).scaled) {
             ForEach(videos) { video in
                 NavigationLink(value: Route.video(video)) {
-                    VideoCard(video: video, width: CGFloat(380).scaled, showsChannel: showsChannel)
+                    VideoCard(video: video, width: cardWidth, showsChannel: showsChannel)
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
@@ -186,6 +197,9 @@ struct VideoCardGrid: View {
                 }
             }
         }
+        // Measured on the flexible frame, never on the cards it then sizes.
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .padding(.horizontal, VideoMetrics.side)
     }
 }

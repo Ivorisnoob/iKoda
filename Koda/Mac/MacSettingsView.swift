@@ -629,6 +629,15 @@ private struct MacAppearancePane: View {
                 .pickerStyle(.segmented)
                 .fixedSize()
             }
+            MacSettingsRow(title: "Page width",
+                           detail: "How far pages widen in a big window. Default keeps lines and rows a comfortable length, centred; Full Width uses the whole window.") {
+                Picker("Page width", selection: $settings.pageWidth) {
+                    ForEach(AppSettings.PageWidth.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
             #if os(macOS)
             MacSettingsRow(title: "Interface size",
                            detail: "How large Koda's text is. View → Zoom In and Zoom Out (⌘+ and ⌘−) change it too. The sidebar follows the Sidebar icon size in System Settings → Appearance.") {

@@ -8,8 +8,6 @@ enum MacMetrics {
     @MainActor static var card: CGFloat { CGFloat(176).scaled }
     @MainActor static var artistCard: CGFloat { CGFloat(156).scaled }
     static let sectionSpacing: CGFloat = 40
-    /// Past this a page stops widening and centres, so lines and rows stay readable.
-    static let maxContentWidth: CGFloat = 1500
 }
 
 // MARK: - Page
@@ -18,13 +16,15 @@ enum MacMetrics {
 struct MacPage<Content: View>: View {
     var spacing: CGFloat = MacMetrics.sectionSpacing
     @ViewBuilder var content: () -> Content
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: spacing) {
                 content()
             }
-            .frame(maxWidth: MacMetrics.maxContentWidth, alignment: .leading)
+            // Settings → Appearance → Page width: where a wide window stops widening the page.
+            .frame(maxWidth: app.settings.pageWidth.maxWidth, alignment: .leading)
             // A minimum of zero: nothing on a page may ask the split view for more width than
             // it has, or it floats the sidebar over the page and the page runs off the window.
             .frame(minWidth: 0, maxWidth: .infinity)

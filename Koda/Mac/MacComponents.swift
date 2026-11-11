@@ -762,22 +762,39 @@ struct MacSongTile: View {
     }
 }
 
-/// A square of colour with a symbol, standing in for a cover where a list has none of its own.
+/// The cover of a list Koda makes itself (Liked Songs, Recently Played, Downloads), in the
+/// manner of Music's Favourite Songs: one large symbol in its colour on a soft wash of the same
+/// colour, near white in light mode and deep in dark. The symbol is filled light to deep and
+/// casts a faint glow of its own colour; a hairline of light catches the top edge, as glass does.
 struct MacSymbolCover: View {
     let systemImage: String
     let tint: Color
     var size: CGFloat = 232
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.08, style: .continuous)
-            .fill(LinearGradient(colors: [tint, tint.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        let shape = RoundedRectangle(cornerRadius: size * 0.08, style: .continuous)
+        let dark = colorScheme == .dark
+        shape
+            .fill(LinearGradient(colors: dark
+                                    ? [tint.mix(with: .black, by: 0.7), tint.mix(with: .black, by: 0.82)]
+                                    : [tint.mix(with: .white, by: 0.9), tint.mix(with: .white, by: 0.78)],
+                                 startPoint: .top, endPoint: .bottom))
             .overlay {
+                // Drawn at the cover's own size, which already follows Interface Size.
                 Image(systemName: systemImage)
-                    .font(.scaledSystem(size: size * 0.34, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+                    .font(.system(size: size * 0.4, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(LinearGradient(colors: [tint.mix(with: .white, by: dark ? 0.25 : 0.12), tint],
+                                                    startPoint: .top, endPoint: .bottom))
+                    .shadow(color: tint.opacity(dark ? 0.45 : 0.3), radius: size * 0.05, y: size * 0.025)
+            }
+            .overlay {
+                shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.16 : 0.75), .white.opacity(0)],
+                                                  startPoint: .top, endPoint: .center), lineWidth: 1)
             }
             .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

@@ -114,8 +114,8 @@ struct SavedSongsView: View {
         switch source {
         case .liked: ("heart.fill", .pink)
         case .recent: ("clock.fill", .orange)
-        case .downloaded: ("arrow.down.circle.fill", .blue)
-        case .offline: ("airplane.circle.fill", .green)
+        case .downloaded: ("arrow.down.to.line", .blue)
+        case .offline: ("airplane", .green)
         }
     }
 

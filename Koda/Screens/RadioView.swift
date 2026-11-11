@@ -45,11 +45,13 @@ struct RadioView: View {
                     .padding(.bottom, 28)
             }
             .navigationTitle("Radio")
+            #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     ProfileToolbarButton { app.isProfilePresented = true }
                 }
             }
+            #endif
         }
     }
 

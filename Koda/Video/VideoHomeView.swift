@@ -28,6 +28,7 @@ struct VideoHomeView: View {
         .navigationTitle(feed.kind == .subscriptions ? "Subscriptions" : "Videos")
         .refreshable { await load(feed) }
         .task { if feed.needsLoad { await load(feed) } }
+        #if os(iOS)
         .toolbar {
             if feed.kind == .home, app.settings.videoModeEnabled {
                 ToolbarItem(placement: .topBarLeading) { ModeToggle() }
@@ -36,6 +37,7 @@ struct VideoHomeView: View {
                 ProfileToolbarButton { app.isProfilePresented = true }
             }
         }
+        #endif
     }
 
     @ViewBuilder

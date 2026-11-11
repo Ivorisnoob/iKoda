@@ -216,7 +216,9 @@ struct SettingsView: View {
                 OnboardingView(start: .taste, music: app.music, library: library).appEnvironment(app)
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", systemImage: "checkmark") { dismiss() }
@@ -297,7 +299,9 @@ struct LyricsSettingsView: View {
                 Text("Lyrics found earlier are kept until Koda closes. This forgets them, so the next song you open asks the sources again.")
             }
         }
+        #if os(iOS)
         .environment(\.editMode, .constant(.active))
+        #endif
         .navigationTitle("Lyrics")
     }
 }

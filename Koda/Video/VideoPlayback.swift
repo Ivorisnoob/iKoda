@@ -202,7 +202,9 @@ final class VideoPlayback {
                 let stream = try await music.videoStream(video.id)
                 guard !Task.isCancelled, current?.id == video.id else { return }
                 let item = AVPlayerItem(url: stream.url)
+                #if os(iOS)
                 item.externalMetadata = Self.metadata(for: video)
+                #endif
                 item.preferredMaximumResolution = Self.limit(for: quality)
                 qualities = stream.qualities
                 player.replaceCurrentItem(with: item)
@@ -232,7 +234,9 @@ final class VideoPlayback {
     func update(_ video: Video) {
         guard current?.id == video.id else { return }
         current = video.merged(over: current)
+        #if os(iOS)
         player.currentItem?.externalMetadata = Self.metadata(for: video)
+        #endif
     }
 
     func togglePlay() {
@@ -453,7 +457,9 @@ final class VideoPlayback {
         guard AVPictureInPictureController.isPictureInPictureSupported(), pictureInPictureLayer !== layer else { return }
         pictureInPictureLayer = layer
         let controller = AVPictureInPictureController(playerLayer: layer)
+        #if os(iOS)
         controller?.canStartPictureInPictureAutomaticallyFromInline = true
+        #endif
         let delegate = PictureInPictureDelegate { [weak self] active in self?.isInPictureInPicture = active }
         controller?.delegate = delegate
         pictureInPicture = controller
@@ -476,10 +482,12 @@ final class VideoPlayback {
     /// The songs' session is long-form audio, which iOS won't put a picture in picture over; a
     /// video plays as a movie. The songs' player sets its own policy back each time it starts.
     private static func activateVideoSession() {
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         guard session.routeSharingPolicy != .default || session.mode != .moviePlayback else { return }
         try? session.setCategory(.playback, mode: .moviePlayback, policy: .default)
         try? session.setActive(true)
+        #endif
     }
 
     private static func message(_ error: MusicError) -> String {

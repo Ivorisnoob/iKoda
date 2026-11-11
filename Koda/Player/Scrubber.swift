@@ -102,7 +102,9 @@ struct Scrubber: View {
 /// the distance dragged, so brushing its loud end never jumps to full volume.
 struct VolumeSlider: View {
     @Environment(Player.self) private var player
+    #if os(iOS)
     @State private var volume = SystemVolume()
+    #endif
     @State private var dragging = false
     /// The level when the finger came down.
     @State private var dragStart: Float?
@@ -145,9 +147,11 @@ struct VolumeSlider: View {
                 .accessibilityHidden(true)
         }
         .foregroundStyle(.white.opacity(0.6))
+        #if os(iOS)
         .background {
             if !Platform.isMac { HiddenSystemVolumeView(volume: volume).frame(width: 1, height: 1) }
         }
+        #endif
         .accessibilityElement()
         .accessibilityLabel("Volume")
         .accessibilityValue(Text(Double(level), format: .percent.precision(.fractionLength(0))))
@@ -157,13 +161,25 @@ struct VolumeSlider: View {
     }
 
     /// The phone's media volume; on the Mac, where no app can set the system's, Koda's own.
-    private var level: Float { Platform.isMac ? player.volume : volume.level }
+    private var level: Float {
+        #if os(iOS)
+        Platform.isMac ? player.volume : volume.level
+        #else
+        player.volume
+        #endif
+    }
 
     private func setLevel(_ value: Float) {
         let clamped = min(1, max(0, value))
+        #if os(iOS)
         if Platform.isMac { player.volume = clamped } else { volume.set(clamped) }
+        #else
+        player.volume = clamped
+        #endif
     }
 }
+
+#if os(iOS)
 
 /// The phone's media volume: read from the audio session, set through the slider inside
 /// an MPVolumeView, which is the one way an app can change it.
@@ -234,6 +250,21 @@ private struct HiddenSystemVolumeView: UIViewRepresentable {
     }
 }
 
+#endif
+
+#if os(macOS)
+struct AirPlayButton: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        view.setRoutePickerButtonColor(.white, for: .normal)
+        view.setRoutePickerButtonColor(NSColor(Color.accentColor), for: .active)
+        return view
+    }
+
+    func updateNSView(_ view: AVRoutePickerView, context: Context) {}
+}
+#else
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
@@ -245,3 +276,4 @@ struct AirPlayButton: UIViewRepresentable {
 
     func updateUIView(_ view: AVRoutePickerView, context: Context) {}
 }
+#endif

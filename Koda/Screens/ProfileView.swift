@@ -108,6 +108,7 @@ struct ProfileView: View {
             .routeDestinations()
             .navigationTitle("Profile")
             .scrollEdgeEffectStyle(.soft, for: .all)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -117,6 +118,7 @@ struct ProfileView: View {
                     Button("Done", systemImage: "checkmark") { dismiss() }
                 }
             }
+            #endif
             .sheet(isPresented: $showsSettings) { SettingsView().appEnvironment(app) }
             .sheet(isPresented: $editing) { ProfileEditorView(profileID: app.roster.activeID).appEnvironment(app) }
         }

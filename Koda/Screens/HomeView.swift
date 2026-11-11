@@ -309,6 +309,7 @@ struct HomeView: View {
             .animation(.smooth, value: model.state.value == nil)
         }
         .navigationTitle(greeting)
+        #if os(iOS)
         .toolbar {
             if app.settings.videoModeEnabled {
                 ToolbarItem(placement: .topBarLeading) { ModeToggle() }
@@ -317,6 +318,7 @@ struct HomeView: View {
                 ProfileToolbarButton { app.isProfilePresented = true }
             }
         }
+        #endif
         .refreshable {
             await app.music.clearPageCache()
             await load()

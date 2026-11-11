@@ -108,7 +108,9 @@ private struct WelcomePage: View {
         .safeAreaBar(edge: .bottom) {
             OnboardingButton("Continue", action: next)
         }
+        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
+        #endif
     }
 }
 
@@ -230,7 +232,9 @@ private struct OnboardingAccountPage: View {
             }
             .frame(maxWidth: 520)
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 

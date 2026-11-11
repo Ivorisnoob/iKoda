@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A channel: its banner, picture, name and counts, Subscribe, what it says about itself (the
 /// About sheet), and its videos or live streams, newest first or in another order, paging as
@@ -101,7 +105,9 @@ struct ChannelView: View {
                 .padding(.bottom, 32)
             }
             .ignoresSafeArea(edges: .top)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .revealsTitle(page.channel.name, after: bannerHeight + 60)
             .refreshable { await model.load(music: app.music, fresh: true) }
         }
@@ -116,13 +122,13 @@ struct ChannelView: View {
                 .frame(maxWidth: .infinity)
                 .overlay(alignment: .bottom) {
                     // The banner fades into the page rather than ending on a hard edge.
-                    LinearGradient(colors: [.clear, Color(uiColor: .systemBackground)], startPoint: .top, endPoint: .bottom)
+                    LinearGradient(colors: [.clear, Color.platformBackground], startPoint: .top, endPoint: .bottom)
                         .frame(height: 70)
                 }
                 .clipped()
             VStack(alignment: .leading, spacing: 14) {
                 ChannelAvatar(avatar: page.channel.avatar, size: 84)
-                    .overlay(Circle().strokeBorder(Color(uiColor: .systemBackground), lineWidth: 3))
+                    .overlay(Circle().strokeBorder(Color.platformBackground, lineWidth: 3))
                     .padding(.top, -50)
                 identity(page, nameFont: .title.bold())
                 if let description = page.description {

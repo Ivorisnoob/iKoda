@@ -15,7 +15,7 @@ struct ArtworkView: View {
 
     @Environment(\.displayScale) private var scale
     @Environment(\.colorScheme) private var colorScheme
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
 
     private var pixels: Int { Int((size * scale).rounded(.up)) }
     private var url: URL? { artwork?.url(pixels: max(pixels, 120)) }
@@ -35,7 +35,7 @@ struct ArtworkView: View {
             }
             .overlay {
                 if let image {
-                    Image(uiImage: image)
+                    Image(platformImage: image)
                         .resizable()
                         .scaledToFill()
                         // A video's thumbnail is 4:3 with the 16:9 picture letterboxed inside: enlarged
@@ -68,7 +68,7 @@ struct ArtworkView: View {
     }
 
     /// YouTube's video thumbnails (i.ytimg.com) come 4:3, with black bars above and below the picture.
-    private func isLetterboxed(_ image: UIImage) -> Bool {
+    private func isLetterboxed(_ image: PlatformImage) -> Bool {
         guard let host = url?.host(), host.contains("ytimg.com"), image.size.height > 0 else { return false }
         return abs(image.size.width / image.size.height - 4.0 / 3.0) < 0.02
     }

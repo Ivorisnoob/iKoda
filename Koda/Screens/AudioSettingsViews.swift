@@ -47,7 +47,9 @@ struct EqualizerSettingsView: View {
         }
         .sensoryFeedback(.selection, trigger: player.equalizer)
         .navigationTitle("Equalizer")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
@@ -66,7 +68,9 @@ struct AudioQualitySettingsView: View {
             }
         }
         .navigationTitle("Audio Quality")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
     private func picker(_ title: String, selection: Binding<StreamQuality>) -> some View {
@@ -79,6 +83,8 @@ struct AudioQualitySettingsView: View {
                 .tag(quality)
             }
         }
+        #if os(iOS)
         .pickerStyle(.navigationLink)
+        #endif
     }
 }

@@ -91,6 +91,7 @@ struct LibraryView: View {
         .navigationTitle("Library")
         // A signed-in profile's pull brings in what changed on the account elsewhere.
         .refreshable { if app.roster.active.isSignedIn { await app.refreshAccount() } }
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {
@@ -106,6 +107,7 @@ struct LibraryView: View {
                 ProfileToolbarButton { showsProfile = true }
             }
         }
+        #endif
         .sheet(isPresented: $showsProfile) { ProfileView().appEnvironment(app) }
     }
 

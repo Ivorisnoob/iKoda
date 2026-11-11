@@ -219,7 +219,9 @@ struct SavedSongsView: View {
             }
         }
         .listStyle(.plain)
+        #if os(iOS)
         .searchable(text: $query, placement: .navigationBarDrawer, prompt: "Find in \(title)")
+        #endif
         .overlay {
             if !songs.isEmpty, shown.isEmpty {
                 ContentUnavailableView.search(text: query)

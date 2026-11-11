@@ -25,13 +25,18 @@ struct RootView: View {
     }
 
     var body: some View {
+        #if os(iOS)
         if Platform.isMac {
             MacRootView()
         } else {
             phone
         }
+        #else
+        MacRootView()
+        #endif
     }
 
+#if os(iOS)
     private var phone: some View {
         @Bindable var model = model
         return TabView(selection: $model.selectedTab) {
@@ -153,8 +158,10 @@ struct RootView: View {
             }
         }
     }
+#endif
 }
 
+#if os(iOS)
 /// The mini player as the tab bar's accessory; hidden while nothing is queued where the system allows it.
 private struct MiniPlayerAccessory<Accessory: View>: ViewModifier {
     let isEnabled: Bool
@@ -168,3 +175,4 @@ private struct MiniPlayerAccessory<Accessory: View>: ViewModifier {
         }
     }
 }
+#endif

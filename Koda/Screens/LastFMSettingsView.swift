@@ -37,7 +37,9 @@ struct LastFMSettingsView: View {
             }
         }
         .navigationTitle("Last.fm")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .animation(.smooth, value: lastFM.isConnected)
         .animation(.smooth, value: lastFM.isSigningIn)
         .refreshable { await lastFM.refresh() }
@@ -170,7 +172,9 @@ struct LastFMSettingsView: View {
             } footer: {
                 Text("Both are on the page Last.fm shows after you create the account.")
             }
+            #if os(iOS)
             .textInputAutocapitalization(.never)
+            #endif
             .autocorrectionDisabled()
             .font(.body.monospaced())
 

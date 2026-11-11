@@ -1,7 +1,11 @@
 import AVFoundation
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A video playing, with its details, its channel, what can be done with it, its comments and
 /// Up Next.
@@ -41,10 +45,12 @@ struct VideoWatchView: View {
         .navigationTitle(Platform.isMac ? shown.title : "")
         // On the iPhone full screen is a cover; the Mac draws it over the whole window instead
         // (MacRootView), since a cover presented while the window goes full screen got lost.
+        #if os(iOS)
         .fullScreenCover(isPresented: Platform.isMac ? .constant(false) : $playback.isFullScreen) {
             FullScreenVideoView(playback: playback, video: shown)
                 .appEnvironment(app)
         }
+        #endif
         .sheet(isPresented: $showsComments) {
             if let comments {
                 CommentsSheet(model: comments, count: watch.state.value?.commentCount)
@@ -93,14 +99,17 @@ struct VideoWatchView: View {
             }
             .scrollEdgeEffectStyle(.soft, for: .top)
         }
+        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .background { InteractivePopEnabler().frame(width: 0, height: 0) }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in turned() }
         .onAppear { UIDevice.current.beginGeneratingDeviceOrientationNotifications() }
         .onDisappear { UIDevice.current.endGeneratingDeviceOrientationNotifications() }
+        #endif
     }
 
+    #if os(iOS)
     /// Sideways with a landscape video on, as in the TV app: full screen.
     private func turned() {
         guard playback.current?.id == video.id, playback.player.currentItem != nil, !playback.isFullScreen else { return }
@@ -108,6 +117,7 @@ struct VideoWatchView: View {
         guard size.width > size.height, UIDevice.current.orientation.isLandscape else { return }
         playback.isFullScreen = true
     }
+    #endif
 
     // MARK: Mac
 

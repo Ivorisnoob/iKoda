@@ -30,9 +30,9 @@ struct LyricsShareSheet: View {
     @Environment(\.displayScale) private var displayScale
     @State private var selected: Set<Int>
     @State private var style: LyricsCardStyle = .colors
-    @State private var cover: UIImage?
+    @State private var cover: PlatformImage?
     @State private var palette = PaletteModel()
-    @State private var rendered: UIImage?
+    @State private var rendered: PlatformImage?
     @State private var limitHit = 0
     /// The card's natural height at preview width, measured as it lays out.
     @State private var cardHeight: CGFloat = 0
@@ -97,7 +97,7 @@ struct LyricsShareSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Copy Image", systemImage: "doc.on.doc") {
-                    UIPasteboard.general.image = rendered
+                    rendered.map(PlatformImages.copy)
                     copied += 1
                 }
                 .disabled(rendered == nil)
@@ -137,6 +137,7 @@ struct LyricsShareSheet: View {
             }
             .background { backdrop }
             .navigationTitle("Share Lyrics")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -146,6 +147,7 @@ struct LyricsShareSheet: View {
                     shareButton
                 }
             }
+            #endif
         }
         .presentationDetents([.large])
         .presentationBackground(.clear)
@@ -219,7 +221,7 @@ struct LyricsShareSheet: View {
             LinearGradient(colors: [palette.palette.mesh[0], palette.palette.mesh[8]], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .cover:
             // Cropped in an overlay, so a wide video frame can't widen the swatch.
-            Color.gray.overlay { if let cover { Image(uiImage: cover).resizable().scaledToFill() } }.clipped()
+            Color.gray.overlay { if let cover { Image(platformImage: cover).resizable().scaledToFill() } }.clipped()
         case .dark:
             Color(white: 0.1)
         }
@@ -271,7 +273,7 @@ struct LyricsShareSheet: View {
     @ViewBuilder
     private var shareButton: some View {
         if let rendered {
-            let image = Image(uiImage: rendered)
+            let image = Image(platformImage: rendered)
             ShareLink(item: image, preview: SharePreview("\(song.title) · \(song.artistLine)", image: image)) {
                 Label(Platform.isMac ? "Share…" : "Share Card", systemImage: "square.and.arrow.up")
                     .font(.body.weight(.semibold))
@@ -303,7 +305,7 @@ struct LyricsShareSheet: View {
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: card)
         renderer.scale = max(displayScale, 3)
-        rendered = renderer.uiImage
+        rendered = renderer.platformImage
     }
 }
 
@@ -311,7 +313,7 @@ struct LyricsShareSheet: View {
 struct LyricsCard: View {
     let lines: [String]
     let song: Song
-    let cover: UIImage?
+    let cover: PlatformImage?
     let palette: Palette
     var style: LyricsCardStyle = .colors
 
@@ -320,7 +322,7 @@ struct LyricsCard: View {
             HStack(spacing: 12) {
                 Group {
                     if let cover {
-                        Image(uiImage: cover).resizable().scaledToFill()
+                        Image(platformImage: cover).resizable().scaledToFill()
                     } else {
                         Rectangle().fill(.white.opacity(0.15))
                     }
@@ -370,7 +372,7 @@ struct LyricsCard: View {
             Color.black
                 .overlay {
                     if let cover {
-                        Image(uiImage: cover)
+                        Image(platformImage: cover)
                             .resizable()
                             .scaledToFill()
                             .blur(radius: 28)

@@ -2,7 +2,11 @@ import AVFoundation
 import AVKit
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The video with Koda's own controls over it, the same inline and full screen: back (inline, on
 /// the iPhone), AirPlay, picture in picture and a settings menu (quality, speed, captions) along
@@ -106,7 +110,7 @@ struct VideoPlayerView: View {
         .onChange(of: playback.isPlaying) { _, playing in if !playing { reveal() } }
         .onDisappear {
             playback.endBoost()
-            if let systemBrightness { Self.screen?.brightness = systemBrightness }
+            if let systemBrightness { ScreenBrightness.set(systemBrightness) }
         }
         .sensoryFeedback(.selection, trigger: skipTaps)
         .sensoryFeedback(.impact(weight: .medium), trigger: commits)
@@ -415,7 +419,7 @@ struct VideoPlayerView: View {
                     guard abs(dy) > abs(dx) * 1.4 else { return }
                     drag = kind(start: value.startLocation, down: dy > 0)
                     if drag == .brightness {
-                        let current = Self.screen?.brightness ?? 0.5
+                        let current = ScreenBrightness.current ?? 0.5
                         if systemBrightness == nil { systemBrightness = current }
                         brightnessAtStart = current
                     }
@@ -425,7 +429,7 @@ struct VideoPlayerView: View {
                     // The lane's full height takes it from dark to bright.
                     let level = min(1, max(0, brightnessAtStart - dy / max(size.height * 0.8, 1)))
                     brightness = level
-                    Self.screen?.brightness = level
+                    ScreenBrightness.set(level)
                 case .minimize:
                     // Follows the finger, with resistance, so it's clear what letting go will do.
                     pullDown = max(0, dy) * 0.55
@@ -505,11 +509,6 @@ struct VideoPlayerView: View {
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
-    }
-
-    /// The screen the app is on, for the brightness lane.
-    private static var screen: UIScreen? {
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }?.screen
     }
 
     private func toggleControls() {
@@ -814,22 +813,22 @@ struct VideoScrubber: View {
 
 /// The picture: an AVPlayerLayer, registered with the player under its role so picture in
 /// picture can float whichever is in front.
-struct VideoSurface: UIViewRepresentable {
+struct VideoSurface {
     let player: AVPlayer
     let role: VideoPlayback.SurfaceRole
     /// Cropped to fill the frame rather than fitted inside it.
     var fills = false
     let register: (AVPlayerLayer, VideoPlayback.SurfaceRole) -> Void
 
-    func makeUIView(context: Context) -> PlayerLayerView {
+    private func make() -> PlayerLayerView {
         let view = PlayerLayerView()
         view.playerLayer.player = player
         view.playerLayer.videoGravity = .resizeAspect
-        view.backgroundColor = .black
+        view.playerLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         return view
     }
 
-    func updateUIView(_ view: PlayerLayerView, context: Context) {
+    private func update(_ view: PlayerLayerView) {
         if view.playerLayer.player !== player { view.playerLayer.player = player }
         let gravity: AVLayerVideoGravity = fills ? .resizeAspectFill : .resizeAspect
         if view.playerLayer.videoGravity != gravity {
@@ -840,6 +839,49 @@ struct VideoSurface: UIViewRepresentable {
         }
         register(view.playerLayer, role)
     }
+}
+
+#if os(macOS)
+extension VideoSurface: NSViewRepresentable {
+    func makeNSView(context: Context) -> PlayerLayerView { make() }
+    func updateNSView(_ view: PlayerLayerView, context: Context) { update(view) }
+}
+
+/// A view whose layer is an AVPlayerLayer (layer-hosting, as AppKit has it).
+final class PlayerLayerView: NSView {
+    let playerLayer = AVPlayerLayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        layer = playerLayer
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}
+
+/// The system's AirPlay button.
+private struct RoutePicker: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        view.setRoutePickerButtonColor(.white, for: .normal)
+        view.setRoutePickerButtonColor(.systemBlue, for: .active)
+        return view
+    }
+
+    func updateNSView(_ view: AVRoutePickerView, context: Context) {}
+}
+
+/// A Mac has no screen brightness an app may set.
+enum ScreenBrightness {
+    static var current: CGFloat? { nil }
+    static func set(_ level: CGFloat?) {}
+}
+#else
+extension VideoSurface: UIViewRepresentable {
+    func makeUIView(context: Context) -> PlayerLayerView { make() }
+    func updateUIView(_ view: PlayerLayerView, context: Context) { update(view) }
 }
 
 final class PlayerLayerView: UIView {
@@ -860,6 +902,20 @@ private struct RoutePicker: UIViewRepresentable {
     func updateUIView(_ view: AVRoutePickerView, context: Context) {}
 }
 
+/// The brightness of the screen the app is on, for the full-screen brightness lane.
+enum ScreenBrightness {
+    private static var screen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }?.screen
+    }
+
+    static var current: CGFloat? { screen?.brightness }
+
+    static func set(_ level: CGFloat?) {
+        if let level { screen?.brightness = level }
+    }
+}
+#endif
+
 // MARK: - Full screen
 
 /// The player filling the screen; on the iPhone a landscape video turns the screen with it. The
@@ -872,6 +928,7 @@ struct FullScreenVideoView: View {
         VideoPlayerView(playback: playback, video: playback.current ?? video, isFullScreen: true)
             .ignoresSafeArea()
             .background(.black)
+            #if os(iOS)
             .statusBarHidden()
             .persistentSystemOverlays(.hidden)
             .onAppear {
@@ -889,9 +946,11 @@ struct FullScreenVideoView: View {
                 let size = playback.presentationSize
                 if UIDevice.current.orientation == .portrait, size.width > size.height { playback.isFullScreen = false }
             }
+            #endif
     }
 }
 
+#if os(iOS)
 /// The iPhone is portrait everywhere but a full-screen video; the app delegate answers with this.
 @MainActor
 enum Orientation {
@@ -943,6 +1002,7 @@ struct InteractivePopEnabler: UIViewControllerRepresentable {
         }
     }
 }
+#endif
 
 /// What a quality is called: "1080p", "4K"; Settings adds what the tall ones are known as.
 enum VideoQualityName {

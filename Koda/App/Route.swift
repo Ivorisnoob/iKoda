@@ -82,6 +82,7 @@ struct NowPlayingPage: View {
     @Environment(\.nowPlayingZoom) private var zoom
 
     var body: some View {
+        #if os(iOS)
         if let zoom {
             NowPlayingView()
                 .navigationTitle("Now Playing")
@@ -90,6 +91,11 @@ struct NowPlayingPage: View {
             NowPlayingView()
                 .navigationTitle("Now Playing")
         }
+        #else
+        // AppKit's SwiftUI has no zoom transition; the page pushes as any other does.
+        NowPlayingView()
+            .navigationTitle("Now Playing")
+        #endif
     }
 }
 

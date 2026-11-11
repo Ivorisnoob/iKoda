@@ -1,7 +1,11 @@
 import KodaCore
 import PhotosUI
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A playlist made on this phone: play it, find in it, reorder it, give it a photo, name and
 /// description, or delete it.
@@ -17,17 +21,24 @@ struct UserPlaylistView: View {
     @State private var draftSummary = ""
     @State private var photo: PhotosPickerItem?
     @State private var confirmDelete = false
+    #if os(iOS)
     @State private var editMode: EditMode = .inactive
+    #endif
     @State private var query = ""
 
     var body: some View {
         if let playlist = library.userPlaylist(id) {
+            #if os(iOS)
             if Platform.isMac { macContent(playlist) } else { content(playlist) }
+            #else
+            macContent(playlist)
+            #endif
         } else {
             ContentUnavailableView("Playlist Deleted", systemImage: "music.note.list")
         }
     }
 
+#if os(iOS)
     private func content(_ playlist: UserPlaylist) -> some View {
         List {
             Group {
@@ -127,6 +138,7 @@ struct UserPlaylistView: View {
             Text("The songs stay wherever else you saved them.")
         }
     }
+#endif
 
     /// The Mac's playlist page: the mosaic beside the name, songs in columns, and each song's
     /// menu able to move it or take it out, where the phone drags and swipes.
@@ -333,7 +345,7 @@ struct PlaylistCover: View {
         if playlist.hasCover, let image = PlaylistCoverImages.image(for: playlist, in: library) {
             Color.clear
                 .frame(width: size, height: size)
-                .overlay { Image(uiImage: image).resizable().scaledToFill() }
+                .overlay { Image(platformImage: image).resizable().scaledToFill() }
                 .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(.primary.opacity(0.06), lineWidth: 0.5))
         } else {
@@ -346,31 +358,20 @@ struct PlaylistCover: View {
 /// never shown as the old one.
 @MainActor
 enum PlaylistCoverImages {
-    private static var cache: [String: UIImage] = [:]
+    private static var cache: [String: PlatformImage] = [:]
 
-    static func image(for playlist: UserPlaylist, in library: Library) -> UIImage? {
+    static func image(for playlist: UserPlaylist, in library: Library) -> PlatformImage? {
         let key = "\(playlist.id)-\(playlist.coverVersion)"
         if let hit = cache[key] { return hit }
         guard let file = library.playlistCoverFile(playlist.id),
-              let image = (try? Data(contentsOf: file)).flatMap(UIImage.init(data:)) else { return nil }
+              let image = (try? Data(contentsOf: file)).flatMap(PlatformImage.init(data:)) else { return nil }
         cache[key] = image
         return image
     }
 
     /// A picked photo cropped to a square 1024 pixels wide, as JPEG; nil if it isn't an image.
     nonisolated static func squareJPEG(_ data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let side = min(image.size.width, image.size.height)
-        guard side > 0 else { return nil }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let target = CGSize(width: min(1024, side), height: min(1024, side))
-        let scale = target.width / side
-        let squared = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            image.draw(in: CGRect(x: -(image.size.width - side) / 2 * scale, y: -(image.size.height - side) / 2 * scale,
-                                  width: image.size.width * scale, height: image.size.height * scale))
-        }
-        return squared.jpegData(compressionQuality: 0.85)
+        PlatformImages.squareJPEG(data, maxSide: 1024)
     }
 }
 
@@ -451,7 +452,9 @@ struct AddToPlaylistSheet: View {
                 }
             }
             .navigationTitle(target.songs.count == 1 ? "Add to Playlist" : "Add \(target.songs.count) Songs")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") { dismiss() }

@@ -49,9 +49,11 @@ final class VoiceSearch {
             return
         }
         do {
+            #if os(iOS)
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
+            #endif
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
@@ -124,9 +126,11 @@ final class VoiceSearch {
         request = nil
         level = 0
         // Hand audio back to playback, as Koda had it.
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     // These run on audio and speech threads. Built outside the main actor, so
@@ -157,6 +161,15 @@ final class VoiceSearch {
 
 /// The listening sheet: what is heard so far, over a microphone that moves with the voice.
 struct VoiceSearchSheet: View {
+    /// Where the listener turns the microphone and speech recognition back on.
+    static var privacySettings: URL? {
+        #if os(macOS)
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        #else
+        URL(string: UIApplication.openSettingsURLString)
+        #endif
+    }
+
     let onSearch: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -205,7 +218,7 @@ struct VoiceSearchSheet: View {
 
             if case .blocked = voice.phase {
                 Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    if let url = VoiceSearchSheet.privacySettings { openURL(url) }
                 }
                 .buttonStyle(.glass)
             }

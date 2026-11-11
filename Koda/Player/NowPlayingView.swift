@@ -536,7 +536,9 @@ private struct LyricsTimingMenu: View {
             Label(offset == 0 ? "Lyrics Timing" : String(format: "Lyrics Timing (%+.1fs)", offset), systemImage: "timer")
         }
         // The menu stays open between steps, so the listener can nudge and watch the lyrics move.
+        #if os(iOS)
         .menuActionDismissBehavior(.disabled)
+        #endif
     }
 }
 

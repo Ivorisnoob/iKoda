@@ -7,7 +7,9 @@ struct KodaApp: App {
     @State private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     /// Answers which way the iPhone may turn: upright, except a full-screen video.
+    #if os(iOS)
     @UIApplicationDelegateAdaptor(KodaAppDelegate.self) private var appDelegate
+    #endif
 
     init() {
         let model = AppModel()
@@ -42,7 +44,7 @@ struct KodaApp: App {
             }
         }
 
-        #if targetEnvironment(macCatalyst)
+        #if targetEnvironment(macCatalyst) || os(macOS)
         // Keyed by one value, so asking again brings the open Settings window forward.
         WindowGroup("Settings", id: MacSettingsView.windowID, for: String.self) { _ in
             MacSettingsView()

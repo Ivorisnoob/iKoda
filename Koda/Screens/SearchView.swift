@@ -104,6 +104,7 @@ struct SearchView: View {
         .onChange(of: model.query) { _, text in
             if text.isEmpty { model.clear() }
         }
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search by Voice", systemImage: "mic") {
@@ -113,6 +114,7 @@ struct SearchView: View {
                 }
             }
         }
+        #endif
         .sheet(isPresented: $listening, onDismiss: {
             if resumeAfterVoice { player.resume() }
             resumeAfterVoice = false

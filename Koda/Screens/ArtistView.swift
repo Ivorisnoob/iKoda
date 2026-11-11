@@ -161,8 +161,11 @@ struct ArtistView: View {
             pull = max(0, -offset)
         }
         .ignoresSafeArea(edges: .top)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .revealsTitle(state.value?.artist.name ?? summary.name, after: 340)
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 let saved = library.isSaved(artist: summary.id)
@@ -180,6 +183,7 @@ struct ArtistView: View {
                 }
             }
         }
+        #endif
         .task { await palette.load(summary.artwork) }
         .task { if state.value == nil { await load() } }
     }
@@ -326,8 +330,8 @@ private struct ArtistHeroImage: View {
     let width: CGFloat
     let height: CGFloat
     @Environment(\.displayScale) private var scale
-    @State private var image: UIImage?
-    @State private var previewImage: UIImage?
+    @State private var image: PlatformImage?
+    @State private var previewImage: PlatformImage?
 
     private var url: URL? {
         guard let artwork else { return nil }
@@ -342,7 +346,7 @@ private struct ArtistHeroImage: View {
         ZStack {
             LinearGradient(colors: [tint.opacity(0.9), tint.opacity(0.4)], startPoint: .top, endPoint: .bottom)
             if let previewImage, image == nil {
-                Image(uiImage: previewImage)
+                Image(platformImage: previewImage)
                     .resizable()
                     .scaledToFill()
                     .blur(radius: 24)
@@ -350,7 +354,7 @@ private struct ArtistHeroImage: View {
                     .transition(.opacity)
             }
             if let image {
-                Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                Image(platformImage: image).resizable().scaledToFill().transition(.opacity)
             }
         }
         .frame(width: width, height: height)

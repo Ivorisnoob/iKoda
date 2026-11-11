@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A video's 16:9 frame: YouTube's 1280-wide image, or the 320-wide one every video has when
 /// that's missing. Laid out by a shape so the image never sets its own size.
@@ -13,7 +17,7 @@ struct VideoThumbnail: View {
     var showsProgress = true
     @Environment(\.displayScale) private var scale
     @Environment(Library.self) private var library
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
 
     var body: some View {
         Rectangle()
@@ -21,7 +25,7 @@ struct VideoThumbnail: View {
             .aspectRatio(16 / 9, contentMode: .fit)
             .overlay {
                 if let image {
-                    Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                    Image(platformImage: image).resizable().scaledToFill().transition(.opacity)
                 }
             }
             .overlay(alignment: .bottom) { progress }

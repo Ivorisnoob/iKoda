@@ -486,8 +486,7 @@ extension Color {
     /// This colour, made readable as text on the page: a colourless one gives way to the
     /// accent, dark mode lightens a deep one and light mode darkens a bright one.
     func readable(in scheme: ColorScheme) -> Color {
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        guard UIColor(self).getHue(&h, saturation: &s, brightness: &b, alpha: &a), s >= 0.2 else { return .accentColor }
+        guard case let (h, s, b)? = self.hsb, s >= 0.2 else { return .accentColor }
         return scheme == .dark
             ? Color(hue: h, saturation: min(s, 0.7), brightness: max(b, 0.85))
             : Color(hue: h, saturation: max(s, 0.6), brightness: min(b, 0.5))

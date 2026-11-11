@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The top of an album or playlist page.
 struct CollectionHeader: View {
@@ -24,8 +28,7 @@ struct CollectionHeader: View {
     /// white or grey, so Koda's accent stands in; light mode darkens a bright one, dark mode
     /// lightens a deep one.
     private var readableAccent: Color {
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        guard UIColor(accent).getHue(&h, saturation: &s, brightness: &b, alpha: &a), s >= 0.2 else { return .accentColor }
+        guard case let (h, s, b)? = accent.hsb, s >= 0.2 else { return .accentColor }
         return colorScheme == .dark
             ? Color(hue: h, saturation: min(s, 0.7), brightness: max(b, 0.85))
             : Color(hue: h, saturation: max(s, 0.6), brightness: min(b, 0.5))

@@ -150,7 +150,9 @@ struct ProfileEditorView: View {
             }
         }
         .navigationTitle("Edit Profile")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done", systemImage: "checkmark") {
@@ -249,7 +251,9 @@ struct AddProfileView: View {
                 if makesLocal { local } else { choices }
             }
             .navigationTitle(makesLocal ? "New Profile" : "Add Profile")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") { dismiss() }

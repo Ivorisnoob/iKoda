@@ -43,7 +43,9 @@ struct TasteArtistsPage: View {
                 Button("Skip Setup", action: skip)
             }
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
     @ViewBuilder
@@ -167,7 +169,9 @@ struct TasteGenresPage: View {
                 Button("Skip Setup", action: skip)
             }
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
@@ -309,7 +313,9 @@ struct TasteDeckPage: View {
                 }
             }
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .sensoryFeedback(.impact(weight: .light), trigger: answers)
         .focusable()
         .focusEffectDisabled()

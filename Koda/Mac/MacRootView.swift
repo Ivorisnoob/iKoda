@@ -103,8 +103,23 @@ struct MacRootView: View {
         }
         .environment(\.nowPlayingZoom, playerZoom)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // The bar is whatever is playing: a video away from its page, or the song. With both
-            // paused, the one that belongs where you are.
+            playerBars
+                // Only the bars animate. Animating the stack with them (as a modifier on the
+                // whole page did) put the push of a video's page, which also hides the video bar,
+                // inside the bar's animation, and the Mac's navigation stack then left the page
+                // underneath on screen, drawn through the new one.
+                .animation(.smooth(duration: 0.35), value: player.current == nil)
+                .animation(.smooth(duration: 0.35), value: showsVideoBar)
+                .animation(.smooth(duration: 0.25), value: showsNowPlaying)
+        }
+        .onChange(of: player.current == nil) { _, isEmpty in if isEmpty { model.sidePanel = nil } }
+    }
+
+    /// The bar is whatever is playing: a video away from its page, or the song. With both
+    /// paused, the one that belongs where you are.
+    @ViewBuilder
+    private var playerBars: some View {
+        ZStack {
             if showsVideoBar {
                 MacVideoBar(playback: model.videos) {
                     if let video = model.videos.current { model.open(.video(video)) }
@@ -114,16 +129,12 @@ struct MacRootView: View {
                 // Under Now Playing the bar only repeats it, so it steps out of sight; it stays in
                 // place, as the cover the player zooms back into.
                 MacPlayerBar(openNowPlaying: openNowPlaying, zoom: playerZoom)
-                .opacity(showsNowPlaying ? 0 : 1)
-                .allowsHitTesting(!showsNowPlaying)
-                .accessibilityHidden(showsNowPlaying)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .opacity(showsNowPlaying ? 0 : 1)
+                    .allowsHitTesting(!showsNowPlaying)
+                    .accessibilityHidden(showsNowPlaying)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.smooth(duration: 0.35), value: player.current == nil)
-        .animation(.smooth(duration: 0.35), value: showsVideoBar)
-        .animation(.smooth(duration: 0.25), value: showsNowPlaying)
-        .onChange(of: player.current == nil) { _, isEmpty in if isEmpty { model.sidePanel = nil } }
     }
 
     private var showsVideoBar: Bool {

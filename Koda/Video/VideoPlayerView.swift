@@ -1312,15 +1312,18 @@ private struct MacTimeline: View {
                 .frame(height: thick ? 7 : 4)
                 .frame(maxHeight: .infinity)
                 .contentShape(.rect)
-                .overlay(alignment: .bottomLeading) {
+                .overlay(alignment: .topLeading) {
                     if let hoverX, dragged == nil, duration > 0 {
                         let seconds = duration * Double(min(1, max(0, hoverX / width)))
-                        // Centred over the pointer (kept within the line's ends), floating clear
-                        // above the control bar.
-                        TimelinePreview(playback: playback, seconds: seconds)
-                            .fixedSize()
-                            .alignmentGuide(.leading) { $0.width / 2 - min(max(hoverX, $0.width / 2), width - $0.width / 2) }
-                            .alignmentGuide(.bottom) { $0[.bottom] + 34 }
+                        // Hung from a point just above the line at the pointer (kept clear of the
+                        // line's ends), so it floats over the control bar centred on the pointer.
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .overlay(alignment: .bottom) {
+                                TimelinePreview(playback: playback, seconds: seconds)
+                                    .fixedSize()
+                            }
+                            .position(x: min(max(hoverX, 96), max(96, width - 96)), y: -22)
                             .allowsHitTesting(false)
                     }
                 }

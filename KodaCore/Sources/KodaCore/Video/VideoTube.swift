@@ -20,8 +20,10 @@ extension YouTubeMusic {
     }
 
     /// Videos and the channels that match, best first. Shorts are left out.
-    public func searchVideos(_ query: String) async throws -> VideoSearchResults {
-        VideoPages.search(try await api.web("search", ["query": query]))
+    public func searchVideos(_ query: String, filters: VideoSearchFilters = VideoSearchFilters()) async throws -> VideoSearchResults {
+        var payload: [String: Any] = ["query": query]
+        if let params = filters.params { payload["params"] = params }
+        return VideoPages.search(try await api.web("search", payload))
     }
 
     /// The next page of a list.

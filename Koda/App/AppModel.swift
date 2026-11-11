@@ -140,6 +140,7 @@ final class AppModel {
         }
         videos.autoplays = { settings.autoplaysVideos }
         videos.defaultQuality = { settings.videoQuality }
+        videos.skipsSponsors = { settings.skipsSponsors }
         videos.pauseMusic = { [player] in
             if player.wantsToPlay { player.togglePlayPause(from: "a video starting") }
         }

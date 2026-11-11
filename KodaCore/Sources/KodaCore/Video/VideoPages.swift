@@ -59,7 +59,8 @@ enum VideoPages {
             commentCount: comments.first("engagementPanelTitleHeaderRenderer")["contextualInfo"].text.nonEmptyString,
             commentsToken: commentsToken(root),
             autoplayId: root.first("autoplayVideo")["watchEndpoint"]["videoId"].nonEmpty,
-            related: page(related)
+            related: page(related),
+            chapters: chapters(root)
         )
     }
 

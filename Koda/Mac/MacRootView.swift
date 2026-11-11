@@ -191,8 +191,11 @@ struct MacRootView: View {
             case .videoSearch: section = .videos
                 searchFocused = true
             case .search:
-                musicExpanded = true
-                section = .search
+                // In a video place the toolbar's field already searches YouTube: just go to it.
+                if !(section ?? .home).isVideo {
+                    musicExpanded = true
+                    section = .search
+                }
                 searchFocused = true
             }
         }

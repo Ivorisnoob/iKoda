@@ -120,6 +120,12 @@ final class AppSettings {
     /// The cover's colours drift behind Now Playing; off, they hold still.
     var animatesPlayerBackground: Bool { didSet { defaults.set(animatesPlayerBackground, forKey: Keys.animatedBackground) } }
     var animatedArt: AnimatedArt { didSet { defaults.set(animatedArt.rawValue, forKey: Keys.animatedArt) } }
+    /// SponsorBlock: skip sponsor, self-promotion and subscribe-reminder parts of videos. Off by
+    /// default: it asks an outside service (with only a hash prefix of the video's id).
+    var skipsSponsors: Bool { didSet { defaults.set(skipsSponsors, forKey: Keys.sponsorBlock) } }
+    /// Return YouTube Dislike's estimate beside the dislike button. Off by default: it sends
+    /// the video's id to an outside service.
+    var showsDislikes: Bool { didSet { defaults.set(showsDislikes, forKey: Keys.dislikes) } }
     /// How wide a Mac page grows in a wide window before it centres.
     var pageWidth: PageWidth { didSet { defaults.set(pageWidth.rawValue, forKey: Keys.pageWidth) } }
     /// A video thumbnail plays muted while the pointer rests on it (Mac), as YouTube's do.
@@ -181,6 +187,8 @@ final class AppSettings {
         static let homeMix = "koda.home.mix"
         static let videoHoverPreview = "koda.video.hoverPreview"
         static let pageWidth = "koda.mac.pageWidth"
+        static let sponsorBlock = "koda.video.sponsorBlock"
+        static let dislikes = "koda.video.dislikes"
         static let lyricsOrder = "koda.lyrics.order"
         static let lyricsDisabled = "koda.lyrics.disabled"
         static let lyricsMotion = "koda.lyrics.motion"
@@ -214,6 +222,8 @@ final class AppSettings {
         showsMixOnHome = d.object(forKey: Keys.homeMix) as? Bool ?? true
         previewsVideosOnHover = d.object(forKey: Keys.videoHoverPreview) as? Bool ?? true
         pageWidth = d.string(forKey: Keys.pageWidth).flatMap(PageWidth.init(rawValue:)) ?? .standard
+        skipsSponsors = d.bool(forKey: Keys.sponsorBlock)
+        showsDislikes = d.bool(forKey: Keys.dislikes)
         // Services added in a later version join at the end of a saved order.
         let saved = (d.stringArray(forKey: Keys.lyricsOrder) ?? []).compactMap(LyricsSource.init(rawValue:))
         lyricsSourceOrder = saved + LyricsSource.allCases.filter { !saved.contains($0) }

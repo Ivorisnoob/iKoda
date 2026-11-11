@@ -35,6 +35,8 @@ struct KodaApp: App {
             KodaCommands(model: model)
             #if os(macOS)
             InterfaceScaleCommands()
+            // View → Show/Hide Sidebar (⌃⌘S), as the Mac's apps have it.
+            SidebarCommands()
             #endif
         }
         .onChange(of: scenePhase) { _, phase in

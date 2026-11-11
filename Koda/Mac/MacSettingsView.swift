@@ -508,7 +508,7 @@ private struct MacPlaybackPane: View {
             }
         }
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled
-                         ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
+                         ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, 0–9 jump to that tenth of the video, , and . step a frame while paused, < and > change the speed, C turns subtitles on or off, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
                          : nil) {
             MacSettingsToggle(title: "Video mode", detail: "YouTube itself beside your music: Videos, your channels and Explore join the sidebar, with the video player.",
                               isOn: $settings.videoModeEnabled)
@@ -526,6 +526,15 @@ private struct MacPlaybackPane: View {
                     MacSettingsToggle(title: "Preview on hover", detail: "Resting the pointer on a video plays it in its thumbnail, muted.",
                                       isOn: $settings.previewsVideosOnHover)
                 }
+            }
+        }
+        if settings.videoModeEnabled {
+            MacSettingsGroup(title: "From Outside YouTube",
+                             footer: "These ask services run by volunteers, not YouTube. SponsorBlock is told only the first four characters of a fingerprint of each video's id; Return YouTube Dislike is sent the id itself.") {
+                MacSettingsToggle(title: "Skip sponsors", detail: "SponsorBlock's sponsor, self-promotion and subscribe-reminder parts are skipped as they come, marked green on the timeline, with Undo.",
+                                  isOn: $settings.skipsSponsors)
+                MacSettingsToggle(title: "Show dislikes", detail: "Return YouTube Dislike's estimate beside the dislike button, now that YouTube hides the count.",
+                                  isOn: $settings.showsDislikes)
             }
         }
         MacSettingsGroup(title: "Skipping", footer: "⌥⌘← and ⌥⌘→ skip back and ahead too, with the buttons shown or not.") {

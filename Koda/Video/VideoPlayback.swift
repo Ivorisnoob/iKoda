@@ -55,6 +55,29 @@ final class VideoPlayback {
 
     let player = AVPlayer()
     static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+    /// The frames the timeline previews under the pointer, from the stream's answer.
+    private(set) var storyboard: VideoStoryboard?
+    /// Chapters by video, as watch pages bring them in (a page can load before or after its
+    /// video starts).
+    private(set) var knownChapters: [String: [VideoChapter]] = [:]
+    /// The playing video's chapters, in order; empty when it has none.
+    var chapters: [VideoChapter] { current.flatMap { knownChapters[$0.id] } ?? [] }
+    /// Sponsor, self-promotion and subscribe-reminder parts SponsorBlock marked in the playing
+    /// video, skipped as they come (only with Skip Sponsors on).
+    private(set) var sponsorSegments: [SponsorSegment] = []
+    /// The part just skipped, for the player to say so and offer to go back.
+    private(set) var sponsorSkip: SponsorSkip?
+    /// Whether SponsorBlock is asked about each video (Settings → Videos, off by default).
+    @ObservationIgnored var skipsSponsors: () -> Bool = { false }
+    @ObservationIgnored private var skippedSegments: Set<String> = []
+    /// Where a video asked for at a time (a chapter of one not yet on) starts.
+    @ObservationIgnored private var pendingStart: TimeInterval?
+
+    struct SponsorSkip: Equatable {
+        let id: String
+        let title: String
+        let from: TimeInterval
+    }
     /// The rates a hold can reach by sliding sideways.
     static let boostRange: ClosedRange<Float> = 1.25...3
 
@@ -137,6 +160,7 @@ final class VideoPlayback {
         }
         guard let id = current?.id, player.currentItem != nil else { return }
         if playing { playedSeconds += 0.25 }
+        skipSponsorSegment()
         // Where it got to: every few seconds while it plays, and as it stops.
         if !isLive, duration > 0, abs(time - lastProgressSave) >= 5 || (wasPlaying && !playing) {
             lastProgressSave = time
@@ -165,9 +189,12 @@ final class VideoPlayback {
 
     // MARK: Playing
 
-    /// Start `video`, unless it's already the one on.
-    func play(_ video: Video) {
+    /// Start `video`, unless it's already the one on; `startingAt` jumps there (a chapter).
+    func play(_ video: Video, startingAt start: TimeInterval? = nil) {
         if current?.id == video.id, player.currentItem != nil || (isLoading && error == nil) {
+            if let start {
+                if player.currentItem != nil { seek(to: start) } else { pendingStart = start }
+            }
             // Back on the same video's page, or the page catching up with an autoplay already
             // loading it: keep the details fresher, don't restart it.
             current = video.merged(over: current)
@@ -191,6 +218,11 @@ final class VideoPlayback {
         captions = []
         caption = nil
         legible = nil
+        storyboard = nil
+        sponsorSegments = []
+        sponsorSkip = nil
+        skippedSegments = []
+        pendingStart = start
         quality = defaultQuality()
         spanStart = 0
         playedSeconds = 0
@@ -208,6 +240,8 @@ final class VideoPlayback {
                 #endif
                 item.preferredMaximumResolution = Self.limit(for: quality)
                 qualities = stream.qualities
+                storyboard = stream.storyboard
+                if skipsSponsors(), !stream.isLive { loadSponsorSegments(for: video.id) }
                 player.replaceCurrentItem(with: item)
                 player.defaultRate = speed
                 // Back where it was left, as YouTube does; a live stream is always now.
@@ -218,6 +252,14 @@ final class VideoPlayback {
                     spanStart = position
                     lastProgressSave = position
                     resumedFrom = position
+                }
+                if let start = pendingStart {
+                    pendingStart = nil
+                    await player.seek(to: CMTime(seconds: start, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                    guard current?.id == video.id else { return }
+                    time = start
+                    spanStart = start
+                    resumedFrom = nil
                 }
                 Self.activateVideoSession()
                 player.play()
@@ -269,6 +311,68 @@ final class VideoPlayback {
         resumedFrom = nil
         cancelAutoplay()
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    // MARK: Chapters and SponsorBlock
+
+    func setChapters(_ chapters: [VideoChapter], for videoId: String) {
+        guard knownChapters[videoId] != chapters else { return }
+        knownChapters[videoId] = chapters
+        // A handful is enough to keep; pages come and go.
+        if knownChapters.count > 30, let stale = knownChapters.keys.first(where: { $0 != current?.id && $0 != videoId }) {
+            knownChapters[stale] = nil
+        }
+    }
+
+    private func loadSponsorSegments(for videoId: String) {
+        Task {
+            let segments = await SponsorBlock.segments(for: videoId)
+            guard current?.id == videoId else { return }
+            let skipped: Set<SponsorSegment.Category> = [.sponsor, .selfpromo, .interaction]
+            sponsorSegments = segments.filter { skipped.contains($0.category) }
+        }
+    }
+
+    /// Playing into a marked part jumps to its end, once per part, so seeking back into it on
+    /// purpose plays it.
+    private func skipSponsorSegment() {
+        guard isPlaying, !sponsorSegments.isEmpty,
+              let segment = sponsorSegments.first(where: { time >= $0.start && time < $0.end - 0.5 && !skippedSegments.contains($0.id) })
+        else { return }
+        skippedSegments.insert(segment.id)
+        seek(to: segment.end)
+        sponsorSkip = SponsorSkip(id: segment.id, title: segment.category.title, from: segment.start)
+    }
+
+    /// Back to the start of the part just skipped; it then plays.
+    func undoSponsorSkip() {
+        guard let skip = sponsorSkip else { return }
+        sponsorSkip = nil
+        seek(to: skip.from)
+    }
+
+    func dismissSponsorSkip() {
+        sponsorSkip = nil
+    }
+
+    /// One frame on or back, while paused (`,` and `.`).
+    func step(by frames: Int) {
+        guard let item = player.currentItem, !isPlaying else { return }
+        item.step(byCount: frames)
+    }
+
+    /// The next speed up or down the list (`>` and `<`).
+    func stepSpeed(by offset: Int) {
+        let index = Self.speeds.firstIndex(of: speed) ?? Self.speeds.firstIndex(of: 1)!
+        setSpeed(Self.speeds[min(Self.speeds.count - 1, max(0, index + offset))])
+    }
+
+    /// Subtitles on (the listener's language if offered, else the first) or off (`C`).
+    func toggleCaptions() {
+        if caption != nil { return setCaption(nil) }
+        let language = Locale.current.language.languageCode?.identifier
+        let preferred = captions.first { $0.locale?.language.languageCode?.identifier == language } ?? captions.first
+        setCaption(preferred)
     }
 
     func skip(by seconds: TimeInterval) {

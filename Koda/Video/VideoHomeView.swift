@@ -19,9 +19,17 @@ struct VideoHomeView: View {
 
     // MARK: iPhone
 
+    /// Videos left part-way, most recent first, as YouTube's own row: where each would pick up.
+    private var continueWatching: [Video] {
+        Array(library.watched.filter { library.videoProgress[$0.id]?.resumeAt != nil }.prefix(12))
+    }
+
     private var phoneBody: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 26) {
+                if feed.kind == .home, !continueWatching.isEmpty {
+                    ContinueWatchingShelf(videos: continueWatching)
+                }
                 feedList(feed)
             }
             .padding(.vertical, 8)
@@ -102,6 +110,9 @@ struct VideoHomeView: View {
                     .frame(width: 28)
                     .keyboardShortcut("r", modifiers: .command)
                 }
+            }
+            if feed.kind == .home, filter == .all, !continueWatching.isEmpty {
+                ContinueWatchingShelf(videos: continueWatching)
             }
             VideoGrid(model: feed, filter: filter) { await load(feed) }
         }
@@ -261,6 +272,31 @@ struct RecentlyWatchedShelf: View {
     }
 }
 
+/// Videos left part-way, at the top of Home: each card shows how far it got, and opens where it
+/// was left.
+struct ContinueWatchingShelf: View {
+    let videos: [Video]
+
+    var body: some View {
+        if Platform.isMac {
+            MacShelf(title: "Continue Watching", seeAll: .watched) { cards(width: CGFloat(280).scaled) }
+        } else {
+            ShelfView(title: "Continue Watching", seeAll: .watched) { cards(width: 240) }
+        }
+    }
+
+    private func cards(width: CGFloat) -> some View {
+        ForEach(videos) { video in
+            NavigationLink(value: Route.video(video)) {
+                VideoCard(video: video, width: width)
+                    .frame(width: width)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { VideoMenuItems(video: video) }
+        }
+    }
+}
+
 /// Search results: matching channels in a row, then videos.
 struct VideoSearchResultsView: View {
     let model: VideoSearchModel
@@ -284,8 +320,13 @@ struct VideoSearchResultsView: View {
             .frame(maxWidth: .infinity, minHeight: 320)
         case .loaded(let results):
             if results.videos.videos.isEmpty, results.channels.isEmpty {
-                ContentUnavailableView.search(text: model.submitted ?? "")
-                    .frame(maxWidth: .infinity, minHeight: 320)
+                // The filters stay, so ones that left nothing can be changed or cleared.
+                VStack(alignment: .leading, spacing: 24) {
+                    SearchFilterBar(model: model)
+                    ContentUnavailableView.search(text: model.submitted ?? "")
+                        .frame(maxWidth: .infinity, minHeight: 320)
+                }
+                .padding(.vertical, 8)
             } else {
                 content(results)
             }
@@ -294,6 +335,7 @@ struct VideoSearchResultsView: View {
 
     private func content(_ results: VideoSearchResults) -> some View {
         LazyVStack(alignment: .leading, spacing: 24) {
+            SearchFilterBar(model: model)
             if !results.channels.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 18) {
@@ -323,6 +365,83 @@ struct VideoSearchResultsView: View {
             }
         }
         .padding(.vertical, 8)
+    }
+}
+
+/// YouTube's search filters as a row of menus, each showing what it's set to.
+private struct SearchFilterBar: View {
+    let model: VideoSearchModel
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
+                menu("Upload Date", value: \.uploadDate, options: VideoSearchFilters.UploadDate.allCases, any: "Any Time", title: Self.title)
+                menu("Length", value: \.length, options: [.underFourMinutes, .fourToTwentyMinutes, .overTwentyMinutes], any: "Any Length", title: Self.title)
+                menu("Type", value: \.type, options: VideoSearchFilters.ResultType.allCases, any: "All Results", title: Self.title)
+                Picker("Sort By", selection: binding(\.sort)) {
+                    Text("Relevance").tag(VideoSearchFilters.Sort.relevance)
+                    Text("View Count").tag(VideoSearchFilters.Sort.viewCount)
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                if !model.filters.isEmpty {
+                    Button("Clear Filters") { refine(VideoSearchFilters()) }
+                        .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, VideoMetrics.side)
+            .padding(.vertical, 2)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func menu<Value: Hashable>(_ label: String, value: WritableKeyPath<VideoSearchFilters, Value?>, options: [Value],
+                                       any: String, title: @escaping (Value) -> String) -> some View {
+        Picker(label, selection: binding(value)) {
+            Text(any).tag(Value?.none)
+            Divider()
+            ForEach(options, id: \.self) { Text(title($0)).tag(Optional($0)) }
+        }
+        .pickerStyle(.menu)
+        .fixedSize()
+    }
+
+    private func binding<Value>(_ key: WritableKeyPath<VideoSearchFilters, Value>) -> Binding<Value> {
+        Binding(get: { model.filters[keyPath: key] }, set: { value in
+            var filters = model.filters
+            filters[keyPath: key] = value
+            refine(filters)
+        })
+    }
+
+    private func refine(_ filters: VideoSearchFilters) {
+        Task { await model.refine(filters, music: app.music) }
+    }
+
+    static func title(_ date: VideoSearchFilters.UploadDate) -> String {
+        switch date {
+        case .lastHour: "Last Hour"
+        case .today: "Today"
+        case .thisWeek: "This Week"
+        case .thisMonth: "This Month"
+        case .thisYear: "This Year"
+        }
+    }
+
+    static func title(_ length: VideoSearchFilters.Length) -> String {
+        switch length {
+        case .underFourMinutes: "Under 4 Minutes"
+        case .fourToTwentyMinutes: "4–20 Minutes"
+        case .overTwentyMinutes: "Over 20 Minutes"
+        }
+    }
+
+    static func title(_ type: VideoSearchFilters.ResultType) -> String {
+        switch type {
+        case .videos: "Videos"
+        case .channels: "Channels"
+        }
     }
 }
 

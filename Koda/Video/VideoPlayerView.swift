@@ -82,6 +82,12 @@ struct VideoPlayerView: View {
                 if Platform.isMac { macControls } else { controls }
                 feedback
             }
+            if isThis, let skip = playback.sponsorSkip {
+                SponsorSkipNote(skip: skip, undo: { playback.undoSponsorSkip() }, dismiss: { playback.dismissSponsorSkip() })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(isFullScreen ? 28 : 14)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .offset(y: pullDown)
@@ -119,6 +125,7 @@ struct VideoPlayerView: View {
         .sensoryFeedback(.selection, trigger: skipTaps)
         .sensoryFeedback(.impact(weight: .medium), trigger: commits)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: counting)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: playback.sponsorSkip)
     }
 
     // MARK: Mac controls
@@ -653,6 +660,37 @@ struct VideoPlayerView: View {
                 note = playback.isMuted ? "Muted" : "Sound On"
             }
             .keyboardShortcut("m", modifiers: [])
+            // YouTube's own: 0–9 jump to that tenth, , and . step a frame while paused, < and >
+            // change the speed, C turns subtitles on or off.
+            ForEach(0..<10, id: \.self) { tenth in
+                Button("Jump to \(tenth * 10)%") {
+                    guard playback.duration > 0, !playback.isLive else { return }
+                    playback.seek(to: playback.duration * Double(tenth) / 10)
+                    reveal()
+                }
+                .keyboardShortcut(KeyEquivalent(Character(String(tenth))), modifiers: [])
+            }
+            Button("Previous Frame") { playback.step(by: -1) }.keyboardShortcut(",", modifiers: [])
+            Button("Next Frame") { playback.step(by: 1) }.keyboardShortcut(".", modifiers: [])
+            Button("Slower") {
+                playback.stepSpeed(by: -1)
+                note = playback.speed == 1 ? "Normal Speed" : VideoSettingsMenu.speedName(playback.speed)
+            }
+            .keyboardShortcut(",", modifiers: .shift)
+            Button("Faster") {
+                playback.stepSpeed(by: 1)
+                note = playback.speed == 1 ? "Normal Speed" : VideoSettingsMenu.speedName(playback.speed)
+            }
+            .keyboardShortcut(".", modifiers: .shift)
+            Button("Subtitles") {
+                guard !playback.captions.isEmpty else {
+                    note = "No Subtitles"
+                    return
+                }
+                playback.toggleCaptions()
+                note = playback.caption.map { "Subtitles: \($0.displayName)" } ?? "Subtitles Off"
+            }
+            .keyboardShortcut("c", modifiers: [])
         }
         .opacity(0)
         .frame(width: 0, height: 0)
@@ -1152,6 +1190,34 @@ struct InteractivePopEnabler: UIViewControllerRepresentable {
 }
 #endif
 
+/// "Skipped Sponsor", with Undo, for a few seconds after SponsorBlock skips a part.
+private struct SponsorSkipNote: View {
+    let skip: VideoPlayback.SponsorSkip
+    let undo: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Label("Skipped \(skip.title)", systemImage: "forward.end.fill")
+                .font(.system(size: 13, weight: .semibold))
+            Button("Undo", action: undo)
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.tint)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .glassEffect(.regular, in: .capsule)
+        .environment(\.colorScheme, .dark)
+        .task(id: skip.id) {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.smooth) { dismiss() }
+        }
+    }
+}
+
 /// Where the picture was, while it floats in picture in picture.
 private struct PictureInPicturePlaceholder: View {
     let bringBack: () -> Void
@@ -1206,8 +1272,9 @@ private struct MacBarButton: View {
     }
 }
 
-/// The Mac's timeline: the time played, the line, the time left. Under the pointer the line
-/// thickens and shows the time it would jump to; a click or drag goes there.
+/// The Mac's timeline: the time played, the line, the time left. The line breaks at each
+/// chapter and marks SponsorBlock's parts; under the pointer it thickens and shows, above it,
+/// the frame there (YouTube's storyboard), the chapter's name and the time. A click or drag goes there.
 private struct MacTimeline: View {
     let playback: VideoPlayback
     @Binding var isScrubbing: Bool
@@ -1224,22 +1291,36 @@ private struct MacTimeline: View {
             GeometryReader { geometry in
                 let width = max(geometry.size.width, 1)
                 let thick = hoverX != nil || dragged != nil
+                let starts = duration > 0 ? playback.chapters.map { CGFloat($0.start / duration) } : []
+                let track = ChapterTrack(starts: starts)
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.28))
-                    Capsule().fill(.white).frame(width: max(0, width * fraction))
+                    track.fill(.white.opacity(0.28))
+                    // SponsorBlock's parts, where they are on the line.
+                    if duration > 0 {
+                        ForEach(playback.sponsorSegments, id: \.id) { segment in
+                            Rectangle()
+                                .fill(.green.opacity(0.85))
+                                .frame(width: max(2, width * CGFloat((segment.end - segment.start) / duration)))
+                                .offset(x: width * CGFloat(segment.start / duration))
+                        }
+                        .mask(track)
+                    }
+                    Rectangle().fill(.white)
+                        .frame(width: max(0, width * fraction))
+                        .mask(track)
                 }
                 .frame(height: thick ? 7 : 4)
                 .frame(maxHeight: .infinity)
                 .contentShape(.rect)
-                .overlay(alignment: .leading) {
+                .overlay(alignment: .bottomLeading) {
                     if let hoverX, dragged == nil, duration > 0 {
-                        Text(VideoScrubber.format(duration * min(1, max(0, hoverX / width))))
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .glassEffect(.regular, in: .capsule)
+                        let seconds = duration * Double(min(1, max(0, hoverX / width)))
+                        // Centred over the pointer (kept within the line's ends), floating clear
+                        // above the control bar.
+                        TimelinePreview(playback: playback, seconds: seconds)
                             .fixedSize()
-                            .offset(x: min(max(0, hoverX - 22), width - 44), y: -26)
+                            .alignmentGuide(.leading) { $0.width / 2 - min(max(hoverX, $0.width / 2), width - $0.width / 2) }
+                            .alignmentGuide(.bottom) { $0[.bottom] + 34 }
                             .allowsHitTesting(false)
                     }
                 }
@@ -1271,6 +1352,93 @@ private struct MacTimeline: View {
         .accessibilityAdjustableAction { direction in
             playback.seek(to: playback.time + (direction == .increment ? 10 : -10))
         }
+    }
+}
+
+/// The timeline's line, broken where each chapter after the first starts.
+private struct ChapterTrack: Shape {
+    /// Where chapters start, as fractions of the video.
+    let starts: [CGFloat]
+
+    func path(in rect: CGRect) -> Path {
+        let gap: CGFloat = 2
+        let edges = ([0] + starts.filter { $0 > 0.001 && $0 < 0.999 } + [1]).sorted()
+        var path = Path()
+        for (from, to) in zip(edges, edges.dropFirst()) {
+            let start = rect.minX + rect.width * from + (from > 0 ? gap / 2 : 0)
+            let end = rect.minX + rect.width * to - (to < 1 ? gap / 2 : 0)
+            guard end > start else { continue }
+            path.addRoundedRect(in: CGRect(x: start, y: rect.minY, width: end - start, height: rect.height),
+                                cornerSize: CGSize(width: rect.height / 2, height: rect.height / 2))
+        }
+        return path
+    }
+}
+
+/// Over the timeline under the pointer: the frame at that time (when YouTube has a storyboard
+/// for the video), the chapter's name and the time.
+private struct TimelinePreview: View {
+    let playback: VideoPlayback
+    let seconds: TimeInterval
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let frame = playback.storyboard?.frame(at: seconds, duration: playback.duration) {
+                StoryboardFrame(frame: frame)
+                    .frame(width: 176, height: 99)
+                    .clipShape(.rect(cornerRadius: 8, style: .continuous))
+            }
+            if let chapter = VideoChapter.current(in: playback.chapters, at: seconds) {
+                Text(chapter.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: 176)
+            }
+            Text(VideoScrubber.format(seconds))
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+        }
+        .padding(6)
+        .glassEffect(.regular, in: .rect(cornerRadius: 12, style: .continuous))
+    }
+}
+
+/// One frame cut from a storyboard sheet. Sheets are kept as they load, so moving along the
+/// timeline reuses them (25 frames to a sheet).
+private struct StoryboardFrame: View {
+    let frame: VideoStoryboard.Frame
+    @State private var image: CGImage?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let image {
+                Image(decorative: image, scale: 1).resizable().scaledToFill()
+            }
+        }
+        .task(id: frame) { image = await StoryboardSheets.shared.frame(frame) }
+    }
+}
+
+@MainActor
+private final class StoryboardSheets {
+    static let shared = StoryboardSheets()
+    private var sheets: [URL: CGImage] = [:]
+
+    func frame(_ frame: VideoStoryboard.Frame) async -> CGImage? {
+        let sheet: CGImage
+        if let cached = sheets[frame.sheet] {
+            sheet = cached
+        } else {
+            // Asked for larger than any sheet, so it comes at its own size (thumbnails never upscale)
+            // and frames are cut at their stated pixels; a last sheet can be shorter than the rest.
+            guard let loaded = await ImagePipeline.shared.image(frame.sheet, pixels: 4096)?.cgImage else { return nil }
+            if sheets.count > 24 { sheets.removeAll() }
+            sheets[frame.sheet] = loaded
+            sheet = loaded
+        }
+        let rect = frame.rect.intersection(CGRect(x: 0, y: 0, width: sheet.width, height: sheet.height))
+        guard !rect.isEmpty else { return nil }
+        return sheet.cropping(to: rect)
     }
 }
 

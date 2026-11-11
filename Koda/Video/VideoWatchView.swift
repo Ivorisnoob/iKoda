@@ -66,6 +66,7 @@ struct VideoWatchView: View {
             await watch.load(music: app.music)
             if let page = watch.state.value {
                 playback.update(page.video.merged(over: video))
+                playback.setChapters(page.chapters, for: video.id)
                 playback.setUpNext(page.next, after: video.id)
                 comments = page.commentsToken.map(CommentsModel.init(token:))
             }
@@ -225,6 +226,9 @@ struct VideoWatchView: View {
                     actions(page)
                 }
                 VideoDescription(page: page)
+                if !page.chapters.isEmpty {
+                    ChapterList(chapters: page.chapters, video: shown, playback: playback)
+                }
                 if let comments {
                     CommentsCard(model: comments, count: page.commentCount) { showsComments = true }
                 }
@@ -437,6 +441,8 @@ private struct RatingCapsule: View {
     @State private var asksToSignIn = false
 
     private var status: LikeStatus { tapped ?? app.videoRatings[videoId] ?? page.likeStatus }
+    /// Return YouTube Dislike's estimate, with that setting on.
+    @State private var dislikes: Int?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -458,8 +464,15 @@ private struct RatingCapsule: View {
             .accessibilityValue(page.likeCounts[.indifferent].map { "\($0) likes" } ?? "")
             Divider().frame(height: 18)
             Button { rate(.dislike) } label: {
-                Image(systemName: status == .dislike ? "hand.thumbsdown.fill" : "hand.thumbsdown")
-                    .contentTransition(.symbolEffect(.replace))
+                HStack(spacing: 6) {
+                    Image(systemName: status == .dislike ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                        .contentTransition(.symbolEffect(.replace))
+                    if let dislikes {
+                        Text((dislikes + (status == .dislike ? 1 : 0)).formatted(.number.notation(.compactName)))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                    }
+                }
                     .padding(.leading, 12)
                     .padding(.trailing, 14)
                     .frame(height: 36)
@@ -471,6 +484,10 @@ private struct RatingCapsule: View {
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
         .sensoryFeedback(.impact(weight: .light), trigger: status)
+        .task(id: "\(videoId)|\(app.settings.showsDislikes)") {
+            dislikes = app.settings.showsDislikes ? await ReturnDislike.dislikes(for: videoId) : nil
+        }
+        .help(dislikes == nil ? "" : "Dislikes estimated by Return YouTube Dislike")
         .alert("Sign In to Rate Videos", isPresented: $asksToSignIn) {
             Button("Not Now", role: .cancel) {}
             Button("Sign In") { app.isProfilePresented = true }
@@ -509,6 +526,76 @@ private struct ActionCapsule: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
+    }
+}
+
+/// The video's chapters as a row of cards, as YouTube lists them: the frame, the title and where
+/// it starts. A card jumps there (starting the video first if another is on); the one playing is
+/// marked.
+private struct ChapterList: View {
+    let chapters: [VideoChapter]
+    let video: Video
+    let playback: VideoPlayback
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Chapters").font(.scaled(.headline))
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(Array(chapters.enumerated()), id: \.offset) { index, chapter in
+                        ChapterCard(chapter: chapter, isCurrent: isCurrent(index)) {
+                            playback.play(video, startingAt: chapter.start)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollIndicators(.hidden)
+            .scrollClipDisabled()
+        }
+    }
+
+    private func isCurrent(_ index: Int) -> Bool {
+        guard playback.current?.id == video.id else { return false }
+        let end = index + 1 < chapters.count ? chapters[index + 1].start : .infinity
+        return playback.time >= chapters[index].start && playback.time < end
+    }
+}
+
+private struct ChapterCard: View {
+    let chapter: VideoChapter
+    let isCurrent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                Rectangle()
+                    .fill(.quaternary)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay {
+                        if let thumbnail = chapter.thumbnail {
+                            ArtworkView(artwork: thumbnail, size: 168, cornerRadius: 0, fillsFrame: true)
+                        }
+                    }
+                    .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.accentColor, lineWidth: isCurrent ? 2.5 : 0)
+                    }
+                Text(chapter.title)
+                    .font(.scaled(.subheadline).weight(.semibold))
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+                Text(VideoScrubber.format(chapter.start))
+                    .font(.scaled(.caption).monospacedDigit())
+                    .foregroundStyle(isCurrent ? Color.accentColor : .secondary)
+            }
+            .frame(width: CGFloat(168).scaled)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(chapter.title), at \(VideoScrubber.format(chapter.start))")
     }
 }
 

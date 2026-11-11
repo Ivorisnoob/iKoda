@@ -133,15 +133,25 @@ final class VideoSearchModel {
     private(set) var submitted: String?
     private(set) var state: LoadState<VideoSearchResults>?
     private(set) var isLoadingMore = false
+    /// YouTube's filters, kept from one search to the next as its own are.
+    private(set) var filters = VideoSearchFilters()
+
+    /// The same search again, filtered differently.
+    func refine(_ filters: VideoSearchFilters, music: YouTubeMusic) async {
+        guard filters != self.filters else { return }
+        self.filters = filters
+        if let submitted { await search(submitted, music: music) }
+    }
 
     func search(_ text: String, music: YouTubeMusic) async {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return clear() }
         submitted = trimmed
         state = .loading
+        let filters = filters
         do {
-            let results = try await music.searchVideos(trimmed)
-            guard submitted == trimmed else { return }
+            let results = try await music.searchVideos(trimmed, filters: filters)
+            guard submitted == trimmed, filters == self.filters else { return }
             state = .loaded(results)
         } catch {
             guard submitted == trimmed else { return }

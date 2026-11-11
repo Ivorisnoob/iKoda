@@ -91,6 +91,12 @@ struct SettingsView: View {
                         Toggle(isOn: $settings.swipesForBrightness) {
                             SettingLabel("Swipe for Brightness", systemImage: "sun.max.fill", tint: .yellow)
                         }
+                        Toggle(isOn: $settings.skipsSponsors) {
+                            SettingLabel("Skip Sponsors", systemImage: "forward.end.fill", tint: .green)
+                        }
+                        Toggle(isOn: $settings.showsDislikes) {
+                            SettingLabel("Show Dislikes", systemImage: "hand.thumbsdown.fill", tint: .gray)
+                        }
                     }
                 } header: {
                     Text("Videos")
@@ -98,7 +104,7 @@ struct SettingsView: View {
                     if !settings.videoModeEnabled {
                         Text("Video Mode adds YouTube itself beside your music: a Music and Video switch on Home, with videos, subscriptions and the video player.")
                     } else {
-                        Text("Video Mode adds a Music and Video switch on Home. Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
+                        Text("Video Mode adds a Music and Video switch on Home. Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen. Skip Sponsors uses SponsorBlock and Show Dislikes uses Return YouTube Dislike, services run by volunteers: SponsorBlock is told only part of a fingerprint of each video's id, Return YouTube Dislike the id itself.")
                     }
                 }
 

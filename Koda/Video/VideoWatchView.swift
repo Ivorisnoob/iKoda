@@ -188,10 +188,12 @@ struct VideoWatchView: View {
         }
     }
 
+    /// The video as an object on the page: rounded, lifted by a soft shadow.
     private var macPlayer: some View {
         VideoPlayerView(playback: playback, video: shown)
             .aspectRatio(16 / 9, contentMode: .fit)
-            .clipShape(.rect(cornerRadius: 14, style: .continuous))
+            .clipShape(.rect(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.22), radius: 22, y: 10)
     }
 
     // MARK: Parts
@@ -204,8 +206,24 @@ struct VideoWatchView: View {
                 .textSelection(.enabled)
             switch watch.state {
             case .loaded(let page):
-                ChannelLine(channel: shown.channel, subscribers: page.subscribers, pageSubscribed: page.isSubscribed)
-                actions(page)
+                if Platform.isMac {
+                    // The channel and Subscribe on the left, the actions on the right, as one row
+                    // while the width allows; the actions under the channel when it doesn't.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 16) {
+                            ChannelLine(channel: shown.channel, subscribers: page.subscribers, pageSubscribed: page.isSubscribed, isCompact: true)
+                            Spacer(minLength: 12)
+                            actionButtons(page)
+                        }
+                        VStack(alignment: .leading, spacing: 14) {
+                            ChannelLine(channel: shown.channel, subscribers: page.subscribers, pageSubscribed: page.isSubscribed)
+                            actions(page)
+                        }
+                    }
+                } else {
+                    ChannelLine(channel: shown.channel, subscribers: page.subscribers, pageSubscribed: page.isSubscribed)
+                    actions(page)
+                }
                 VideoDescription(page: page)
                 if let comments {
                     CommentsCard(model: comments, count: page.commentCount) { showsComments = true }
@@ -242,26 +260,54 @@ struct VideoWatchView: View {
     /// scrolls sideways when it runs out of room.
     private func actions(_ page: WatchPage) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 10) {
-                RatingCapsule(videoId: video.id, page: page)
-                ShareLink(item: video.watchURL, subject: Text(shown.title)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .font(.scaled(.subheadline).weight(.semibold))
-                        .padding(.horizontal, 14)
-                        .frame(height: 36)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                if page.commentsToken != nil {
-                    ActionCapsule(title: page.commentCount.map { "Comments \($0)" } ?? "Comments", systemImage: "text.bubble") {
-                        showsComments = true
-                    }
-                }
-            }
-            .padding(.vertical, 2)
+            actionButtons(page)
+                .padding(.vertical, 2)
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
+    }
+
+    private func actionButtons(_ page: WatchPage) -> some View {
+        HStack(spacing: 10) {
+            RatingCapsule(videoId: video.id, page: page)
+            if app.roster.active.isSignedIn {
+                let saved = app.watchLater[video.id] == true
+                ActionCapsule(title: saved ? "Saved" : "Watch Later", systemImage: saved ? "checkmark" : "clock") {
+                    Task { _ = await app.setWatchLater(video.id, !saved) }
+                }
+                .contentTransition(.symbolEffect(.replace))
+                .help(saved ? "Remove from Watch Later" : "Save to Watch Later")
+            }
+            ShareLink(item: video.watchURL, subject: Text(shown.title)) {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .font(.scaled(.subheadline).weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            if page.commentsToken != nil {
+                ActionCapsule(title: page.commentCount.map { "Comments \($0)" } ?? "Comments", systemImage: "text.bubble") {
+                    showsComments = true
+                }
+            }
+        }
+        .fixedSize()
+    }
+
+    /// Up Next with Autoplay beside it, as YouTube keeps the switch where the next video is.
+    private var upNextHeader: some View {
+        @Bindable var settings = app.settings
+        return HStack {
+            Text("Up Next").font(.scaled(.title3).bold())
+            Spacer(minLength: 8)
+            Toggle("Autoplay", isOn: $settings.autoplaysVideos)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.scaled(.subheadline))
+                .foregroundStyle(.secondary)
+                .help("When a video ends, the next one starts after a short countdown")
+        }
     }
 
     @ViewBuilder
@@ -269,7 +315,7 @@ struct VideoWatchView: View {
         switch watch.state {
         case .loaded(let page) where !page.related.videos.isEmpty:
             VStack(alignment: .leading, spacing: 14) {
-                Text("Up Next").font(.scaled(.title3).bold())
+                upNextHeader
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(page.related.videos) { related in
                         NavigationLink(value: Route.video(related)) {
@@ -303,6 +349,8 @@ private struct ChannelLine: View {
     let channel: ChannelRef?
     let subscribers: String?
     let pageSubscribed: Bool?
+    /// Subscribe right after the name, for a row that has more on its right.
+    var isCompact = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -313,7 +361,11 @@ private struct ChannelLine: View {
                 } else {
                     label(channel)
                 }
-                Spacer(minLength: 8)
+                if isCompact {
+                    Spacer().frame(width: 6)
+                } else {
+                    Spacer(minLength: 8)
+                }
                 if let id = channel.id {
                     SubscribeButton(channelId: id, pageSubscribed: pageSubscribed)
                 }

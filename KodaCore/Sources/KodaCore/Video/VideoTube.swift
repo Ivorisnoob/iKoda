@@ -115,6 +115,16 @@ extension YouTubeMusic {
         _ = try await api.web(endpoint, ["target": ["videoId": videoId]], signing: .required)
     }
 
+    /// Save a video to the account's Watch Later, or take it out, as YouTube's own Save does
+    /// (`browse/edit_playlist` on the `WL` playlist). The answer's status says whether it took.
+    public func setWatchLater(videoId: String, saved: Bool) async throws {
+        let action: [String: String] = saved
+            ? ["action": "ACTION_ADD_VIDEO", "addedVideoId": videoId]
+            : ["action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": videoId]
+        let root = try await api.web("browse/edit_playlist", ["playlistId": "WL", "actions": [action]], signing: .required)
+        guard AccountPages.editSucceeded(root) else { throw MusicError.badResponse(200) }
+    }
+
     /// Subscribe to a channel on YouTube itself, or unsubscribe.
     public func setSubscribedOnYouTube(channelId: String, subscribed: Bool) async throws {
         let endpoint = subscribed ? "subscription/subscribe" : "subscription/unsubscribe"

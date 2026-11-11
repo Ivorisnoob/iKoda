@@ -170,7 +170,7 @@ struct VideoPlaylistView: View {
                                                      : "Videos you like appear here."))
                 .frame(maxWidth: .infinity, minHeight: 320)
         case .loaded(let page):
-            list(page.videos)
+            list(shown(page.videos))
             if page.continuation != nil {
                 ProgressView()
                     .frame(maxWidth: .infinity)
@@ -193,9 +193,22 @@ struct VideoPlaylistView: View {
         }
     }
 
+    /// Watch Later without what was taken out of it here, so a removal shows at once.
+    private func shown(_ videos: [Video]) -> [Video] {
+        playlistId == "WL" ? videos.filter { app.watchLater[$0.id] != false } : videos
+    }
+
+    /// Everything on Watch Later is in it: its menus offer Remove.
+    private func noteSaved(_ videos: [Video]) {
+        guard playlistId == "WL" else { return }
+        for video in videos where app.watchLater[video.id] == nil { app.watchLater[video.id] = true }
+    }
+
     private func load() async {
         do {
-            state = .loaded(try await app.music.videoPlaylist(playlistId).videos)
+            let page = try await app.music.videoPlaylist(playlistId).videos
+            noteSaved(page.videos)
+            state = .loaded(page)
         } catch {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
@@ -208,6 +221,7 @@ struct VideoPlaylistView: View {
         guard let more = try? await app.music.moreVideos(token, from: .browse) else { return }
         let known = Set(page.videos.map(\.id))
         page.videos += more.videos.filter { !known.contains($0.id) }
+        noteSaved(more.videos)
         page.continuation = more.continuation
         state = .loaded(page)
     }

@@ -311,6 +311,26 @@ extension AppModel {
         return sent
     }
 
+    /// Save a video to Watch Later or take it out, as the active account, through the account
+    /// queue like every write. Kept in `watchLater` so every page agrees on it this run.
+    func setWatchLater(_ videoId: String, _ saved: Bool) async -> Bool {
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired else { return false }
+        let id = profile.id
+        let sent = (try? await withAccountWork { [self] () async throws -> Bool in
+            guard await music.accounts.active?.profileID == id else { return false }
+            do {
+                try await music.setWatchLater(videoId: videoId, saved: saved)
+                return true
+            } catch MusicError.signedOut {
+                roster.update(id) { $0.isExpired = true }
+                return false
+            }
+        }) ?? false
+        if sent, roster.activeID == id { watchLater[videoId] = saved }
+        return sent
+    }
+
     // MARK: YouTube history for videos
 
     /// A span of a video watched: the first files the video in the account's YouTube history

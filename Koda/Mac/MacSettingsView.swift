@@ -522,6 +522,10 @@ private struct MacPlaybackPane: View {
                 }
                 MacSettingsToggle(title: "Autoplay next video", detail: "When a video ends, the next in Up Next starts after a short countdown.",
                                   isOn: $settings.autoplaysVideos)
+                if Platform.isNativeMac {
+                    MacSettingsToggle(title: "Preview on hover", detail: "Resting the pointer on a video plays it in its thumbnail, muted.",
+                                      isOn: $settings.previewsVideosOnHover)
+                }
             }
         }
         MacSettingsGroup(title: "Skipping", footer: "⌥⌘← and ⌥⌘→ skip back and ahead too, with the buttons shown or not.") {

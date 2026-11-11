@@ -99,6 +99,7 @@ final class VideoPlayback {
     init(music: YouTubeMusic) {
         self.music = music
         player.allowsExternalPlayback = true
+        player.volume = volume
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main,
                                                       using: Self.ticker(for: self))
         endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main,
@@ -301,9 +302,18 @@ final class VideoPlayback {
         if isPlaying { reportSpan(final: true) }
     }
 
-    var isMuted: Bool {
-        get { player.isMuted }
-        set { player.isMuted = newValue }
+    /// Muted, kept here as well as on the player so the controls redraw when it changes.
+    var isMuted = false {
+        didSet { player.isMuted = isMuted }
+    }
+
+    /// The video's own volume (the Mac's controls set it; the iPhone's buttons set the system's),
+    /// remembered between videos and launches.
+    var volume: Float = UserDefaults.standard.object(forKey: "koda.video.volume") as? Float ?? 1 {
+        didSet {
+            player.volume = volume
+            UserDefaults.standard.set(volume, forKey: "koda.video.volume")
+        }
     }
 
     // MARK: Hold to speed up

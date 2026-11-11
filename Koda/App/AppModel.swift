@@ -84,6 +84,11 @@ final class AppModel {
     @ObservationIgnored private var videoFeeds: [VideoFeedModel.Kind: VideoFeedModel] = [:]
     /// Videos rated from Koda this run, by id, for the same reason.
     var videoRatings: [String: LikeStatus] = [:]
+    /// Videos known to be in the account's Watch Later (true) or taken out (false): saved or
+    /// removed from Koda this run, or seen on the Watch Later page. YouTube's other pages don't say.
+    var watchLater: [String: Bool] = [:]
+    /// The muted preview a video thumbnail plays while the pointer rests on it (Mac).
+    let videoPreview = VideoHoverPreview()
     /// The video being reported to the account's YouTube history, and whose account it is.
     @ObservationIgnored var videoHistory: (session: VideoWatchSession, profile: UUID)?
 
@@ -256,6 +261,7 @@ final class AppModel {
         channelsByUpload = []
         subscriptions = [:]
         videoRatings = [:]
+        watchLater = [:]
     }
 
     /// Open a page from outside a navigation stack: closes Now Playing and pushes it on the current tab.

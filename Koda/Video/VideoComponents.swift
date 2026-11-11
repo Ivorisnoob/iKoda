@@ -17,7 +17,12 @@ struct VideoThumbnail: View {
     var showsProgress = true
     @Environment(\.displayScale) private var scale
     @Environment(Library.self) private var library
+    @Environment(AppModel.self) private var app
     @State private var image: PlatformImage?
+
+    /// Lists' thumbnails preview on hover; the player's and the mini players' (which hide the
+    /// progress bar) are already the video.
+    private var previews: Bool { Platform.isNativeMac && showsProgress && app.settings.previewsVideosOnHover }
 
     var body: some View {
         Rectangle()
@@ -28,6 +33,9 @@ struct VideoThumbnail: View {
                     Image(platformImage: image).resizable().scaledToFill().transition(.opacity)
                 }
             }
+            #if os(macOS)
+            .overlay { if previews { HoverPreviewLayer(video: video) } }
+            #endif
             .overlay(alignment: .bottom) { progress }
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .overlay(alignment: .bottomTrailing) { badge }
@@ -47,6 +55,11 @@ struct VideoThumbnail: View {
                     }
                 }
             }
+            .onHover { over in
+                guard previews, !video.id.hasPrefix("placeholder") else { return }
+                app.videoPreview.hover(video, isOver: over, music: app.music)
+            }
+            .onDisappear { if previews { app.videoPreview.hover(video, isOver: false, music: app.music) } }
             .accessibilityHidden(true)
     }
 
@@ -169,9 +182,27 @@ struct VideoMenuItems: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        WatchLaterButton(video: video)
         ShareLink(item: video.watchURL, subject: Text(video.title)) { Label("Share", systemImage: "square.and.arrow.up") }
         if let channel = video.channel, let id = channel.id {
             Button("Go to Channel", systemImage: "person.crop.square") { app.open(.channel(id: id, name: channel.name)) }
+        }
+    }
+}
+
+/// Save to Watch Later, or Remove from Watch Later once it's known to be there; signed in only.
+/// From any video's menu, without playing it, as YouTube's Save is.
+struct WatchLaterButton: View {
+    let video: Video
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        if app.roster.active.isSignedIn, !video.id.hasPrefix("placeholder") {
+            let saved = app.watchLater[video.id] == true
+            Button(saved ? "Remove from Watch Later" : "Save to Watch Later",
+                   systemImage: saved ? "clock.badge.xmark" : "clock.badge.checkmark") {
+                Task { _ = await app.setWatchLater(video.id, !saved) }
+            }
         }
     }
 }

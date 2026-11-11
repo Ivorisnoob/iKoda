@@ -487,6 +487,7 @@ struct MacRootView: View {
             if let avatar { ChannelAvatar(avatar: avatar, size: 16) } else { Image(systemName: systemImage) }
         }
         .badge(count)
+        .padding(.leading, MacSidebarLabel.nativeIndent)
         // The symbol in Koda's colour, or in the one chosen in System Settings when it isn't
         // Multicolour, as the Mac's sidebars have them.
         .listItemTint(.preferred(.accentColor))
@@ -520,6 +521,7 @@ struct MacRootView: View {
             #if os(macOS)
             Label(title, systemImage: systemImage)
                 .foregroundStyle(dimmed ? .secondary : .primary)
+                .padding(.leading, MacSidebarLabel.nativeIndent)
             #else
             MacSidebarLabel(title: title, systemImage: systemImage, isSelected: false, dimmed: dimmed)
             #endif
@@ -697,6 +699,9 @@ struct MacSidebarLabel: View {
 
     /// None of its own: the sidebar list already keeps rows off its edges, as the Mac's do.
     static let insets = EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+    /// The native sidebar's rows sit this far in from their highlight's edge, as Music's do
+    /// (measured against it): the system's own rows start the symbol close to the edge.
+    static let nativeIndent: CGFloat = 8
 
     var body: some View {
         HStack(spacing: 7) {

@@ -283,12 +283,28 @@ final class ChannelModel {
     }
 }
 
-/// A video's comments, a page at a time.
+/// A video's comments, a page at a time, each comment's replies as they're opened, and what
+/// the signed-in account does with them: post, reply, like, delete.
 @MainActor
 @Observable
 final class CommentsModel {
+    /// One comment's replies, opened under it.
+    struct Replies {
+        var comments: [VideoComment] = []
+        var continuation: String?
+        var isLoading = false
+        var isOpen = false
+    }
+
     private(set) var state: LoadState<[VideoComment]> = .loading
     private(set) var isLoadingMore = false
+    private(set) var replies: [String: Replies] = [:]
+    /// What posting a comment sends; nil signed out or with comments closed.
+    private(set) var createParams: String?
+    /// A post, like or delete is on its way.
+    private(set) var isSending = false
+    /// Something the account asked for didn't go, said once.
+    var failure: String?
     let token: String
     @ObservationIgnored private var continuation: String?
     @ObservationIgnored private var started = false
@@ -310,6 +326,7 @@ final class CommentsModel {
         do {
             let page = try await music.comments(token)
             continuation = page.continuation
+            createParams = page.createParams
             state = .loaded(page.comments)
         } catch {
             if state.value == nil { state = .failed(error.friendlyMessage) }
@@ -324,5 +341,121 @@ final class CommentsModel {
         continuation = page.continuation
         let known = Set(current.map(\.id))
         state = .loaded(current + page.comments.filter { !known.contains($0.id) })
+    }
+
+    // MARK: Replies
+
+    /// Open a comment's replies (asking for the first page the first time) or fold them away.
+    func toggleReplies(of comment: VideoComment, music: YouTubeMusic) async {
+        var thread = replies[comment.id] ?? Replies(continuation: comment.repliesToken)
+        thread.isOpen.toggle()
+        replies[comment.id] = thread
+        if thread.isOpen, thread.comments.isEmpty { await loadReplies(of: comment.id, music: music) }
+    }
+
+    func loadReplies(of id: String, music: YouTubeMusic) async {
+        guard var thread = replies[id], !thread.isLoading, let token = thread.continuation else { return }
+        thread.isLoading = true
+        replies[id] = thread
+        let page = try? await music.comments(token)
+        guard var thread = replies[id] else { return }
+        thread.isLoading = false
+        if let page {
+            let known = Set(thread.comments.map(\.id))
+            thread.comments += page.comments.filter { !known.contains($0.id) }
+            thread.continuation = page.continuation
+        }
+        replies[id] = thread
+    }
+
+    // MARK: The account's own
+
+    /// Post a comment, or a reply when `parent` is given. It shows at once where YouTube puts
+    /// it: a comment on top, a reply at the end of its thread.
+    func post(_ text: String, replyingTo parent: VideoComment?, app: AppModel) async -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isSending, let params = parent == nil ? createParams : parent?.replyParams else { return false }
+        isSending = true
+        defer { isSending = false }
+        let isReply = parent != nil
+        let posted = await app.commentWrite { music in
+            if isReply { return try await music.postReply(text, params: params) }
+            return try await music.postComment(text, params: params)
+        }
+        guard let posted else {
+            failure = "Your comment couldn't be posted. Try again in a moment."
+            return false
+        }
+        if let parent {
+            // A reply to a reply joins the thread it's in.
+            let threadId = topLevel(of: parent.id)
+            var thread = replies[threadId] ?? Replies()
+            thread.comments.append(posted)
+            thread.isOpen = true
+            replies[threadId] = thread
+            update(threadId) { $0.replies = Self.adding(1, to: $0.replies) }
+        } else if let current = state.value {
+            state = .loaded([posted] + current)
+        }
+        return true
+    }
+
+    func toggleLike(_ comment: VideoComment, app: AppModel) async {
+        guard let action = comment.isLiked ? comment.unlikeAction : comment.likeAction else { return }
+        // Shown at once, taken back if the account refuses it.
+        update(comment.id) { $0.isLiked.toggle() }
+        let sent = await app.commentWrite { music in
+            try await music.performCommentAction(action)
+            return true
+        }
+        if sent != true { update(comment.id) { $0.isLiked.toggle() } }
+    }
+
+    func delete(_ comment: VideoComment, app: AppModel) async {
+        guard let action = comment.deleteAction, !isSending else { return }
+        isSending = true
+        defer { isSending = false }
+        let sent = await app.commentWrite { music in
+            try await music.performCommentAction(action)
+            return true
+        }
+        guard sent == true else {
+            failure = "The comment couldn't be deleted. Try again in a moment."
+            return
+        }
+        if let current = state.value, current.contains(where: { $0.id == comment.id }) {
+            state = .loaded(current.filter { $0.id != comment.id })
+            replies[comment.id] = nil
+        } else {
+            let threadId = topLevel(of: comment.id)
+            replies[threadId]?.comments.removeAll { $0.id == comment.id }
+            update(threadId) { $0.replies = Self.adding(-1, to: $0.replies) }
+        }
+    }
+
+    /// The top-level comment whose thread holds `id`, or `id` itself.
+    private func topLevel(of id: String) -> String {
+        replies.first { $0.value.comments.contains { $0.id == id } }?.key ?? id
+    }
+
+    /// Change a comment wherever it is listed.
+    private func update(_ id: String, _ change: (inout VideoComment) -> Void) {
+        if var current = state.value, let index = current.firstIndex(where: { $0.id == id }) {
+            change(&current[index])
+            state = .loaded(current)
+            return
+        }
+        for (threadId, thread) in replies {
+            guard let index = thread.comments.firstIndex(where: { $0.id == id }) else { continue }
+            change(&replies[threadId]!.comments[index])
+            return
+        }
+    }
+
+    /// A reply count moved by one, while it is a plain number ("12"); "1.2K" stays as it was.
+    private static func adding(_ change: Int, to count: String) -> String {
+        if count.isEmpty { return change > 0 ? "1" : "" }
+        guard let number = Int(count) else { return count }
+        return number + change > 0 ? String(number + change) : ""
     }
 }

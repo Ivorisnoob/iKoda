@@ -216,7 +216,8 @@ struct VideoRow: View {
     }
 }
 
-/// What a video's context menu offers wherever it's listed: sharing it and going to its channel.
+/// What a video's context menu offers wherever it's listed: lining it up after the one playing,
+/// saving it, sharing it and going to its channel.
 struct VideoMenuItems: View {
     let video: Video
     @Environment(AppModel.self) private var app
@@ -224,6 +225,17 @@ struct VideoMenuItems: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
+        // A queue follows a video that's on; with none, a tap on the video is how it starts.
+        let playback = app.videos
+        if let current = playback.current, current.id != video.id, !video.id.hasPrefix("placeholder") {
+            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { playback.queueNext(video) }
+            if playback.isQueued(video) {
+                Button("Remove from Queue", systemImage: "minus.circle") { playback.removeFromQueue([video.id]) }
+            } else {
+                Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { playback.queueLast(video) }
+            }
+            Divider()
+        }
         WatchLaterButton(video: video)
         Divider()
         ShareLink(item: video.watchURL, subject: Text(video.title)) { Label("Share", systemImage: "square.and.arrow.up") }

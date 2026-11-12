@@ -91,6 +91,11 @@ final class AppModel {
     let videoPreview = VideoHoverPreview()
     /// The video being reported to the account's YouTube history, and whose account it is.
     @ObservationIgnored var videoHistory: (session: VideoWatchSession, profile: UUID)?
+    #if os(iOS) && !targetEnvironment(macCatalyst)
+    /// The iPhone's Now Playing widget and downloads Live Activity, kept in step from here.
+    @ObservationIgnored private var widgetBridge: WidgetBridge?
+    @ObservationIgnored private var downloadActivity: DownloadActivityController?
+    #endif
 
     struct PlaylistTarget: Identifiable {
         let id = UUID()
@@ -184,6 +189,10 @@ final class AppModel {
             return await LockScreenAnimatedArt.artwork(for: song, app: self)
         }
         connectAccounts()
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        widgetBridge = WidgetBridge(player: player)
+        downloadActivity = DownloadActivityController(downloads: downloads)
+        #endif
         if settings.mode == .video { selectedTab = .videos }
         // Someone upgrading already has a library; the welcome is for a new install.
         if !settings.hasSeenOnboarding {
@@ -325,9 +334,32 @@ final class AppModel {
     /// Open a YouTube, YouTube Music or koda:// link: a song plays with its radio, anything else opens its page.
     @discardableResult
     func open(_ url: URL) -> Bool {
+        // The share extension hands a link over inside one of Koda's own.
+        let url = YouTubeLink.unwrapped(url)
         guard let link = YouTubeLink(url) else { return false }
+        // From YouTube itself, with Video Mode on, a video is one to watch and a channel a
+        // channel; from YouTube Music, or with videos off, they are a song and an artist.
+        if settings.videoModeEnabled, YouTubeLink.isVideoSite(url) {
+            switch link {
+            case .song(let videoId):
+                showVideoSide()
+                open(.video(Video(id: videoId, title: "")))
+                return true
+            case .artist(let channelId):
+                showVideoSide()
+                open(.channel(id: channelId, name: ""))
+                return true
+            case .album, .playlist:
+                break
+            }
+        }
         openLink(link)
         return true
+    }
+
+    /// The iPhone's video tabs, for a page that belongs there; the Mac has one sidebar for both.
+    private func showVideoSide() {
+        if !Platform.isMac, settings.mode != .video { go(to: .videos) }
     }
 
     func openLink(_ link: YouTubeLink) {

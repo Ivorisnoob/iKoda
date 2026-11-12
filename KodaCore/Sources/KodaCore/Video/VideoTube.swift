@@ -106,6 +106,27 @@ extension YouTubeMusic {
         VideoPages.comments(try await api.web("next", ["continuation": token]))
     }
 
+    /// Post a comment on a video as the account: `params` is the first comments page's
+    /// `createParams`. Hands back the comment as YouTube now has it.
+    public func postComment(_ text: String, params: String) async throws -> VideoComment {
+        let root = try await api.web("comment/create_comment", ["commentText": text, "createCommentParams": params], signing: .required)
+        guard let comment = VideoPages.createdComment(root) else { throw MusicError.badResponse(200) }
+        return comment
+    }
+
+    /// Reply to a comment as the account: `params` is that comment's `replyParams`.
+    public func postReply(_ text: String, params: String) async throws -> VideoComment {
+        let root = try await api.web("comment/create_comment_reply", ["commentText": text, "createReplyParams": params], signing: .required)
+        guard let comment = VideoPages.createdComment(root) else { throw MusicError.badResponse(200) }
+        return comment
+    }
+
+    /// Like, unlike or delete a comment: one of its `likeAction`, `unlikeAction`, `deleteAction`.
+    public func performCommentAction(_ action: String) async throws {
+        let root = try await api.web("comment/perform_comment_action", ["actions": [action]], signing: .required)
+        guard VideoPages.commentActionSucceeded(root) else { throw MusicError.badResponse(200) }
+    }
+
     /// Like, dislike or clear the account's rating of a video, on YouTube itself (a like there
     /// is a like in YouTube Music too, for a song).
     public func rate(videoId: String, _ status: LikeStatus) async throws {

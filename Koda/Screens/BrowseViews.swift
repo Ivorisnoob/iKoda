@@ -83,6 +83,11 @@ struct SavedSongsView: View {
     @Environment(Downloads.self) private var downloads
     @AppStorage("koda.likedSort") private var sort: SongSort = .recent
     @State private var query = ""
+    /// Select (iPhone): the ids chosen while the list is in edit mode.
+    @State private var selection = Set<String>()
+    #if os(iOS)
+    @State private var editMode: EditMode = .inactive
+    #endif
 
     private var songs: [Song] {
         switch source {
@@ -186,12 +191,30 @@ struct SavedSongsView: View {
     /// What Ready Offline holds, said where the list is.
     static let offlineNote = "Songs you download, and songs you play all the way through while Keep Songs You Play is on, are kept on this device and play without a connection."
 
+    /// What the selection bar's last button takes the selected songs out of.
+    #if os(iOS)
+    private var removal: SongSelectionBar.Removal? {
+        switch source {
+        case .liked: .init(title: "Unlike", systemImage: "heart.slash") { songs in
+            for song in songs { library.toggleLike(song) }
+        }
+        case .downloaded: .init(title: "Remove Download", systemImage: "trash") { downloads.remove($0) }
+        case .recent, .offline: nil
+        }
+    }
+    #endif
+
     private var phoneBody: some View {
+        #if os(iOS)
+        let selecting = editMode.isEditing
+        #else
+        let selecting = false
+        #endif
         let songs = songs
         // Finding plays the matches, as Music does from a filtered list.
         let shown = LibrarySearch.songs(songs, matching: query)
-        return List {
-            if !shown.isEmpty {
+        return List(selection: $selection) {
+            if !shown.isEmpty, !selecting {
                 PlayShuffleButtons(play: { player.play(shown) }, shuffle: {
                     player.play(shown, startAt: Int.random(in: 0..<shown.count), shuffled: true)
                 })
@@ -200,6 +223,8 @@ struct SavedSongsView: View {
             }
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, song in
                 SongRow(song: song) { player.play(shown, startAt: index) }
+                    // While selecting, a tap is the list's: it selects the row.
+                    .allowsHitTesting(!selecting)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
                     .swipeActions(edge: .leading) {
                         Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { player.playNext([song]) }
@@ -241,24 +266,52 @@ struct SavedSongsView: View {
                 }
             }
         }
+        #if os(iOS)
         .toolbar {
-            if source == .recent, !songs.isEmpty {
-                Button("Clear", role: .destructive) { library.clearHistory() }
-            }
-            if source == .liked, !songs.isEmpty {
-                DownloadButton(songs: songs)
-            }
-            if source == .liked, songs.count > 1 {
-                Menu("Sort", systemImage: "arrow.up.arrow.down") {
-                    Picker("Sort By", selection: $sort) {
-                        ForEach(SongSort.allCases) { option in
-                            Label(option.title, systemImage: option.systemImage).tag(option)
+            if selecting {
+                ToolbarItem(placement: .topBarLeading) {
+                    let all = Set(shown.map(\.id))
+                    Button(selection.isSuperset(of: all) ? "Deselect All" : "Select All") {
+                        selection = selection.isSuperset(of: all) ? [] : all
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { withAnimation { editMode = .inactive } }.fontWeight(.semibold)
+                }
+            } else {
+                if source == .recent, !songs.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Clear", role: .destructive) { library.clearHistory() }
+                    }
+                }
+                if source == .liked, !songs.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) { DownloadButton(songs: songs) }
+                }
+                if source == .liked, songs.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu("Sort", systemImage: "arrow.up.arrow.down") {
+                            Picker("Sort By", selection: $sort) {
+                                ForEach(SongSort.allCases) { option in
+                                    Label(option.title, systemImage: option.systemImage).tag(option)
+                                }
+                            }
                         }
+                    }
+                }
+                if !shown.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Select") { withAnimation { editMode = .active } }
                     }
                 }
             }
         }
+        .navigationBarBackButtonHidden(selecting)
+        .modifier(SongSelectionBar(selection: $selection, editMode: $editMode, songs: shown,
+                                   showsDownload: source != .downloaded, removal: removal))
+        .navigationTitle(selecting ? (selection.isEmpty ? "Select Songs" : "\(selection.count) Selected") : title)
+        #else
         .navigationTitle(title)
+        #endif
     }
 }
 

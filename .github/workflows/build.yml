@@ -38,7 +38,26 @@ jobs:
             build 2>&1 | tee build.log | tail -n 40 \
             || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
 
-      # An unsigned .ipa: AltStore, SideStore and Sideloadly sign it with the installer's own Apple ID.
+      # The app and its widgets share a folder (an App Group) so the Now Playing widget can show
+      # what's playing. The installer's signer only gives the app what the bundle says it wants,
+      # and reads that from the code signature: so each bundle gets an ad-hoc one that carries
+      # the entitlement and nothing else (AltStore and SideStore then make a group of the
+      # installer's own and say which in ALTAppGroups; see Shared/WidgetShare.swift).
+      - name: Declare the app group
+        run: |
+          set -euo pipefail
+          app=build/Build/Products/Release-iphoneos/Koda.app
+          # Inside out: a bundle's signature covers the ones in it.
+          codesign --force --sign - "$app/PlugIns/KodaShare.appex"
+          codesign --force --sign - --entitlements Koda-iOS.entitlements "$app/PlugIns/KodaWidgets.appex"
+          codesign --force --sign - --entitlements Koda-iOS.entitlements "$app"
+          codesign --verify --deep --strict "$app"
+          for bundle in "$app" "$app/PlugIns/KodaWidgets.appex"; do
+            codesign -d --entitlements - --xml "$bundle" 2>/dev/null | grep -q group.ivors.Koda \
+              || { echo "::error::$bundle doesn't declare the app group"; exit 1; }
+          done
+
+      # Not signed for any device: AltStore, SideStore and Sideloadly sign it with the installer's own Apple ID.
       - name: Package .ipa
         run: |
           mkdir -p Payload

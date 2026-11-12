@@ -21,6 +21,8 @@
 	<string>Koda saves lyric cards you choose to save to your photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Koda uses a photo you pick as your profile picture. It stays on this iPhone.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

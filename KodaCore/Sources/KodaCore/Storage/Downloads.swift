@@ -21,6 +21,49 @@ public final class Downloads {
     /// Space downloads take, updated as each finishes.
     public private(set) var bytes: Int64 = 0
     private var states: [String: State] = [:]
+    /// Songs asked for since nothing was last on its way, and how many of those have arrived:
+    /// "3 of 12" for the Live Activity.
+    private var batchTotal = 0
+    private var batchFinished = 0
+
+    /// How a run of downloads is coming along.
+    public struct Progress: Equatable, Sendable {
+        public var finished: Int
+        public var total: Int
+        /// The share of the whole run that is here, 0 to 1, part-fetched songs included.
+        public var fraction: Double
+        /// The song being fetched; nil while they wait (no connection they may use).
+        public var current: String?
+
+        /// `fetching` holds how much of each song now being fetched is here.
+        public init(finished: Int, total: Int, fetching: [Double], current: String?) {
+            let total = max(total, finished + fetching.count, 1)
+            self.finished = min(finished, total)
+            self.total = total
+            fraction = min(1, (Double(finished) + fetching.reduce(0, +)) / Double(total))
+            self.current = current
+        }
+    }
+
+    /// The run on its way; nil when nothing is waiting or being fetched.
+    public var progress: Progress? {
+        var fetching: [Double] = []
+        var waiting = 0
+        var current: String?
+        for song in songs {
+            switch states[song.id] {
+            case .downloading(let share):
+                fetching.append(share)
+                current = current ?? song.title
+            case .waiting:
+                waiting += 1
+            default:
+                break
+            }
+        }
+        guard waiting + fetching.count > 0 else { return nil }
+        return Progress(finished: batchFinished, total: max(batchTotal, batchFinished + waiting + fetching.count), fetching: fetching, current: current)
+    }
 
     /// Off, downloads wait for Wi-Fi.
     public var allowsCellular: Bool {
@@ -56,6 +99,7 @@ public final class Downloads {
             if !entry.isComplete { queue.append(song.id) }
         }
         bytes = store.downloadBytes
+        batchTotal = queue.count
         pump()
     }
 
@@ -89,6 +133,12 @@ public final class Downloads {
         var seen = Set<String>()
         let fresh = songs.filter { state(of: $0) == .none && seen.insert($0.id).inserted }
         guard !fresh.isEmpty else { return }
+        // A new run starts counting from nothing.
+        if progress == nil {
+            batchTotal = 0
+            batchFinished = 0
+        }
+        batchTotal += fresh.count
         store.markDownloaded(fresh)
         for song in fresh { states[song.id] = .waiting }
         self.songs.insert(contentsOf: fresh, at: 0)
@@ -99,6 +149,8 @@ public final class Downloads {
     public func remove(_ songs: [Song]) {
         let ids = Set(songs.map(\.id))
         for id in ids {
+            // One still on its way leaves the run's count.
+            if let state = states[id], state != .downloaded { batchTotal = max(batchFinished, batchTotal - 1) }
             running[id]?.cancel()
             running[id] = nil
             states[id] = nil
@@ -168,6 +220,7 @@ public final class Downloads {
         }
         guard !Task.isCancelled, states[id] != nil else { return }
         states[id] = .downloaded
+        batchFinished += 1
         bytes = store.downloadBytes
     }
 

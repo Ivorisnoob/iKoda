@@ -80,6 +80,16 @@ enum PlatformImages {
         #endif
     }
 
+    /// Puts text on the clipboard.
+    static func copy(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+
     /// Puts a link on the clipboard.
     static func copy(_ url: URL) {
         #if os(macOS)

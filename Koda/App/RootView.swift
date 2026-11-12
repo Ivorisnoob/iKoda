@@ -136,7 +136,7 @@ struct RootView: View {
             videoSearchPath = []
         }
         .onOpenURL { url in
-            if !model.open(url) { model.linkError = "Koda can open YouTube Music songs, albums, playlists and artists." }
+            if !model.open(url) { model.linkError = "Koda can open links to YouTube and YouTube Music: songs, videos, albums, playlists, artists and channels." }
         }
         .alert("Couldn't Open Link", isPresented: Binding(get: { model.linkError != nil }, set: { if !$0 { model.linkError = nil } })) {
             Button("OK", role: .cancel) {}

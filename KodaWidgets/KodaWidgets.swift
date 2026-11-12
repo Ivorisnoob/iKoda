@@ -2,15 +2,18 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-// Koda's widgets: quick ways in that need nothing from the app to draw, since the builds
-// Koda ships can't share a container with an extension. What's playing is already on the
-// Lock Screen and in Control Center through the system's own Now Playing controls.
+// Koda's widgets. Quick Play and the Control Center controls need nothing from the app to
+// draw. Now Playing (NowPlayingWidget.swift) reads what the app writes to the app group's
+// folder, which the iPhone build has once its installer signs it with one (`SharedContainer`);
+// the Mac's builds have none.
 
 @main
 struct KodaWidgets: WidgetBundle {
     var body: some Widget {
         QuickPlayWidget()
         #if !targetEnvironment(macCatalyst)
+        NowPlayingWidget()
+        DownloadActivityWidget()
         LikedSongsControl()
         PlayPauseControl()
         #endif

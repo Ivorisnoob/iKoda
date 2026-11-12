@@ -331,6 +331,23 @@ extension AppModel {
         return sent
     }
 
+    /// A comment write (post, reply, like, delete) as the active account, in its turn among the
+    /// other writes; nil if it didn't go.
+    func commentWrite<T: Sendable>(_ write: @escaping @Sendable (YouTubeMusic) async throws -> T) async -> T? {
+        let profile = roster.active
+        guard profile.isSignedIn, !profile.isExpired else { return nil }
+        let id = profile.id
+        return try? await withAccountWork { [self] () async throws -> T? in
+            guard await music.accounts.active?.profileID == id else { return nil }
+            do {
+                return try await write(music)
+            } catch MusicError.signedOut {
+                roster.update(id) { $0.isExpired = true }
+                return nil
+            }
+        }
+    }
+
     // MARK: YouTube history for videos
 
     /// A span of a video watched: the first files the video in the account's YouTube history

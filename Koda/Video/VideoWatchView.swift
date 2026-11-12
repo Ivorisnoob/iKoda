@@ -25,6 +25,7 @@ struct VideoWatchView: View {
     @State private var watch: WatchModel
     @State private var size: CGSize = .zero
     @State private var showsComments = false
+    @State private var showsQueue = false
     /// The video's comments, made when its page loads and shared by the card and the sheet.
     @State private var comments: CommentsModel?
 
@@ -53,9 +54,12 @@ struct VideoWatchView: View {
         #endif
         .sheet(isPresented: $showsComments) {
             if let comments {
-                CommentsSheet(model: comments, count: watch.state.value?.commentCount)
+                CommentsSheet(model: comments, count: watch.state.value?.commentCount, videoId: video.id)
                     .appEnvironment(app)
             }
+        }
+        .sheet(isPresented: $showsQueue) {
+            VideoQueueSheet(playback: playback).appEnvironment(app)
         }
         .task(id: video.id) {
             playback.play(video)
@@ -226,6 +230,7 @@ struct VideoWatchView: View {
                     actions(page)
                 }
                 VideoDescription(page: page)
+                    .richLinks(videoId: video.id)
                 if !page.chapters.isEmpty {
                     ChapterList(chapters: page.chapters, video: shown, playback: playback)
                 }
@@ -314,8 +319,36 @@ struct VideoWatchView: View {
         }
     }
 
-    @ViewBuilder
+    /// What follows this video: the listener's own queue first, then what YouTube suggests.
     private var upNext: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            if !playback.queue.isEmpty { queue }
+            suggestions
+        }
+    }
+
+    /// The videos lined up with Play Next and Add to Queue, in the order they'll play. A tap
+    /// plays one now; Edit reorders and removes.
+    private var queue: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Queue").font(.scaled(.title3).bold())
+                Spacer(minLength: 8)
+                Button("Edit") { showsQueue = true }
+                    .font(.scaled(.subheadline))
+            }
+            ForEach(playback.queue) { queued in
+                NavigationLink(value: Route.video(queued)) {
+                    VideoRow(video: queued, thumbnailWidth: Platform.isMac ? 168 : 156)
+                }
+                .buttonStyle(.plain)
+                .contextMenu { VideoMenuItems(video: queued) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var suggestions: some View {
         switch watch.state {
         case .loaded(let page) where !page.related.videos.isEmpty:
             VStack(alignment: .leading, spacing: 14) {
@@ -599,7 +632,8 @@ private struct ChapterCard: View {
     }
 }
 
-/// Views and date, then the description, three lines until it's opened. Links in it open.
+/// Views and date, then the description, three lines until it's opened. Its links open and its
+/// times jump the video there (`richLinks`).
 private struct VideoDescription: View {
     let page: WatchPage
     @State private var expanded = false
@@ -609,7 +643,7 @@ private struct VideoDescription: View {
             Text([page.viewCount ?? page.video.views, expanded ? page.date : page.video.published ?? page.date].compactMap { $0 }.joined(separator: " · "))
                 .font(.scaled(.subheadline).weight(.semibold))
             if !page.description.isEmpty {
-                Text(Self.linked(page.description))
+                Text(page.richDescription.attributed)
                     .font(.scaled(.subheadline))
                     .lineLimit(expanded ? nil : 3)
                     .textSelection(.enabled)
@@ -625,19 +659,6 @@ private struct VideoDescription: View {
         .onTapGesture { withAnimation(.snappy) { expanded.toggle() } }
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(expanded ? "Shows less of the description" : "Shows the whole description")
-    }
-
-    /// The description with its web addresses made into links.
-    private static func linked(_ text: String) -> AttributedString {
-        var attributed = AttributedString(text)
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return attributed }
-        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-            guard let url = match.url, let range = Range(match.range, in: text),
-                  let lower = AttributedString.Index(range.lowerBound, within: attributed),
-                  let upper = AttributedString.Index(range.upperBound, within: attributed) else { continue }
-            attributed[lower..<upper].link = url
-        }
-        return attributed
     }
 }
 
@@ -681,12 +702,29 @@ private struct CommentsCard: View {
     }
 }
 
-/// All of a video's comments, top first, paging as they're scrolled.
+/// All of a video's comments, top first, paging as they're scrolled; a comment's replies open
+/// under it. Signed in, the field along the bottom posts a comment or a reply, comments can be
+/// liked, and the account's own deleted (swipe, or the menu). Times in a comment jump the video.
 struct CommentsSheet: View {
     let model: CommentsModel
     let count: String?
+    /// The video the comments are under: a time in one seeks it.
+    let videoId: String
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @State private var draft = ""
+    @State private var replyingTo: VideoComment?
+    @State private var deleting: VideoComment?
+    @FocusState private var isComposing: Bool
+
+    private var canWrite: Bool {
+        let profile = app.roster.active
+        return profile.isSignedIn && !profile.isExpired
+    }
+
+    private var canSend: Bool {
+        !model.isSending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -716,18 +754,49 @@ struct CommentsSheet: View {
                     Button("Done", systemImage: "checkmark") { dismiss() }
                 }
             }
+            .safeAreaBar(edge: .bottom) {
+                // YouTube hands the means to post only to an account, and not with comments closed.
+                if canWrite, model.createParams != nil || replyingTo != nil { composer }
+            }
         }
+        .richLinks(videoId: videoId, leaving: { dismiss() })
         .presentationDetents(Platform.isMac ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .frame(minWidth: Platform.isMac ? 520 : nil, minHeight: Platform.isMac ? 620 : nil)
         .task { await model.loadIfNeeded(music: app.music) }
+        .confirmationDialog("Delete Comment?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { comment in
+            Button("Delete", role: .destructive) { Task { await model.delete(comment, app: app) } }
+        } message: { _ in
+            Text("It's removed from YouTube for everyone.")
+        }
+        .alert("Couldn't Reach YouTube", isPresented: Binding(get: { model.failure != nil }, set: { if !$0 { model.failure = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.failure ?? "")
+        }
     }
 
     private func list(_ comments: [VideoComment]) -> some View {
         List {
             ForEach(comments) { comment in
-                CommentRow(comment: comment)
-                    .listRowSeparator(.hidden)
+                row(comment, isReply: false)
+                if let thread = model.replies[comment.id], thread.isOpen {
+                    ForEach(thread.comments) { reply in
+                        row(reply, isReply: true)
+                    }
+                    if thread.isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .listRowSeparator(.hidden)
+                    } else if thread.continuation != nil {
+                        Button("Show More Replies") { Task { await model.loadReplies(of: comment.id, music: app.music) } }
+                            .font(.scaled(.footnote).weight(.semibold))
+                            .buttonStyle(.borderless)
+                            .padding(.leading, CommentRow.replyIndent)
+                            .listRowSeparator(.hidden)
+                    }
+                }
             }
             if model.canLoadMore {
                 LoadMoreTrigger { await model.loadMore(music: app.music) }
@@ -736,15 +805,118 @@ struct CommentsSheet: View {
         }
         .listStyle(.plain)
     }
+
+    private func row(_ comment: VideoComment, isReply: Bool) -> some View {
+        CommentRow(comment: comment, isReply: isReply, thread: isReply ? nil : model.replies[comment.id], canWrite: canWrite,
+                   like: { Task { await model.toggleLike(comment, app: app) } },
+                   reply: {
+                       replyingTo = comment
+                       isComposing = true
+                   },
+                   toggleReplies: { Task { await model.toggleReplies(of: comment, music: app.music) } })
+            .listRowSeparator(.hidden)
+            .contextMenu {
+                Button("Copy", systemImage: "doc.on.doc") { PlatformImages.copy(comment.text) }
+                if comment.deleteAction != nil {
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = comment }
+                }
+            }
+            .swipeActions(edge: .trailing) {
+                // Asked about first, so no destructive role: that would pull the row out at once.
+                if comment.deleteAction != nil {
+                    Button("Delete", systemImage: "trash") { deleting = comment }.tint(.red)
+                }
+            }
+    }
+
+    /// The field a comment or a reply is typed in, with who it answers above it.
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let replyingTo {
+                HStack(spacing: 6) {
+                    Text("Replying to \(replyingTo.author)")
+                        .font(.scaled(.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Button("Cancel Reply", systemImage: "xmark.circle.fill") { self.replyingTo = nil }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 6)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField(replyingTo == nil ? "Add a comment" : "Add a reply", text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .focused($isComposing)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
+                Button(action: send) {
+                    if model.isSending {
+                        ProgressView().frame(width: 36, height: 36)
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.scaledSystem(size: 32))
+                            .frame(width: 36, height: 36)
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(canSend ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                .disabled(!canSend)
+                .accessibilityLabel(replyingTo == nil ? "Post Comment" : "Post Reply")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private func send() {
+        let text = draft
+        let parent = replyingTo
+        Task {
+            guard await model.post(text, replyingTo: parent, app: app) else { return }
+            draft = ""
+            replyingTo = nil
+            isComposing = false
+        }
+    }
 }
 
+/// One comment, or a reply set in under the comment it answers: who wrote it, the text with its
+/// links, and its likes, Reply and replies.
 private struct CommentRow: View {
     let comment: VideoComment
+    var isReply = false
+    /// Its replies as opened so far; nil for a reply or a thread never opened.
+    var thread: CommentsModel.Replies?
+    var canWrite = false
+    var like: () -> Void = {}
+    var reply: () -> Void = {}
+    var toggleReplies: () -> Void = {}
+
+    static let replyIndent: CGFloat = 46
+
+    private var likes: String { comment.isLiked ? comment.likesIfLiked : comment.likes }
+
+    private var repliesTitle: String {
+        switch comment.replies {
+        case "": "Replies"
+        case "1": "1 reply"
+        default: "\(comment.replies) replies"
+        }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            CommentAvatar(url: comment.avatar, size: 34)
+            CommentAvatar(url: comment.avatar, size: isReply ? 26 : 34)
             VStack(alignment: .leading, spacing: 4) {
+                if comment.isPinned {
+                    Label("Pinned", systemImage: "pin.fill")
+                        .font(.scaled(.caption2))
+                        .foregroundStyle(.secondary)
+                }
                 HStack(spacing: 4) {
                     Text(comment.author)
                         .font(.scaled(.footnote).weight(.semibold))
@@ -758,24 +930,102 @@ private struct CommentRow: View {
                     Text("· \(comment.published)").font(.scaled(.footnote)).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
-                Text(comment.text)
+                Text(comment.content.attributed)
                     .font(.scaled(.subheadline))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 16) {
-                    Label(comment.likes.isEmpty ? "0" : comment.likes, systemImage: "hand.thumbsup")
-                    if !comment.replies.isEmpty {
-                        Label(comment.replies == "1" ? "1 reply" : "\(comment.replies) replies", systemImage: "arrowshape.turn.up.left")
-                    }
-                }
-                .font(.scaled(.caption))
-                .foregroundStyle(.secondary)
-                .labelStyle(.titleAndIcon)
-                .padding(.top, 2)
+                actions
             }
         }
+        .padding(.leading, isReply ? Self.replyIndent : 0)
         .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 18) {
+            if comment.likeAction != nil || comment.unlikeAction != nil {
+                Button(action: like) {
+                    Label(likes.isEmpty ? "Like" : likes, systemImage: comment.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .tint(comment.isLiked ? Color.accentColor : .secondary)
+                .sensoryFeedback(.impact(weight: .light), trigger: comment.isLiked)
+                .accessibilityLabel(comment.isLiked ? "Remove Like" : "Like")
+                .accessibilityValue(likes)
+            } else {
+                Label(likes.isEmpty ? "0" : likes, systemImage: "hand.thumbsup")
+            }
+            if comment.isHearted {
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Loved by the creator")
+            }
+            if canWrite, comment.replyParams != nil {
+                Button("Reply", action: reply).tint(.secondary)
+            }
+            if !isReply, comment.repliesToken != nil || thread?.comments.isEmpty == false {
+                Button(action: toggleReplies) {
+                    HStack(spacing: 4) {
+                        Text(repliesTitle)
+                        Image(systemName: "chevron.down")
+                            .rotationEffect(.degrees(thread?.isOpen == true ? 180 : 0))
+                    }
+                    .fontWeight(.semibold)
+                }
+                .accessibilityHint(thread?.isOpen == true ? "Hides the replies" : "Shows the replies")
+            }
+        }
+        .font(.scaled(.caption))
+        .foregroundStyle(.secondary)
+        .labelStyle(.titleAndIcon)
+        // Borderless, so each takes its own taps inside the list row.
+        .buttonStyle(.borderless)
+        .padding(.top, 2)
+    }
+}
+
+/// The video queue in full: drag to reorder, the minus (or a swipe) to remove, Clear for all of it.
+struct VideoQueueSheet: View {
+    let playback: VideoPlayback
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(playback.queue) { video in
+                    VideoRow(video: video, thumbnailWidth: 112)
+                }
+                .onMove { playback.moveQueue(fromOffsets: $0, toOffset: $1) }
+                .onDelete { playback.removeFromQueue(atOffsets: $0) }
+            }
+            .listStyle(.plain)
+            #if os(iOS)
+            .environment(\.editMode, .constant(.active))
+            #endif
+            .overlay {
+                if playback.queue.isEmpty {
+                    ContentUnavailableView("Queue Is Empty", systemImage: "list.bullet",
+                                           description: Text("Choose Play Next or Add to Queue from any video's menu."))
+                }
+            }
+            .navigationTitle("Queue")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Clear", role: .destructive) {
+                        playback.clearQueue()
+                        dismiss()
+                    }
+                    .disabled(playback.queue.isEmpty)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", systemImage: "checkmark") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents(Platform.isMac ? [.large] : [.medium, .large])
+        .frame(minWidth: Platform.isMac ? 480 : nil, minHeight: Platform.isMac ? 520 : nil)
     }
 }
 

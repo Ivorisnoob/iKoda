@@ -223,7 +223,7 @@ struct MacRootView: View {
             path.wrappedValue.append(route)
         }
         .onOpenURL { url in
-            if !model.open(url) { model.linkError = "Koda can open YouTube Music songs, albums, playlists and artists." }
+            if !model.open(url) { model.linkError = "Koda can open links to YouTube and YouTube Music: songs, videos, albums, playlists, artists and channels." }
         }
     }
 

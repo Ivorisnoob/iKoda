@@ -23,6 +23,8 @@ struct UserPlaylistView: View {
     @State private var confirmDelete = false
     #if os(iOS)
     @State private var editMode: EditMode = .inactive
+    /// The songs chosen while editing, for the bar along the bottom (`SongSelectionBar`).
+    @State private var selection = Set<String>()
     #endif
     @State private var query = ""
 
@@ -40,7 +42,7 @@ struct UserPlaylistView: View {
 
 #if os(iOS)
     private func content(_ playlist: UserPlaylist) -> some View {
-        List {
+        List(selection: $selection) {
             Group {
                 if editMode.isEditing { editableHeader(playlist) } else { header(playlist) }
             }
@@ -56,6 +58,8 @@ struct UserPlaylistView: View {
                 SongRow(song: song) {
                     player.play(playlist.songs, startAt: playlist.songs.firstIndex { $0.id == song.id } ?? 0)
                 }
+                // While editing, a tap is the list's: it selects the row.
+                .allowsHitTesting(!editMode.isEditing)
                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
                 .listRowSeparator(.hidden)
                 .swipeActions(edge: .leading) {
@@ -88,7 +92,23 @@ struct UserPlaylistView: View {
             }
         }
         .listStyle(.plain)
-        .environment(\.editMode, $editMode)
+        .modifier(SongSelectionBar(selection: $selection, editMode: $editMode, songs: playlist.songs,
+                                   removal: .init(title: "Remove from Playlist", systemImage: "minus.circle") { songs in
+            let chosen = Set(songs.map(\.id))
+            let offsets = IndexSet(playlist.songs.indices.filter { chosen.contains(playlist.songs[$0].id) })
+            library.removeSongs(atOffsets: offsets, fromPlaylist: id)
+        }))
+        // However editing starts or ends (the button, an action in the bar, the system's own
+        // two-finger select), the fields start from the playlist and what was typed is kept.
+        .onChange(of: editMode.isEditing) { _, editing in
+            if editing {
+                draftName = playlist.name
+                draftSummary = playlist.summary ?? ""
+                query = ""
+            } else {
+                saveDetails()
+            }
+        }
         .searchable(text: $query, placement: .navigationBarDrawer, prompt: "Find in Playlist")
         .background { PlaylistGlow(songs: playlist.songs) }
         .navigationBarTitleDisplayMode(.inline)
@@ -96,13 +116,6 @@ struct UserPlaylistView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(editMode.isEditing ? "Done" : "Edit") {
-                    if editMode.isEditing {
-                        saveDetails()
-                    } else {
-                        draftName = playlist.name
-                        draftSummary = playlist.summary ?? ""
-                        query = ""
-                    }
                     withAnimation { editMode = editMode.isEditing ? .inactive : .active }
                 }
                 .fontWeight(editMode.isEditing ? .semibold : .regular)

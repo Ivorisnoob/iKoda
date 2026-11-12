@@ -161,6 +161,8 @@ public struct WatchPage: Sendable {
     public var related: VideoPage
     /// The video's chapters, in order; empty when it has none.
     public var chapters: [VideoChapter] = []
+    /// The description again with the links and times YouTube marked in it.
+    public var richDescription = RichText()
 
     /// Up Next's first choice: YouTube's own autoplay pick when it's in the list, else its top.
     public var next: Video? {
@@ -262,7 +264,7 @@ public struct ChannelLink: Sendable, Hashable, Identifiable {
     public var id: URL { url }
 }
 
-/// A comment under a video.
+/// A comment under a video, or a reply to one.
 public struct VideoComment: Sendable, Identifiable, Hashable {
     public var id: String
     public var author: String
@@ -277,6 +279,24 @@ public struct VideoComment: Sendable, Identifiable, Hashable {
     public var replies: String
     public var isCreator: Bool
     public var isVerified: Bool
+    /// The links and times YouTube marked in `text`.
+    public var links: [RichText.Link] = []
+    /// The count YouTube would draw once the account likes it.
+    public var likesIfLiked = ""
+    public var isLiked = false
+    /// Pinned by the channel, or given its heart.
+    public var isPinned = false
+    public var isHearted = false
+    /// Written by the signed-in account.
+    public var isOwn = false
+    /// Opens its replies; nil when it has none.
+    public var repliesToken: String?
+    /// What posting a reply to it sends, and what liking, unliking and deleting it send. All
+    /// nil signed out: YouTube only hands them to an account.
+    public var replyParams: String?
+    public var likeAction: String?
+    public var unlikeAction: String?
+    public var deleteAction: String?
 
     public init(id: String, author: String, authorChannelId: String?, avatar: URL?, text: String, published: String,
                 likes: String, replies: String, isCreator: Bool, isVerified: Bool) {
@@ -291,15 +311,20 @@ public struct VideoComment: Sendable, Identifiable, Hashable {
         self.isCreator = isCreator
         self.isVerified = isVerified
     }
+
+    public var content: RichText { RichText(text: text, links: links) }
 }
 
 public struct CommentsPage: Sendable {
     public var comments: [VideoComment]
     public var continuation: String?
+    /// What posting a new comment sends; on a first page, signed in, with comments open.
+    public var createParams: String?
 
-    public init(comments: [VideoComment] = [], continuation: String? = nil) {
+    public init(comments: [VideoComment] = [], continuation: String? = nil, createParams: String? = nil) {
         self.comments = comments
         self.continuation = continuation
+        self.createParams = createParams
     }
 }
 

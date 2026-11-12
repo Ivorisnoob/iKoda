@@ -65,3 +65,43 @@ struct TogglePlaybackIntent: AudioPlaybackIntent {
     }
     #endif
 }
+
+/// The next song in the queue, for the Now Playing widget.
+struct NextSongIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Next Song"
+    static let description = IntentDescription("Skips to the next song in Koda.", categoryName: "Playback")
+
+    init() {}
+
+    #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+    #else
+    @Dependency private var app: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        app.player.next()
+        return .result()
+    }
+    #endif
+}
+
+/// Back to the start of the song, or to the one before it, as the player's own button does.
+struct PreviousSongIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Previous Song"
+    static let description = IntentDescription("Goes back a song in Koda.", categoryName: "Playback")
+
+    init() {}
+
+    #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+    #else
+    @Dependency private var app: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        app.player.previous()
+        return .result()
+    }
+    #endif
+}

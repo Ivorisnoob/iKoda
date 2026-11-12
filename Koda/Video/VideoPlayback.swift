@@ -42,8 +42,13 @@ final class VideoPlayback {
     private(set) var resumedFrom: TimeInterval?
     /// The video played to its end.
     private(set) var hasEnded = false
-    /// What plays when this one ends: Up Next's first choice.
-    private(set) var upNext: Video?
+    /// Videos the listener lined up (Play Next, Add to Queue): they play in this order when the
+    /// one on ends, before anything YouTube suggests, and whether or not Autoplay is on.
+    private(set) var queue: [Video] = []
+    /// YouTube's own pick for after this video, from its watch page.
+    private(set) var suggested: Video?
+    /// What plays when this one ends: the queue's first, else YouTube's pick.
+    var upNext: Video? { queue.first ?? suggested }
     /// Seconds until `upNext` starts, counting down after the end; nil when nothing is counting.
     private(set) var autoplayCountdown: Int?
     /// The last move to the next video that the player made by itself, so the page showing the
@@ -209,7 +214,8 @@ final class VideoPlayback {
         isLoading = true
         hasEnded = false
         resumedFrom = nil
-        upNext = nil
+        suggested = nil
+        queue.removeAll { $0.id == video.id }
         boost = nil
         time = 0
         duration = video.duration ?? 0
@@ -299,6 +305,11 @@ final class VideoPlayback {
     func pause() {
         player.pause()
         tick()
+    }
+
+    /// Play on if it's paused (a time tapped in a comment starts the video there).
+    func resume() {
+        if player.currentItem != nil, player.timeControlStatus == .paused { togglePlay() }
     }
 
     func seek(to seconds: TimeInterval) {
@@ -395,7 +406,8 @@ final class VideoPlayback {
         isPlaying = false
         isLoading = false
         error = nil
-        upNext = nil
+        suggested = nil
+        queue = []
         isFullScreen = false
     }
 
@@ -447,7 +459,44 @@ final class VideoPlayback {
     /// The watch page knows what YouTube would play next.
     func setUpNext(_ video: Video?, after id: String) {
         guard current?.id == id, video?.id != id else { return }
-        upNext = video
+        suggested = video
+    }
+
+    // MARK: Queue
+
+    /// Right after the one playing. With nothing on, it simply plays.
+    func queueNext(_ video: Video) {
+        guard current != nil else { return play(video) }
+        guard video.id != current?.id else { return }
+        queue.removeAll { $0.id == video.id }
+        queue.insert(video, at: 0)
+    }
+
+    /// After everything already lined up.
+    func queueLast(_ video: Video) {
+        guard current != nil else { return play(video) }
+        guard video.id != current?.id, !queue.contains(where: { $0.id == video.id }) else { return }
+        queue.append(video)
+    }
+
+    func isQueued(_ video: Video) -> Bool {
+        queue.contains { $0.id == video.id }
+    }
+
+    func removeFromQueue(_ ids: Set<String>) {
+        queue.removeAll { ids.contains($0.id) }
+    }
+
+    func removeFromQueue(atOffsets offsets: IndexSet) {
+        queue.remove(atOffsets: offsets)
+    }
+
+    func moveQueue(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        queue.move(fromOffsets: offsets, toOffset: destination)
+    }
+
+    func clearQueue() {
+        queue = []
     }
 
     /// The watch page showing `id` is on screen, or went away.
@@ -472,13 +521,14 @@ final class VideoPlayback {
         tick()
         if let id = self.current?.id, !isLive, duration > 0 { onProgress?(id, duration, duration) }
         reportSpan(final: true)
-        guard autoplays(), !isLive, let id = self.current?.id else { return }
+        // A queue plays on by itself; YouTube's pick only with Autoplay on.
+        guard !queue.isEmpty || autoplays(), !isLive, let id = self.current?.id else { return }
         countdown = Task {
             if upNext == nil {
                 // The page was never opened (or hadn't loaded): ask YouTube what's next.
                 let page = try? await music.watchPage(id)
                 guard !Task.isCancelled, self.current?.id == id else { return }
-                upNext = page?.next
+                suggested = page?.next
             }
             guard upNext != nil else { return }
             for remaining in stride(from: 5, through: 1, by: -1) {

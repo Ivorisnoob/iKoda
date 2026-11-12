@@ -479,6 +479,14 @@ final class VideoPlayback {
         queue.append(video)
     }
 
+    /// One of the queued videos now, ahead of its turn. The page showing the video before
+    /// follows it, as it follows Up Next.
+    func playFromQueue(_ video: Video) {
+        guard let from = current?.id, from != video.id else { return play(video) }
+        play(video)
+        autoplayed = (from, video)
+    }
+
     func isQueued(_ video: Video) -> Bool {
         queue.contains { $0.id == video.id }
     }

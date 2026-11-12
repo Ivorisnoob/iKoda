@@ -26,6 +26,9 @@ struct VideoWatchView: View {
     @State private var size: CGSize = .zero
     @State private var showsComments = false
     @State private var showsQueue = false
+    /// The height under the iPhone's player, down to the screen's edge: where the comments and
+    /// the queue rest as sheets, leaving the video in sight.
+    @State private var spaceUnderPlayer: CGFloat = 0
     /// The video's comments, made when its page loads and shared by the card and the sheet.
     @State private var comments: CommentsModel?
 
@@ -35,6 +38,9 @@ struct VideoWatchView: View {
     }
 
     private var playback: VideoPlayback { app.videos }
+    private var docked: PresentationDetent? {
+        !Platform.isMac && spaceUnderPlayer > 260 ? .height(spaceUnderPlayer) : nil
+    }
     /// The page's video as best known: the watch page's details over the row it came from.
     private var shown: Video { (watch.state.value?.video ?? video).merged(over: video) }
 
@@ -54,12 +60,12 @@ struct VideoWatchView: View {
         #endif
         .sheet(isPresented: $showsComments) {
             if let comments {
-                CommentsSheet(model: comments, count: watch.state.value?.commentCount, videoId: video.id)
+                CommentsSheet(model: comments, count: watch.state.value?.commentCount, videoId: video.id, docked: docked)
                     .appEnvironment(app)
             }
         }
         .sheet(isPresented: $showsQueue) {
-            VideoQueueSheet(playback: playback).appEnvironment(app)
+            VideoQueueSheet(playback: playback, docked: docked).appEnvironment(app)
         }
         .task(id: video.id) {
             playback.play(video)
@@ -103,7 +109,18 @@ struct VideoWatchView: View {
                 .padding(.bottom, 32)
             }
             .scrollEdgeEffectStyle(.soft, for: .top)
+            // The queue where the thumb is: what's next, opening all of it.
+            .safeAreaBar(edge: .bottom) {
+                if let next = playback.queue.first {
+                    QueueBar(next: next, count: playback.queue.count) { showsQueue = true }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.smooth, value: playback.queue.isEmpty)
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height - proxy.size.width * 9 / 16 + proxy.safeAreaInsets.bottom
+        } action: { spaceUnderPlayer = $0 }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
@@ -319,16 +336,17 @@ struct VideoWatchView: View {
         }
     }
 
-    /// What follows this video: the listener's own queue first, then what YouTube suggests.
+    /// What follows this video: the listener's own queue first (on the Mac; the iPhone keeps
+    /// it in a bar along the bottom), then what YouTube suggests.
     private var upNext: some View {
         VStack(alignment: .leading, spacing: 24) {
-            if !playback.queue.isEmpty { queue }
+            if Platform.isMac, !playback.queue.isEmpty { queue }
             suggestions
         }
     }
 
-    /// The videos lined up with Play Next and Add to Queue, in the order they'll play. A tap
-    /// plays one now; Edit reorders and removes.
+    /// The videos lined up with Play Next and Add to Queue, in the order they'll play. A click
+    /// opens one; Edit opens the whole queue to reorder and remove.
     private var queue: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -703,19 +721,30 @@ private struct CommentsCard: View {
 }
 
 /// All of a video's comments, top first, paging as they're scrolled; a comment's replies open
-/// under it. Signed in, the field along the bottom posts a comment or a reply, comments can be
+/// under it. On the iPhone the sheet rests under the player (`dockedUnderPlayer`), so the video
+/// plays on above it and a time tapped in a comment is seen to land. Signed in, the field along the bottom posts a comment or a reply, comments can be
 /// liked, and the account's own deleted (swipe, or the menu). Times in a comment jump the video.
 struct CommentsSheet: View {
     let model: CommentsModel
     let count: String?
     /// The video the comments are under: a time in one seeks it.
     let videoId: String
+    let docked: PresentationDetent?
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @State private var detent: PresentationDetent
     @State private var draft = ""
     @State private var replyingTo: VideoComment?
     @State private var deleting: VideoComment?
     @FocusState private var isComposing: Bool
+
+    init(model: CommentsModel, count: String?, videoId: String, docked: PresentationDetent? = nil) {
+        self.model = model
+        self.count = count
+        self.videoId = videoId
+        self.docked = docked
+        _detent = State(initialValue: docked ?? .medium)
+    }
 
     private var canWrite: Bool {
         let profile = app.roster.active
@@ -760,8 +789,11 @@ struct CommentsSheet: View {
             }
         }
         .richLinks(videoId: videoId, leaving: { dismiss() })
-        .presentationDetents(Platform.isMac ? [.large] : [.medium, .large])
-        .presentationDragIndicator(.visible)
+        .dockedUnderPlayer(docked, detent: $detent)
+        // Typing wants the room: the keyboard would leave a docked sheet a sliver.
+        .onChange(of: isComposing) { _, composing in
+            if composing { detent = .large }
+        }
         .frame(minWidth: Platform.isMac ? 520 : nil, minHeight: Platform.isMac ? 620 : nil)
         .task { await model.loadIfNeeded(music: app.music) }
         .confirmationDialog("Delete Comment?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -943,11 +975,12 @@ private struct CommentRow: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: Platform.isMac ? 18 : 22) {
             if comment.likeAction != nil || comment.unlikeAction != nil {
                 Button(action: like) {
                     Label(likes.isEmpty ? "Like" : likes, systemImage: comment.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
                         .contentTransition(.symbolEffect(.replace))
+                        .touchTarget()
                 }
                 .tint(comment.isLiked ? Color.accentColor : .secondary)
                 .sensoryFeedback(.impact(weight: .light), trigger: comment.isLiked)
@@ -962,7 +995,7 @@ private struct CommentRow: View {
                     .accessibilityLabel("Loved by the creator")
             }
             if canWrite, comment.replyParams != nil {
-                Button("Reply", action: reply).tint(.secondary)
+                Button(action: reply) { Text("Reply").touchTarget() }.tint(.secondary)
             }
             if !isReply, comment.repliesToken != nil || thread?.comments.isEmpty == false {
                 Button(action: toggleReplies) {
@@ -972,60 +1005,175 @@ private struct CommentRow: View {
                             .rotationEffect(.degrees(thread?.isOpen == true ? 180 : 0))
                     }
                     .fontWeight(.semibold)
+                    .touchTarget()
                 }
                 .accessibilityHint(thread?.isOpen == true ? "Hides the replies" : "Shows the replies")
             }
         }
-        .font(.scaled(.caption))
+        .font(.scaled(Platform.isMac ? .caption : .footnote))
         .foregroundStyle(.secondary)
         .labelStyle(.titleAndIcon)
         // Borderless, so each takes its own taps inside the list row.
         .buttonStyle(.borderless)
-        .padding(.top, 2)
+        .padding(.top, Platform.isMac ? 2 : 0)
     }
 }
 
-/// The video queue in full: drag to reorder, the minus (or a swipe) to remove, Clear for all of it.
+/// What plays after this video, in full, as Music lays out its queue: the video that's on, the
+/// listener's queue (tap one to play it now, hold and drag to reorder, swipe to remove), then
+/// YouTube's own pick with the Autoplay switch. On the iPhone it rests under the player.
 struct VideoQueueSheet: View {
     let playback: VideoPlayback
+    let docked: PresentationDetent?
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @State private var detent: PresentationDetent
+
+    init(playback: VideoPlayback, docked: PresentationDetent? = nil) {
+        self.playback = playback
+        self.docked = docked
+        _detent = State(initialValue: docked ?? .medium)
+    }
 
     var body: some View {
+        @Bindable var settings = app.settings
         NavigationStack {
             List {
-                ForEach(playback.queue) { video in
-                    VideoRow(video: video, thumbnailWidth: 112)
+                if let current = playback.current {
+                    Section("Now Playing") {
+                        VideoRow(video: current, thumbnailWidth: 112)
+                            .listRowSeparator(.hidden)
+                    }
                 }
-                .onMove { playback.moveQueue(fromOffsets: $0, toOffset: $1) }
-                .onDelete { playback.removeFromQueue(atOffsets: $0) }
+                Section("Next in Queue") {
+                    ForEach(playback.queue) { video in
+                        Button {
+                            playback.playFromQueue(video)
+                        } label: {
+                            VideoRow(video: video, thumbnailWidth: 112)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowSeparator(.hidden)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button("Remove", systemImage: "minus.circle") { playback.removeFromQueue([video.id]) }
+                                .tint(.red)
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { playback.queueNext(video) }
+                                .tint(.indigo)
+                        }
+                        .contextMenu {
+                            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { playback.queueNext(video) }
+                            Button("Remove from Queue", systemImage: "minus.circle", role: .destructive) { playback.removeFromQueue([video.id]) }
+                        }
+                    }
+                    .onMove { playback.moveQueue(fromOffsets: $0, toOffset: $1) }
+                    if playback.queue.isEmpty {
+                        Text("Choose Play Next or Add to Queue from any video's menu.")
+                            .font(.scaled(.subheadline))
+                            .foregroundStyle(.secondary)
+                            .listRowSeparator(.hidden)
+                    }
+                }
+                if let suggested = playback.suggested {
+                    Section {
+                        VideoRow(video: suggested, thumbnailWidth: 112)
+                            .opacity(settings.autoplaysVideos ? 1 : 0.45)
+                            .listRowSeparator(.hidden)
+                    } header: {
+                        Toggle(playback.queue.isEmpty ? "Autoplay" : "Autoplay After the Queue", isOn: $settings.autoplaysVideos)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+                }
             }
             .listStyle(.plain)
-            #if os(iOS)
-            .environment(\.editMode, .constant(.active))
-            #endif
-            .overlay {
-                if playback.queue.isEmpty {
-                    ContentUnavailableView("Queue Is Empty", systemImage: "list.bullet",
-                                           description: Text("Choose Play Next or Add to Queue from any video's menu."))
-                }
-            }
             .navigationTitle("Queue")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Clear", role: .destructive) {
-                        playback.clearQueue()
-                        dismiss()
-                    }
-                    .disabled(playback.queue.isEmpty)
+                    Button("Clear") { withAnimation { playback.clearQueue() } }
+                        .disabled(playback.queue.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", systemImage: "checkmark") { dismiss() }
                 }
             }
         }
-        .presentationDetents(Platform.isMac ? [.large] : [.medium, .large])
+        .dockedUnderPlayer(docked, detent: $detent)
         .frame(minWidth: Platform.isMac ? 480 : nil, minHeight: Platform.isMac ? 520 : nil)
+    }
+}
+
+/// The queue within the thumb's reach on the iPhone's watch page: what's next and how many
+/// wait, along the bottom; a tap opens the whole queue.
+private struct QueueBar: View {
+    let next: Video
+    let count: Int
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                VideoThumbnail(video: next, cornerRadius: 7, width: 72, showsProgress: false)
+                    .frame(width: 72)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(count == 1 ? "Next in Queue" : "Next in Queue · \(count) Videos")
+                        .font(.scaled(.caption).weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(next.title)
+                        .font(.scaled(.subheadline).weight(.semibold))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.up")
+                    .font(.scaled(.footnote).weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.trailing, 6)
+            }
+            .padding(8)
+            .contentShape(.rect(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+        .accessibilityLabel("Queue, \(count) \(count == 1 ? "video" : "videos"). Next: \(next.title)")
+    }
+}
+
+extension View {
+    /// A sheet of the watch page's. On the iPhone it rests in the space under the player
+    /// (`docked`, measured by the page), where the video stays in sight and its controls still
+    /// take touches, and scrolling moves its list rather than the sheet; pulled up by its bar it
+    /// covers the page. The Mac shows it large.
+    func dockedUnderPlayer(_ docked: PresentationDetent?, detent: Binding<PresentationDetent>) -> some View {
+        modifier(DockedSheet(docked: docked, detent: detent))
+    }
+}
+
+private struct DockedSheet: ViewModifier {
+    let docked: PresentationDetent?
+    @Binding var detent: PresentationDetent
+
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content.presentationDetents([.large])
+        } else {
+            let rest = docked ?? .medium
+            content
+                .presentationDetents([rest, .large], selection: $detent)
+                .presentationBackgroundInteraction(.enabled(upThrough: rest))
+                .presentationContentInteraction(.scrolls)
+                .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+private extension View {
+    /// Room for a finger around a small text button on the iPhone, without spreading the row.
+    func touchTarget() -> some View {
+        frame(minHeight: Platform.isMac ? nil : 34).contentShape(.rect)
     }
 }
 

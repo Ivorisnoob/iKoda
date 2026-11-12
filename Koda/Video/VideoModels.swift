@@ -389,7 +389,8 @@ final class CommentsModel {
         if let parent {
             // A reply to a reply joins the thread it's in.
             let threadId = topLevel(of: parent.id)
-            var thread = replies[threadId] ?? Replies()
+            // A thread never opened still has its earlier replies to fetch, under the new one.
+            var thread = replies[threadId] ?? Replies(continuation: state.value?.first { $0.id == threadId }?.repliesToken)
             thread.comments.append(posted)
             thread.isOpen = true
             replies[threadId] = thread

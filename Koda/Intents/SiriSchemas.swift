@@ -3,9 +3,9 @@
 // Koda" or "add this to my Gym playlist" work without any set phrase. Modeled on Apple's
 // "Integrating your music app with Apple Intelligence" sample (WWDC26).
 //
-// Only built with the iOS 27 SDK (MediaIntents is new in it), and never for the Mac: the
-// schemas aren't available to Mac Catalyst. Older systems use `KodaIntents.swift`.
-#if canImport(MediaIntents) && !targetEnvironment(macCatalyst)
+// Only built with the iOS 27 SDK (MediaIntents is new in it), and only for the iPhone.
+// Older systems use `KodaIntents.swift`.
+#if canImport(MediaIntents) && os(iOS)
 import AppIntents
 import CoreSpotlight
 import KodaCore

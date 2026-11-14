@@ -1,4 +1,4 @@
-#if canImport(ActivityKit) && os(iOS) && !targetEnvironment(macCatalyst)
+#if canImport(ActivityKit) && os(iOS)
 import ActivityKit
 import Foundation
 

@@ -17,9 +17,9 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .lastFM: "Last.fm"
         case .discord: "Discord"
-        case .privacy: Platform.isNativeMac ? "Privacy" : "History & Privacy"
+        case .privacy: "Privacy"
         case .storage: "Storage"
-        case .backup: Platform.isNativeMac ? "Backup" : "Back Up & Restore"
+        case .backup: "Backup"
         case .about: "About Koda"
         }
     }
@@ -59,7 +59,6 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
 /// on the right each setting on a row of its own, name and explanation on the left, its
 /// control on the right, in rounded groups.
 struct MacSettingsView: View {
-    static let windowID = "settings"
     @Environment(AppModel.self) private var app
     #if os(macOS)
     /// Reopens on the pane last used, as the Mac's Settings windows do.
@@ -522,7 +521,7 @@ private struct MacPlaybackPane: View {
                 }
                 MacSettingsToggle(title: "Autoplay next video", detail: "When a video ends, the next in Up Next starts after a short countdown.",
                                   isOn: $settings.autoplaysVideos)
-                if Platform.isNativeMac {
+                if Platform.isMac {
                     MacSettingsToggle(title: "Preview on hover", detail: "Resting the pointer on a video plays it in its thumbnail, muted.",
                                       isOn: $settings.previewsVideosOnHover)
                 }

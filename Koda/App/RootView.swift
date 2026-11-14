@@ -26,11 +26,7 @@ struct RootView: View {
 
     var body: some View {
         #if os(iOS)
-        if Platform.isMac {
-            MacRootView()
-        } else {
-            phone
-        }
+        phone
         #else
         MacRootView()
         #endif

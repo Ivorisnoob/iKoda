@@ -75,18 +75,6 @@ struct KodaApp: App {
                 .appEnvironment(model)
                 .preferredColorScheme(model.settings.theme.colorScheme)
         }
-        #endif
-
-        #if targetEnvironment(macCatalyst) || os(macOS)
-        #if targetEnvironment(macCatalyst)
-        // Keyed by one value, so asking again brings the open Settings window forward.
-        WindowGroup("Settings", id: MacSettingsView.windowID, for: String.self) { _ in
-            MacSettingsView()
-                .appEnvironment(model)
-                .preferredColorScheme(model.settings.theme.colorScheme)
-        }
-        .defaultSize(width: 820, height: 600)
-        #endif
 
         // A full-screen video: its own window, keyed by one value so there is only ever one.
         WindowGroup("Video", id: MacVideoWindow.windowID, for: String.self) { _ in

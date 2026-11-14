@@ -100,7 +100,7 @@ Koda has two modes, as Koda for Android does. Switch between them from the butto
 ### Siri, Shortcuts and widgets
 
 - Ask Siri or Shortcuts to play your liked songs, a playlist or anything you name, start a radio, or like the song playing; Koda's songs and playlists show up in Spotlight
-- A **Quick Play** widget for the Home Screen, Lock Screen and Mac, and Control Center controls on the iPhone
+- A **Quick Play** widget for the Home Screen and Lock Screen, and Control Center controls on the iPhone
 
 ### Last.fm and Discord
 
@@ -151,8 +151,8 @@ Xcode 26 or later. Notes on how parts of Koda work, and why, are in [`docs/`](do
 cd KodaCore && swift test                          # unit tests
 KODA_LIVE=1 swift test --filter Live               # against live YouTube, plays muted audio
 xcodebuild -project Koda.xcodeproj -scheme Koda -destination 'generic/platform=iOS' build
-xcodebuild -project Koda.xcodeproj -scheme Koda -destination 'generic/platform=macOS,variant=Mac Catalyst' \
-  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual build
+xcodebuild -project Koda.xcodeproj -scheme KodaMac -destination 'generic/platform=macOS' \
+  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO build
 ```
 
 Every push to `main` or `beta` runs the tests and builds an unsigned `Koda.ipa` and a universal, ad-hoc signed `Koda.dmg` on GitHub Actions; both are in the run's artifacts.

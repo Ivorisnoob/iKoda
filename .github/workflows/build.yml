@@ -71,49 +71,17 @@ jobs:
           path: Koda.ipa
           retention-days: 30
 
+  # The Mac app: SwiftUI on AppKit (target KodaMac), one binary for Apple silicon and Intel.
+  # Ad-hoc signed: Apple silicon refuses to run unsigned code, and without a Developer ID there
+  # is nothing better to sign with. Same bundle id as the Catalyst app it replaced, so it opens
+  # the same library, settings and Keychain items.
   mac:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
-      # One binary for Apple silicon and Intel. Ad-hoc signed: Apple silicon refuses to run
-      # unsigned code, and without a Developer ID there is nothing better to sign with.
       - name: Build universal Mac app
-        run: |
-          set -o pipefail
-          xcodebuild -project Koda.xcodeproj -scheme Koda -configuration Release \
-            -destination 'generic/platform=macOS,variant=Mac Catalyst' -derivedDataPath build \
-            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="" \
-            build 2>&1 | tee build.log | tail -n 40 \
-            || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
-          lipo -info build/Build/Products/Release-maccatalyst/Koda.app/Contents/MacOS/Koda
-
-      # The usual disk image: Koda beside a link to Applications, to drag across.
-      - name: Package .dmg
-        run: |
-          mkdir dmg
-          cp -R build/Build/Products/Release-maccatalyst/Koda.app dmg/
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname Koda -srcfolder dmg -fs APFS -format ULFO -ov Koda.dmg
-          ls -lh Koda.dmg
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: Koda-mac-${{ github.sha }}
-          path: Koda.dmg
-          retention-days: 30
-
-  # The native Mac app (AppKit SwiftUI, target KodaMac), built beside the Catalyst one until it
-  # matches it. Same bundle id, so it opens the same library and settings.
-  mac-native:
-    runs-on: macos-26
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Build universal native Mac app
         run: |
           set -o pipefail
           xcodebuild -project Koda.xcodeproj -scheme KodaMac -configuration Release \
@@ -133,6 +101,6 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Koda-macnative-${{ github.sha }}
+          name: Koda-mac-${{ github.sha }}
           path: Koda.dmg
           retention-days: 30

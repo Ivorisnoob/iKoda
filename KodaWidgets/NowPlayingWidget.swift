@@ -1,4 +1,3 @@
-#if !targetEnvironment(macCatalyst)
 import AppIntents
 import SwiftUI
 import UIKit
@@ -374,5 +373,4 @@ struct DownloadActivityWidget: Widget {
         return state.current ?? "Waiting for a connection"
     }
 }
-#endif
 #endif

@@ -60,11 +60,13 @@ struct MacRootView: View {
 
     var body: some View {
         dialogs(nowPlayingLayer(routing(searching(splitView))))
+            #if os(macOS)
             // A full-screen video gets a window of its own (MacVideoWindow), so this window and
             // its toolbar never change for it; that window closes itself when the video leaves.
             .onChange(of: model.videos.isFullScreen) { _, isFullScreen in
                 if isFullScreen { openWindow(id: MacVideoWindow.windowID, value: MacVideoWindow.windowID) }
             }
+            #endif
     }
 
     private var splitView: some View {
@@ -243,8 +245,6 @@ struct MacRootView: View {
             model.isProfilePresented = false
             #if os(macOS)
             openSettings()
-            #else
-            openWindow(id: MacSettingsView.windowID, value: MacSettingsView.windowID)
             #endif
         }
         .onChange(of: model.isNamingPlaylist) { _, asked in

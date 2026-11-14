@@ -1,4 +1,4 @@
-#if os(iOS) && !targetEnvironment(macCatalyst)
+#if os(iOS)
 import Foundation
 
 // What the app tells its widgets, through a folder both can reach (an App Group). The app

@@ -5,18 +5,16 @@ import WidgetKit
 // Koda's widgets. Quick Play and the Control Center controls need nothing from the app to
 // draw. Now Playing (NowPlayingWidget.swift) reads what the app writes to the app group's
 // folder, which the iPhone build has once its installer signs it with one (`SharedContainer`);
-// the Mac's builds have none.
+// the Mac has no widgets yet.
 
 @main
 struct KodaWidgets: WidgetBundle {
     var body: some Widget {
         QuickPlayWidget()
-        #if !targetEnvironment(macCatalyst)
         NowPlayingWidget()
         DownloadActivityWidget()
         LikedSongsControl()
         PlayPauseControl()
-        #endif
     }
 }
 
@@ -51,11 +49,7 @@ struct QuickPlayWidget: Widget {
     }
 
     private static var families: [WidgetFamily] {
-        #if targetEnvironment(macCatalyst)
-        [.systemSmall, .systemMedium]
-        #else
         [.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular]
-        #endif
     }
 }
 
@@ -151,7 +145,6 @@ struct QuickPlayView: View {
 
 // MARK: - Control Center
 
-#if !targetEnvironment(macCatalyst)
 struct LikedSongsControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "LikedSongsControl") {
@@ -175,4 +168,3 @@ struct PlayPauseControl: ControlWidget {
         .description("Plays or pauses Koda.")
     }
 }
-#endif

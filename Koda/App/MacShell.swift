@@ -4,17 +4,10 @@ import SwiftUI
 /// Where Koda runs. The iPhone layout and the Mac's share their screens; only the shell
 /// around them differs: a sidebar, a player bar and a menu bar on the Mac.
 enum Platform {
-    #if targetEnvironment(macCatalyst) || os(macOS)
+    #if os(macOS)
     static let isMac = true
     #else
     static let isMac = false
-    #endif
-
-    /// The native Mac app rather than Catalyst, for the few places they differ in what they show.
-    #if os(macOS)
-    static let isNativeMac = true
-    #else
-    static let isNativeMac = false
     #endif
 }
 

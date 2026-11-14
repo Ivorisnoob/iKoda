@@ -22,7 +22,7 @@ struct VideoThumbnail: View {
 
     /// Lists' thumbnails preview on hover; the player's and the mini players' (which hide the
     /// progress bar) are already the video.
-    private var previews: Bool { Platform.isNativeMac && showsProgress && app.settings.previewsVideosOnHover }
+    private var previews: Bool { Platform.isMac && showsProgress && app.settings.previewsVideosOnHover }
 
     var body: some View {
         Rectangle()

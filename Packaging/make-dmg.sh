@@ -32,10 +32,6 @@ cp "$here/dmg-background.tiff" "$stage/.background/background.tiff"
 hdiutil create -quiet -srcfolder "$stage" -volname Koda -fs HFS+ -format UDRW -ov "$work/rw.dmg"
 mount="$(hdiutil attach -readwrite -noverify -noautoopen "$work/rw.dmg" | awk -F'\t' '/\/Volumes\// { print $NF }' | tail -n 1)"
 volume="$(basename "$mount")"
-# The disk's own icon, as Finder and the Desktop show it while mounted. Copied in here:
-# `hdiutil create -srcfolder` leaves .VolumeIcon.icns out.
-cp "$app/Contents/Resources/AppIcon.icns" "$mount/.VolumeIcon.icns"
-xcrun SetFile -a C "$mount"
 
 layout() {
     osascript <<EOF
@@ -76,6 +72,10 @@ done
 
 # Let Finder finish writing .DS_Store before the disk goes.
 for _ in $(seq 1 10); do [ -f "$mount/.DS_Store" ] && break; sleep 1; done
+# The disk's own icon, as Finder and the Desktop show it while mounted. Only now: Finder
+# deletes a .VolumeIcon.icns that is there while it lays the window out.
+cp "$app/Contents/Resources/AppIcon.icns" "$mount/.VolumeIcon.icns"
+xcrun SetFile -a C "$mount"
 rm -rf "$mount/.fseventsd"
 sync
 hdiutil detach -quiet "$mount" || { sleep 3; hdiutil detach -force -quiet "$mount"; }

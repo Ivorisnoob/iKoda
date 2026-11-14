@@ -1,5 +1,6 @@
+#if os(macOS)
+import AppKit
 import SwiftUI
-import UIKit
 
 /// A full-screen video on the Mac is a window of its own, as QuickTime Player's and TV's are:
 /// made for the video without a title or toolbar, taken into macOS full screen in a Space of its
@@ -40,82 +41,54 @@ struct MacVideoWindow: View {
     }
 }
 
-/// The video window's own AppKit window, taken into full screen with AppKit's `toggleFullScreen:`
-/// (what the green button sends): UIKit has no call for it. Catalyst gives no public way from a
-/// UIWindow to its NSWindow, so it's recognised as it becomes key by its frame, which is the
-/// scene's own. Never "the key window": as the new window became key, AppKit could still name
-/// the main window, which then went full screen instead.
+/// The video window's own window, taken into macOS full screen as it's made: only the picture,
+/// no title and no toolbar.
 @MainActor
 final class FullScreenWindow {
-    static let didBecomeKey = Notification.Name("NSWindowDidBecomeKeyNotification")
-    static let didExitFullScreen = Notification.Name("NSWindowDidExitFullScreenNotification")
-    private weak var window: UIWindow?
-    private weak var appKitWindow: NSObject?
+    static let didBecomeKey = NSWindow.didBecomeKeyNotification
+    static let didExitFullScreen = NSWindow.didExitFullScreenNotification
+    private weak var window: NSWindow?
 
-    /// The window as it's made: only the picture, no title and no toolbar, set once.
-    func adopt(_ window: UIWindow) {
+    func adopt(_ window: NSWindow) {
         guard self.window !== window else { return }
         self.window = window
-        #if targetEnvironment(macCatalyst)
-        window.windowScene?.titlebar?.titleVisibility = .hidden
-        window.windowScene?.titlebar?.toolbar = nil
-        #endif
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbar = nil
+        window.backgroundColor = .black
+        if !window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
     }
 
-    /// An AppKit window became key: if it's this one, the first time, into full screen it goes.
-    func becameKey(_ object: Any?) {
-        guard appKitWindow == nil, let candidate = object as? NSObject, isHost(candidate) else { return }
-        appKitWindow = candidate
-        // NSWindow.StyleMask.fullScreen
-        let mask = candidate.value(forKey: "styleMask") as? UInt ?? 0
-        if mask & (1 << 14) == 0 { candidate.perform(NSSelectorFromString("toggleFullScreen:"), with: nil) }
-    }
+    /// Nothing to find: the window is handed over directly.
+    func becameKey(_ object: Any?) {}
 
     func isWindow(_ object: Any?) -> Bool {
-        guard let appKitWindow else { return false }
-        return (object as AnyObject?) === appKitWindow
-    }
-
-    private func isHost(_ candidate: NSObject) -> Bool {
-        #if targetEnvironment(macCatalyst)
-        guard let scene = window?.windowScene else { return false }
-        return Self.frame(of: candidate) == scene.effectiveGeometry.systemFrame
-        #else
-        return false
-        #endif
-    }
-
-    /// An AppKit window's frame as UIKit gives a scene's: from the top of the main screen, where
-    /// AppKit counts from its bottom.
-    private static func frame(of appKitWindow: NSObject) -> CGRect? {
-        guard let frame = (appKitWindow.value(forKey: "frame") as? NSValue)?.cgRectValue,
-              let screens = (NSClassFromString("NSScreen") as? NSObject.Type)?.value(forKey: "screens") as? [NSObject],
-              let main = (screens.first?.value(forKey: "frame") as? NSValue)?.cgRectValue else { return nil }
-        return CGRect(x: frame.minX, y: main.height - frame.maxY, width: frame.width, height: frame.height)
+        guard let window else { return false }
+        return (object as AnyObject?) === window
     }
 }
 
-/// Hands over the UIWindow a view lands in.
-private struct WindowReader: UIViewRepresentable {
-    let found: (UIWindow) -> Void
+/// Hands over the NSWindow a view lands in.
+private struct WindowReader: NSViewRepresentable {
+    let found: (NSWindow) -> Void
 
-    func makeUIView(context: Context) -> Probe { Probe(found: found) }
-    func updateUIView(_ view: Probe, context: Context) {}
+    func makeNSView(context: Context) -> Probe { Probe(found: found) }
+    func updateNSView(_ view: Probe, context: Context) {}
 
-    final class Probe: UIView {
-        let found: (UIWindow) -> Void
+    final class Probe: NSView {
+        let found: (NSWindow) -> Void
 
-        init(found: @escaping (UIWindow) -> Void) {
+        init(found: @escaping (NSWindow) -> Void) {
             self.found = found
             super.init(frame: .zero)
-            isUserInteractionEnabled = false
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
             if let window { found(window) }
         }
     }
 }
+#endif

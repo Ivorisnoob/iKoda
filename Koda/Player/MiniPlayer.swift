@@ -25,11 +25,11 @@ struct MiniPlayer: View {
                 ArtworkView(artwork: player.current?.artwork, size: isInline ? 28 : 36, cornerRadius: isInline ? 8 : 10)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(player.current?.title ?? "Not Playing")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.scaled(.subheadline).weight(.semibold))
                         .lineLimit(1)
                     if !isInline, let artist = player.current?.artistLine {
                         Text(artist)
-                            .font(.caption)
+                            .font(.scaled(.caption))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -49,7 +49,7 @@ struct MiniPlayer: View {
                     player.next()
                 } label: {
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 18))
+                        .font(.scaledSystem(size: 18))
                         .frame(width: 36, height: 36)
                         .contentShape(.rect)
                 }
@@ -115,7 +115,7 @@ struct PlayPauseButton: View {
         } label: {
             ZStack {
                 Image(systemName: player.wantsToPlay ? "pause.fill" : "play.fill")
-                    .font(.system(size: player.isBuffering ? size * 0.72 : size))
+                    .font(.scaledSystem(size: player.isBuffering ? size * 0.72 : size))
                     .opacity(player.isBuffering ? 0.75 : 1)
                     .contentTransition(.symbolEffect(.replace.downUp))
                 if player.isBuffering {

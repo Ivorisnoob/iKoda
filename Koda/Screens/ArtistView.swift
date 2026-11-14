@@ -54,7 +54,7 @@ struct ArtistView: View {
                     .shadow(color: .black.opacity(0.3), radius: 24, y: 12)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Artist")
-                        .font(.caption.weight(.semibold))
+                        .font(.scaled(.caption).weight(.semibold))
                         .textCase(.uppercase)
                         .foregroundStyle(.secondary)
                         .padding(.bottom, 2)
@@ -62,13 +62,13 @@ struct ArtistView: View {
                         Capsule().fill(.primary.opacity(0.12)).frame(width: 260, height: 44).shimmer()
                     } else {
                         Text(name)
-                            .font(.system(size: 46, weight: .heavy))
+                            .font(.scaledSystem(size: 46, weight: .heavy))
                             .lineLimit(2)
                             .minimumScaleFactor(0.5)
                             .textSelection(.enabled)
                     }
                     Text(state.value?.artist.subtitle ?? " ")
-                        .font(.title3)
+                        .font(.scaled(.title3))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .padding(.top, 2)
@@ -132,7 +132,7 @@ struct ArtistView: View {
             VStack(alignment: .leading, spacing: 10) {
                 MacSectionTitle(title: "About")
                 Text(about)
-                    .font(.body)
+                    .font(.scaled(.body))
                     .foregroundStyle(.secondary)
                     .lineLimit(aboutExpanded ? nil : 5)
                     .textSelection(.enabled)
@@ -161,8 +161,11 @@ struct ArtistView: View {
             pull = max(0, -offset)
         }
         .ignoresSafeArea(edges: .top)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .revealsTitle(state.value?.artist.name ?? summary.name, after: 340)
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 let saved = library.isSaved(artist: summary.id)
@@ -180,6 +183,7 @@ struct ArtistView: View {
                 }
             }
         }
+        #endif
         .task { await palette.load(summary.artwork) }
         .task { if state.value == nil { await load() } }
     }
@@ -201,7 +205,7 @@ struct ArtistView: View {
                             .shimmer()
                     } else {
                         Text(name)
-                            .font(.system(size: 40, weight: .bold))
+                            .font(.scaledSystem(size: 40, weight: .bold))
                             .lineLimit(2)
                             .minimumScaleFactor(0.6)
                             .transition(.opacity)
@@ -211,7 +215,7 @@ struct ArtistView: View {
                     ZStack(alignment: .leading) {
                         if let audience = state.value?.artist.subtitle {
                             Text(audience)
-                                .font(.subheadline.weight(.medium))
+                                .font(.scaled(.subheadline).weight(.medium))
                                 .opacity(0.85)
                                 .lineLimit(1)
                                 .transition(.opacity)
@@ -287,9 +291,9 @@ struct ArtistView: View {
         }
         if let about = page.description {
             VStack(alignment: .leading, spacing: 8) {
-                Text("About").font(.title3.bold())
+                Text("About").font(.scaled(.title3).bold())
                 Text(about)
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
                     .lineLimit(aboutExpanded ? nil : 4)
                     .onTapGesture { withAnimation(.snappy) { aboutExpanded.toggle() } }
@@ -326,8 +330,8 @@ private struct ArtistHeroImage: View {
     let width: CGFloat
     let height: CGFloat
     @Environment(\.displayScale) private var scale
-    @State private var image: UIImage?
-    @State private var previewImage: UIImage?
+    @State private var image: PlatformImage?
+    @State private var previewImage: PlatformImage?
 
     private var url: URL? {
         guard let artwork else { return nil }
@@ -342,7 +346,7 @@ private struct ArtistHeroImage: View {
         ZStack {
             LinearGradient(colors: [tint.opacity(0.9), tint.opacity(0.4)], startPoint: .top, endPoint: .bottom)
             if let previewImage, image == nil {
-                Image(uiImage: previewImage)
+                Image(platformImage: previewImage)
                     .resizable()
                     .scaledToFill()
                     .blur(radius: 24)
@@ -350,7 +354,7 @@ private struct ArtistHeroImage: View {
                     .transition(.opacity)
             }
             if let image {
-                Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                Image(platformImage: image).resizable().scaledToFill().transition(.opacity)
             }
         }
         .frame(width: width, height: height)

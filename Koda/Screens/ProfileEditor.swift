@@ -37,7 +37,7 @@ struct AvatarEditor: View {
                      _ apply: @escaping (inout KodaAvatar, Int) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.scaled(.subheadline).weight(.semibold))
                 .foregroundStyle(.secondary)
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
@@ -103,13 +103,13 @@ struct ProfileEditorView: View {
                     ProfileAvatar(profile: profile, size: 112)
                         .animation(.snappy, value: profile)
                     TextField("Name", text: $name)
-                        .font(.title2.weight(.semibold))
+                        .font(.scaled(.title2).weight(.semibold))
                         .multilineTextAlignment(.center)
                         .textContentType(.name)
                         .submitLabel(.done)
                         .onSubmit(saveName)
                     Text(profile.subtitle)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(profile.isExpired ? .red : .secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -134,7 +134,7 @@ struct ProfileEditorView: View {
                                  selection: $photo, matching: .images)
                 case .account:
                     Text("Your Google account's picture. It changes when you change it on Google.")
-                        .font(.footnote)
+                        .font(.scaled(.footnote))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -150,7 +150,9 @@ struct ProfileEditorView: View {
             }
         }
         .navigationTitle("Edit Profile")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done", systemImage: "checkmark") {
@@ -249,7 +251,9 @@ struct AddProfileView: View {
                 if makesLocal { local } else { choices }
             }
             .navigationTitle(makesLocal ? "New Profile" : "Add Profile")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") { dismiss() }
@@ -270,7 +274,7 @@ struct AddProfileView: View {
         ScrollView {
             VStack(spacing: 14) {
                 Text("Each profile has its own likes, playlists, history and Home.")
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
@@ -299,17 +303,17 @@ struct AddProfileView: View {
     private func choice(title: String, detail: String, systemImage: String) -> some View {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.title2)
+                    .font(.scaled(.title2))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    Text(title).font(.scaled(.headline))
+                    Text(detail).font(.scaled(.subheadline)).foregroundStyle(.secondary)
                 }
                 .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
+                    .font(.scaled(.footnote).weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
             .padding(16)
@@ -322,7 +326,7 @@ struct AddProfileView: View {
                 VStack(spacing: 12) {
                     KodaAvatarView(avatar: avatar, size: 112)
                     TextField("Name", text: $name)
-                        .font(.title2.weight(.semibold))
+                        .font(.scaled(.title2).weight(.semibold))
                         .multilineTextAlignment(.center)
                         .focused($nameFocused)
                         .submitLabel(.done)
@@ -378,7 +382,7 @@ struct ProfilesGrid: View {
                             .overlay(alignment: .bottomTrailing) {
                                 if isActive {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.title3)
+                                        .font(.scaled(.title3))
                                         .symbolRenderingMode(.palette)
                                         .foregroundStyle(.white, Color.accentColor)
                                         .background(Circle().fill(.background))
@@ -386,10 +390,10 @@ struct ProfilesGrid: View {
                                 }
                             }
                         Text(profile.displayName)
-                            .font(.subheadline.weight(isActive ? .semibold : .regular))
+                            .font(.scaled(.subheadline).weight(isActive ? .semibold : .regular))
                             .lineLimit(1)
                         Text(profile.subtitle)
-                            .font(.caption)
+                            .font(.scaled(.caption))
                             .foregroundStyle(profile.isExpired ? .red : .secondary)
                             .lineLimit(1)
                     }
@@ -412,12 +416,12 @@ struct ProfilesGrid: View {
             Button { adding = true } label: {
                 VStack(spacing: 8) {
                     Image(systemName: "plus")
-                        .font(.title.weight(.medium))
+                        .font(.scaled(.title).weight(.medium))
                         .foregroundStyle(.secondary)
                         .frame(width: 76, height: 76)
                         .background(.fill.tertiary, in: .circle)
-                    Text("Add").font(.subheadline)
-                    Text(" ").font(.caption)
+                    Text("Add").font(.scaled(.subheadline))
+                    Text(" ").font(.scaled(.caption))
                 }
                 .contentShape(.rect)
             }

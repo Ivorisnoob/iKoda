@@ -307,7 +307,7 @@ enum IntentsIndex {
             try? await index.indexAppEntities(Array(songs))
             try? await index.indexAppEntities(playlists)
         }
-        #if canImport(MediaIntents) && !targetEnvironment(macCatalyst)
+        #if canImport(MediaIntents) && os(iOS)
         if #available(iOS 27, *) { SchemaIndex.update(app) }
         #endif
     }

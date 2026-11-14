@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A video's 16:9 frame: YouTube's 1280-wide image, or the 320-wide one every video has when
 /// that's missing. Laid out by a shape so the image never sets its own size.
@@ -13,7 +17,12 @@ struct VideoThumbnail: View {
     var showsProgress = true
     @Environment(\.displayScale) private var scale
     @Environment(Library.self) private var library
-    @State private var image: UIImage?
+    @Environment(AppModel.self) private var app
+    @State private var image: PlatformImage?
+
+    /// Lists' thumbnails preview on hover; the player's and the mini players' (which hide the
+    /// progress bar) are already the video.
+    private var previews: Bool { Platform.isMac && showsProgress && app.settings.previewsVideosOnHover }
 
     var body: some View {
         Rectangle()
@@ -21,9 +30,12 @@ struct VideoThumbnail: View {
             .aspectRatio(16 / 9, contentMode: .fit)
             .overlay {
                 if let image {
-                    Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                    Image(platformImage: image).resizable().scaledToFill().transition(.opacity)
                 }
             }
+            #if os(macOS)
+            .overlay { if previews { HoverPreviewLayer(video: video) } }
+            #endif
             .overlay(alignment: .bottom) { progress }
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .overlay(alignment: .bottomTrailing) { badge }
@@ -43,6 +55,11 @@ struct VideoThumbnail: View {
                     }
                 }
             }
+            .onHover { over in
+                guard previews, !video.id.hasPrefix("placeholder") else { return }
+                app.videoPreview.hover(video, isOver: over, music: app.music)
+            }
+            .onDisappear { if previews { app.videoPreview.hover(video, isOver: false, music: app.music) } }
             .accessibilityHidden(true)
     }
 
@@ -66,7 +83,7 @@ struct VideoThumbnail: View {
         if video.isLive {
             Label("Live", systemImage: "dot.radiowaves.left.and.right")
                 .labelStyle(.titleAndIcon)
-                .font(.caption2.weight(.bold))
+                .font(.scaled(.caption2).weight(.bold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(.red, in: .capsule)
@@ -74,7 +91,7 @@ struct VideoThumbnail: View {
                 .padding(6)
         } else if let duration = video.duration {
             Text(Duration.seconds(duration).formatted(duration >= 3600 ? .time(pattern: .hourMinuteSecond) : .time(pattern: .minuteSecond)))
-                .font(.caption2.weight(.semibold).monospacedDigit())
+                .font(.scaled(.caption2).weight(.semibold).monospacedDigit())
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(.black.opacity(0.75), in: .rect(cornerRadius: 5, style: .continuous))
@@ -82,6 +99,36 @@ struct VideoThumbnail: View {
                 .padding(6)
                 .padding(.bottom, library.videoProgress[video.id] == nil ? 0 : 3)
         }
+    }
+}
+
+/// The spinner at the end of a list that pages. It asks for the next page whenever it comes into
+/// view, and again after each page while it's still in view. A `.task` on the spinner ran once,
+/// when it was made: in a page that isn't lazy (the Mac's) that was at once, so scrolling down
+/// found a spinner that never loaded anything.
+struct LoadMoreTrigger: View {
+    let load: () async -> Void
+    @State private var isVisible = false
+    @State private var round = 0
+
+    private struct Key: Equatable {
+        let visible: Bool
+        let round: Int
+    }
+
+    var body: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
+            .task(id: Key(visible: isVisible, round: round)) {
+                guard isVisible else { return }
+                await load()
+                // A breath between pages, so a page that adds nothing (or fails) isn't asked again at once.
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                round += 1
+            }
     }
 }
 
@@ -101,23 +148,32 @@ struct VideoCard: View {
     let video: Video
     var width: CGFloat = 400
     var showsChannel = true
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VideoThumbnail(video: video, width: width)
+                .overlay(alignment: .topTrailing) {
+                    // Save for later without opening it, under the pointer, as YouTube's cards offer.
+                    if Platform.isMac, hovering {
+                        WatchLaterBadge(video: video)
+                            .padding(8)
+                            .transition(.opacity)
+                    }
+                }
             HStack(alignment: .top, spacing: 10) {
                 if showsChannel {
-                    ChannelAvatar(avatar: video.channel?.avatar, size: 34)
+                    ChannelAvatar(avatar: video.channel?.avatar, size: Platform.isMac ? CGFloat(34).scaled : 34)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(video.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.scaled(.subheadline).weight(.semibold))
                         .lineLimit(2, reservesSpace: true)
                         .multilineTextAlignment(.leading)
                         // A grid cell otherwise held the title to one line and an ellipsis.
                         .fixedSize(horizontal: false, vertical: true)
                     Text(showsChannel ? video.byline : [video.views, video.published].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
+                        .font(.scaled(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -125,6 +181,7 @@ struct VideoCard: View {
             }
         }
         .contentShape(.rect)
+        .onHover { over in withAnimation(.easeOut(duration: 0.15)) { hovering = over } }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(video.title), \(video.byline)")
     }
@@ -141,15 +198,15 @@ struct VideoRow: View {
                 .frame(width: thumbnailWidth)
             VStack(alignment: .leading, spacing: 3) {
                 Text(video.title)
-                    .font(.subheadline.weight(.medium))
+                    .font(.scaled(.subheadline).weight(.medium))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 if let channel = video.channel?.name {
-                    Text(channel).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(channel).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 let stats = [video.views, video.published].compactMap { $0 }.joined(separator: " · ")
                 if !stats.isEmpty {
-                    Text(stats).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(stats).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
@@ -159,15 +216,81 @@ struct VideoRow: View {
     }
 }
 
-/// What a video's context menu offers wherever it's listed: sharing it and going to its channel.
+/// What a video's context menu offers wherever it's listed: lining it up after the one playing,
+/// saving it, sharing it and going to its channel.
 struct VideoMenuItems: View {
     let video: Video
     @Environment(AppModel.self) private var app
 
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
+        // A queue follows a video that's on; with none, a tap on the video is how it starts.
+        let playback = app.videos
+        if let current = playback.current, current.id != video.id, !video.id.hasPrefix("placeholder") {
+            Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") { playback.queueNext(video) }
+            if playback.isQueued(video) {
+                Button("Remove from Queue", systemImage: "minus.circle") { playback.removeFromQueue([video.id]) }
+            } else {
+                Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") { playback.queueLast(video) }
+            }
+            Divider()
+        }
+        WatchLaterButton(video: video)
+        Divider()
         ShareLink(item: video.watchURL, subject: Text(video.title)) { Label("Share", systemImage: "square.and.arrow.up") }
+        Button("Copy Link", systemImage: "link") { PlatformImages.copy(video.watchURL) }
+        Button("Open on YouTube", systemImage: "safari") { openURL(video.watchURL) }
         if let channel = video.channel, let id = channel.id {
             Button("Go to Channel", systemImage: "person.crop.square") { app.open(.channel(id: id, name: channel.name)) }
+        }
+    }
+}
+
+/// The clock on a card's thumbnail: one click saves it to Watch Later (or takes it out).
+struct WatchLaterBadge: View {
+    let video: Video
+    @Environment(AppModel.self) private var app
+    @State private var sending = false
+
+    var body: some View {
+        if app.roster.active.isSignedIn, !video.id.hasPrefix("placeholder") {
+            let saved = app.watchLater[video.id] == true
+            Button {
+                sending = true
+                Task {
+                    _ = await app.setWatchLater(video.id, !saved)
+                    sending = false
+                }
+            } label: {
+                Image(systemName: saved ? "checkmark" : "clock")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .contentTransition(.symbolEffect(.replace))
+                    .opacity(sending ? 0.5 : 1)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.tint(.black.opacity(0.35)).interactive(), in: .circle)
+            .help(saved ? "Remove from Watch Later" : "Save to Watch Later")
+            .accessibilityLabel(saved ? "Remove from Watch Later" : "Save to Watch Later")
+        }
+    }
+}
+
+/// Save to Watch Later, or Remove from Watch Later once it's known to be there; signed in only.
+/// From any video's menu, without playing it, as YouTube's Save is.
+struct WatchLaterButton: View {
+    let video: Video
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        if app.roster.active.isSignedIn, !video.id.hasPrefix("placeholder") {
+            let saved = app.watchLater[video.id] == true
+            Button(saved ? "Remove from Watch Later" : "Save to Watch Later",
+                   systemImage: saved ? "clock.badge.xmark" : "clock.badge.checkmark") {
+                Task { _ = await app.setWatchLater(video.id, !saved) }
+            }
         }
     }
 }

@@ -91,6 +91,7 @@ struct LibraryView: View {
         .navigationTitle("Library")
         // A signed-in profile's pull brings in what changed on the account elsewhere.
         .refreshable { if app.roster.active.isSignedIn { await app.refreshAccount() } }
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {
@@ -106,6 +107,7 @@ struct LibraryView: View {
                 ProfileToolbarButton { showsProfile = true }
             }
         }
+        #endif
         .sheet(isPresented: $showsProfile) { ProfileView().appEnvironment(app) }
     }
 
@@ -122,9 +124,9 @@ struct LibraryView: View {
                         NavigationLink(value: Route.userPlaylist(playlist.id)) {
                             VStack(alignment: .leading, spacing: 6) {
                                 PlaylistCover(playlist: playlist, size: 140, cornerRadius: 10)
-                                Text(playlist.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                                Text(playlist.name).font(.scaled(.subheadline).weight(.medium)).lineLimit(1)
                                 Text(playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs")
-                                    .font(.footnote).foregroundStyle(.secondary)
+                                    .font(.scaled(.footnote)).foregroundStyle(.secondary)
                             }
                             .frame(width: 140, alignment: .leading)
                             .contentShape(.rect)
@@ -263,9 +265,9 @@ private struct PinnedGrid: View {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { GeometryReader { cover($0.size.width) } }
-            Text(title).font(.footnote.weight(.medium)).lineLimit(1)
+            Text(title).font(.scaled(.footnote).weight(.medium)).lineLimit(1)
             if let subtitle {
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
         .contentShape(.rect)
@@ -301,11 +303,11 @@ private struct NewPlaylistTile: View {
                     .frame(width: 140, height: 140)
                     .overlay {
                         Image(systemName: "plus")
-                            .font(.system(size: 34, weight: .medium))
+                            .font(.scaledSystem(size: 34, weight: .medium))
                             .foregroundStyle(Color.accentColor)
                     }
-                Text("New Playlist").font(.subheadline.weight(.medium))
-                Text(" ").font(.footnote)
+                Text("New Playlist").font(.scaled(.subheadline).weight(.medium))
+                Text(" ").font(.scaled(.footnote))
             }
             .frame(width: 140, alignment: .leading)
             .contentShape(.rect)
@@ -336,17 +338,17 @@ private struct LibraryLink: View {
         NavigationLink(value: route) {
             HStack(spacing: 16) {
                 Image(systemName: systemImage)
-                    .font(.body.weight(.semibold))
+                    .font(.scaled(.body).weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(tint.gradient, in: .rect(cornerRadius: 9, style: .continuous))
-                Text(title).font(.body)
+                Text(title).font(.scaled(.body))
                 Spacer()
                 if count > 0 {
-                    Text("\(count)").font(.subheadline).foregroundStyle(.secondary)
+                    Text("\(count)").font(.scaled(.subheadline)).foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
+                    .font(.scaled(.footnote).weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 10)

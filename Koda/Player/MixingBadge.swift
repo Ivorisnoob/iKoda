@@ -13,7 +13,7 @@ struct MixingBadge: View {
     var body: some View {
         Label("Mixing", systemImage: "waveform")
             .symbolEffect(.variableColor.iterative.dimInactiveLayers.nonReversing, options: .repeating, isActive: !reduceMotion)
-            .font((compact ? Font.caption : .footnote).weight(.semibold))
+            .font((compact ? Font.scaled(.caption) : .scaled(.footnote)).weight(.semibold))
             .padding(.horizontal, glass ? (compact ? 9 : 12) : 0)
             .frame(height: compact ? 22 : 30)
             .background {

@@ -13,7 +13,7 @@ struct MacBrowseView: View {
 
     var body: some View {
         MacPage {
-            MacPageTitle(title: "Browse")
+            MacPageTitle(title: "Search")
             if !library.searches.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -54,7 +54,7 @@ struct MacBrowseView: View {
                 }
             }
         }
-        .navigationTitle("Browse")
+        .navigationTitle("Search")
         .task { await search.loadMoods(music: app.music) }
     }
 }
@@ -248,13 +248,13 @@ private struct MacTopResult: View {
     private var card: some View {
         VStack(alignment: .leading, spacing: 14) {
             if case .artist = item {
-                ArtworkView(artwork: item.artwork, size: 112, circle: true)
+                ArtworkView(artwork: item.artwork, size: CGFloat(112).scaled, circle: true)
             } else {
-                ArtworkView(artwork: item.artwork, size: 112, cornerRadius: 10)
+                ArtworkView(artwork: item.artwork, size: CGFloat(112).scaled, cornerRadius: 10)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title).font(.title.bold()).lineLimit(2)
-                Text(kind).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                Text(item.title).font(.scaled(.title).bold()).lineLimit(2)
+                Text(kind).font(.scaled(.callout)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
         .padding(20)
@@ -447,7 +447,7 @@ private struct SuggestionRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 14))
+            .font(.scaledSystem(size: 14))
             .padding(.horizontal, 10)
             .frame(height: 34)
             .background(.primary.opacity(hovering ? 0.08 : 0), in: .rect(cornerRadius: 8, style: .continuous))

@@ -65,3 +65,75 @@ struct TogglePlaybackIntent: AudioPlaybackIntent {
     }
     #endif
 }
+
+/// The next song in the queue, for the Now Playing widget.
+struct NextSongIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Next Song"
+    static let description = IntentDescription("Skips to the next song in Koda.", categoryName: "Playback")
+
+    init() {}
+
+    #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+    #else
+    @Dependency private var app: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        app.player.next()
+        return .result()
+    }
+    #endif
+}
+
+/// Back to the start of the song, or to the one before it, as the player's own button does.
+struct PreviousSongIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Previous Song"
+    static let description = IntentDescription("Goes back a song in Koda.", categoryName: "Playback")
+
+    init() {}
+
+    #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+    #else
+    @Dependency private var app: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        app.player.previous()
+        return .result()
+    }
+    #endif
+}
+
+/// One of the listener's recent songs, from the Recently Played widget; autoplay carries on after it.
+struct PlayRecentSongIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Play Recent Song"
+    static let description = IntentDescription("Plays a song you listened to lately in Koda.", categoryName: "Playback")
+    /// Only the widget names a song by its id; Shortcuts has Koda's song entities for that.
+    static let isDiscoverable = false
+
+    @Parameter(title: "Song ID")
+    var songId: String
+
+    init() {}
+
+    init(songId: String) {
+        self.songId = songId
+    }
+
+    #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+    #else
+    @Dependency private var app: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let library = app.library
+        if let song = library.recent.first(where: { $0.id == songId }) ?? library.history.first(where: { $0.song.id == songId })?.song {
+            app.player.play([song], startAt: 0)
+        }
+        return .result()
+    }
+    #endif
+}

@@ -98,7 +98,9 @@ actor StreamResolver {
         }
         guard let url = root["streamingData"]["hlsManifestUrl"].string.flatMap(URL.init(string:)) else { return nil }
         let expires = root["streamingData"]["expiresInSeconds"].double.map { Date().addingTimeInterval($0) }
-        return VideoStream(videoId: videoId, url: url, isLive: root["videoDetails"]["isLive"].bool ?? false, expiresAt: expires)
+        var stream = VideoStream(videoId: videoId, url: url, isLive: root["videoDetails"]["isLive"].bool ?? false, expiresAt: expires)
+        stream.storyboard = root["storyboards"]["playerStoryboardSpecRenderer"]["spec"].string.flatMap(VideoStoryboard.init(spec:))
+        return stream
     }
 
     func invalidate(_ videoId: String, refusedIdentity: Bool) async {

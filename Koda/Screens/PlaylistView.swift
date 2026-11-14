@@ -108,8 +108,11 @@ struct PlaylistView: View {
             .padding(.bottom, 32)
         }
         .background { ArtworkGlow(palette: palette.palette) }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .revealsTitle(state.value?.playlist.title ?? summary.title, after: 320)
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 let saved = library.isSaved(playlist: summary.id)
@@ -137,6 +140,7 @@ struct PlaylistView: View {
                 }
             }
         }
+        #endif
         .task { await palette.load(summary.artwork) }
         .task { if state.value == nil { await load() } }
     }

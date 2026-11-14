@@ -76,7 +76,7 @@ struct LastFMImage: View {
                 Rectangle().fill(.quaternary)
                     .overlay {
                         Image(systemName: circle ? "person.fill" : "music.note")
-                            .font(.system(size: size * 0.36, weight: .medium))
+                            .font(.scaledSystem(size: size * 0.36, weight: .medium))
                             .foregroundStyle(.tertiary)
                     }
             }
@@ -96,21 +96,21 @@ struct LastFMTrackRow: View {
         HStack(spacing: 12) {
             LastFMImage(url: track.artwork, size: coverSize)
             VStack(alignment: .leading, spacing: 2) {
-                Text(track.title).font(.body).lineLimit(1)
+                Text(track.title).font(.scaled(.body)).lineLimit(1)
                 Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             if track.isNowPlaying {
                 Label("Now", systemImage: "waveform")
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .foregroundStyle(Color.accentColor)
                     .symbolEffect(.variableColor.iterative, options: .repeat(.continuous))
             } else if let date = track.playedAt {
                 Text(date.formatted(date: .omitted, time: .shortened))
-                    .font(.subheadline.monospacedDigit())
+                    .font(.scaled(.subheadline).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }

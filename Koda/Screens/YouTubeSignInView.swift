@@ -38,7 +38,7 @@ struct YouTubeSignInView: View {
             case .finishing:
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Bringing in your YouTube Music…").font(.headline)
+                    Text("Bringing in your YouTube Music…").font(.scaled(.headline))
                 }
                 .padding(24)
                 .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
@@ -67,12 +67,14 @@ struct YouTubeSignInView: View {
         }
         .animation(.smooth, value: phase)
         .navigationTitle("Sign In")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Label("accounts.google.com", systemImage: "lock.fill")
                     .labelStyle(.titleAndIcon)
-                    .font(.footnote.weight(.medium))
+                    .font(.scaled(.footnote).weight(.medium))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Secure Google sign-in page")
             }
@@ -113,7 +115,7 @@ enum AccountCookies {
 
 /// Google's page in a WebKit view of its own, reporting the cookie jar each time a page finishes
 /// loading on YouTube Music; `onCookies` returns true once it has what it needs.
-private struct SignInWebView: UIViewRepresentable {
+private struct SignInWebView {
     let attempt: Int
     @Binding var progress: Double
     let onCookies: ([HTTPCookie]) -> Bool
@@ -171,32 +173,32 @@ private struct SignInWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    private func make(_ coordinator: Coordinator) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.addUserScript(Self.hidePasskeys)
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.customUserAgent = Self.userAgent
-        view.navigationDelegate = context.coordinator
-        context.coordinator.observe(view)
-        context.coordinator.loadedAttempt = attempt
+        view.navigationDelegate = coordinator
+        coordinator.observe(view)
+        coordinator.loadedAttempt = attempt
         view.load(URLRequest(url: Self.start))
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.parent = self
-        guard context.coordinator.loadedAttempt != attempt else { return }
+    private func update(_ view: WKWebView, _ coordinator: Coordinator) {
+        coordinator.parent = self
+        guard coordinator.loadedAttempt != attempt else { return }
         // Try Again: a clean jar and Google's first page.
-        context.coordinator.loadedAttempt = attempt
-        context.coordinator.done = false
+        coordinator.loadedAttempt = attempt
+        coordinator.done = false
         let store = view.configuration.websiteDataStore
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {
             view.load(URLRequest(url: Self.start))
         }
     }
 
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+    fileprivate static func dismantle(_ view: WKWebView, _ coordinator: Coordinator) {
         view.stopLoading()
         view.navigationDelegate = nil
         coordinator.progressObservation = nil
@@ -230,3 +232,17 @@ private struct SignInWebView: UIViewRepresentable {
         }
     }
 }
+
+#if os(macOS)
+extension SignInWebView: NSViewRepresentable {
+    func makeNSView(context: Context) -> WKWebView { make(context.coordinator) }
+    func updateNSView(_ view: WKWebView, context: Context) { update(view, context.coordinator) }
+    static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) { dismantle(view, coordinator) }
+}
+#else
+extension SignInWebView: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { make(context.coordinator) }
+    func updateUIView(_ view: WKWebView, context: Context) { update(view, context.coordinator) }
+    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) { dismantle(view, coordinator) }
+}
+#endif

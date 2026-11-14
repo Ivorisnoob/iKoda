@@ -17,9 +17,9 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .lastFM: "Last.fm"
         case .discord: "Discord"
-        case .privacy: "History & Privacy"
+        case .privacy: "Privacy"
         case .storage: "Storage"
-        case .backup: "Back Up & Restore"
+        case .backup: "Backup"
         case .about: "About Koda"
         }
     }
@@ -59,11 +59,39 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
 /// on the right each setting on a row of its own, name and explanation on the left, its
 /// control on the right, in rounded groups.
 struct MacSettingsView: View {
-    static let windowID = "settings"
     @Environment(AppModel.self) private var app
+    #if os(macOS)
+    /// Reopens on the pane last used, as the Mac's Settings windows do.
+    @AppStorage("koda.mac.settingsPane") private var pane: MacSettingsPane = .playback
+    #else
     @State private var pane: MacSettingsPane = .playback
+    #endif
 
     var body: some View {
+        #if os(macOS)
+        // The Mac's Settings window: a pane per toolbar button, the window titled after the pane.
+        TabView(selection: $pane) {
+            ForEach(MacSettingsPane.allCases) { item in
+                Tab(item.title, systemImage: item.systemImage, value: item) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) { paneContent(item) }
+                            .padding(24)
+                    }
+                }
+            }
+        }
+        .frame(width: 780, height: 600)
+        .onChange(of: app.requestedSettingsPane, initial: true) { _, requested in
+            guard let requested else { return }
+            pane = requested
+            app.requestedSettingsPane = nil
+        }
+        #else
+        catalystBody
+        #endif
+    }
+
+    private var catalystBody: some View {
         NavigationSplitView {
             List {
                 ForEach(MacSettingsPane.allCases) { item in
@@ -83,7 +111,7 @@ struct MacSettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(spacing: 12) {
                         MacSettingsTile(systemImage: pane.systemImage, tint: pane.tint, size: 32)
-                        Text(pane.title).font(.title2.bold())
+                        Text(pane.title).font(.scaled(.title2).bold())
                     }
                     content
                 }
@@ -103,8 +131,10 @@ struct MacSettingsView: View {
         }
     }
 
+    private var content: some View { paneContent(pane) }
+
     @ViewBuilder
-    private var content: some View {
+    private func paneContent(_ pane: MacSettingsPane) -> some View {
         switch pane {
         case .profile: MacProfilePane()
         case .playback: MacPlaybackPane()
@@ -130,7 +160,7 @@ struct MacSettingsTile: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: size * 0.52, weight: .semibold))
+            .font(.scaledSystem(size: size * 0.52, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(tint.gradient, in: .rect(cornerRadius: size * 0.24, style: .continuous))
@@ -146,7 +176,7 @@ private struct MacSettingsSidebarRow: View {
         HStack(spacing: 9) {
             MacSettingsTile(systemImage: pane.systemImage, tint: pane.tint)
             Text(pane.title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .font(.scaledSystem(size: 13, weight: isSelected ? .semibold : .regular))
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -171,7 +201,7 @@ struct MacSettingsGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 6) {
             if let title {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.scaledSystem(size: 13, weight: .semibold))
                     .padding(.leading, 2)
             }
             VStack(spacing: 0) {
@@ -186,7 +216,7 @@ struct MacSettingsGroup<Content: View>: View {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
             if let footer {
                 Text(footer)
-                    .font(.system(size: 11))
+                    .font(.scaledSystem(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 2)
@@ -204,10 +234,10 @@ struct MacSettingsRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13))
+                Text(title).font(.scaledSystem(size: 13))
                 if let detail {
                     Text(detail)
-                        .font(.system(size: 11))
+                        .font(.scaledSystem(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -305,7 +335,7 @@ private struct MacProfilePane: View {
                     TextField("Name", text: Binding(get: { profile.name }, set: { name in app.roster.update(id) { $0.name = name } }))
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
-                    Text(profile.subtitle).font(.system(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
+                    Text(profile.subtitle).font(.scaledSystem(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
                 }
                 Spacer()
             }
@@ -402,12 +432,12 @@ private struct MacProfileRow: View {
         HStack(spacing: 10) {
             ProfileAvatar(profile: profile, size: 30)
             VStack(alignment: .leading, spacing: 1) {
-                Text(profile.displayName).font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                Text(profile.subtitle).font(.system(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
+                Text(profile.displayName).font(.scaledSystem(size: 13, weight: isSelected ? .semibold : .regular))
+                Text(profile.subtitle).font(.scaledSystem(size: 11)).foregroundStyle(profile.isExpired ? .red : .secondary)
             }
             Spacer()
             if profile.id == app.roster.activeID {
-                Text("Current").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                Text("Current").font(.scaledSystem(size: 11, weight: .medium)).foregroundStyle(.secondary)
             } else {
                 Button("Switch") { app.switchProfile(to: profile.id) }
                     .controlSize(.small)
@@ -477,7 +507,7 @@ private struct MacPlaybackPane: View {
             }
         }
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled
-                         ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
+                         ? "Space or K plays and pauses, J and L skip 10 seconds, ← and → skip 5, 0–9 jump to that tenth of the video, , and . step a frame while paused, < and > change the speed, C turns subtitles on or off, F goes full screen and Esc leaves it, M mutes. Double-click a video for full screen."
                          : nil) {
             MacSettingsToggle(title: "Video mode", detail: "YouTube itself beside your music: Videos, your channels and Explore join the sidebar, with the video player.",
                               isOn: $settings.videoModeEnabled)
@@ -491,6 +521,19 @@ private struct MacPlaybackPane: View {
                 }
                 MacSettingsToggle(title: "Autoplay next video", detail: "When a video ends, the next in Up Next starts after a short countdown.",
                                   isOn: $settings.autoplaysVideos)
+                if Platform.isMac {
+                    MacSettingsToggle(title: "Preview on hover", detail: "Resting the pointer on a video plays it in its thumbnail, muted.",
+                                      isOn: $settings.previewsVideosOnHover)
+                }
+            }
+        }
+        if settings.videoModeEnabled {
+            MacSettingsGroup(title: "From Outside YouTube",
+                             footer: "These ask services run by volunteers, not YouTube. SponsorBlock is told only the first four characters of a fingerprint of each video's id; Return YouTube Dislike is sent the id itself.") {
+                MacSettingsToggle(title: "Skip sponsors", detail: "SponsorBlock's sponsor, self-promotion and subscribe-reminder parts are skipped as they come, marked green on the timeline, with Undo.",
+                                  isOn: $settings.skipsSponsors)
+                MacSettingsToggle(title: "Show dislikes", detail: "Return YouTube Dislike's estimate beside the dislike button, now that YouTube hides the count.",
+                                  isOn: $settings.showsDislikes)
             }
         }
         MacSettingsGroup(title: "Skipping", footer: "⌥⌘← and ⌥⌘→ skip back and ahead too, with the buttons shown or not.") {
@@ -594,6 +637,21 @@ private struct MacAppearancePane: View {
                 .pickerStyle(.segmented)
                 .fixedSize()
             }
+            MacSettingsRow(title: "Page width",
+                           detail: "How far pages widen in a big window. Default keeps lines and rows a comfortable length, centred; Full Width uses the whole window.") {
+                Picker("Page width", selection: $settings.pageWidth) {
+                    ForEach(AppSettings.PageWidth.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            #if os(macOS)
+            MacSettingsRow(title: "Interface size",
+                           detail: "How large Koda's text is. View → Zoom In and Zoom Out (⌘+ and ⌘−) change it too. The sidebar follows the Sidebar icon size in System Settings → Appearance.") {
+                InterfaceSizeSlider()
+            }
+            #endif
             MacSettingsToggle(title: "Moving player colours",
                               detail: "The playing song's colours drift behind Now Playing. They always hold still with Reduce Motion on.",
                               isOn: $settings.animatesPlayerBackground)
@@ -607,12 +665,37 @@ private struct MacAppearancePane: View {
             }
         }
         MacSettingsGroup(title: "Home") {
+            MacSettingsToggle(title: "Your Mix",
+                              detail: "A mix of radios from the artists you play most, at the top of Home.",
+                              isOn: $settings.showsMixOnHome)
             MacSettingsToggle(title: "Charts on Home",
                               detail: "YouTube Music's global and local charts as a row on Home.",
                               isOn: $settings.showsChartsOnHome)
         }
     }
 }
+
+#if os(macOS)
+/// System Settings' Text Size control: a small A and a large A either side of the steps.
+private struct InterfaceSizeSlider: View {
+    @Bindable private var scale = InterfaceScale.shared
+
+    var body: some View {
+        let steps = InterfaceScale.steps
+        let index = Binding<Double>(
+            get: { Double(steps.firstIndex(of: scale.factor) ?? 2) },
+            set: { scale.factor = steps[min(steps.count - 1, max(0, Int($0.rounded())))] })
+        HStack(spacing: 8) {
+            Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
+            Slider(value: index, in: 0...Double(steps.count - 1), step: 1)
+                .frame(width: 180)
+                .accessibilityLabel("Interface size")
+                .accessibilityValue(Text(scale.factor, format: .percent.precision(.fractionLength(0))))
+            Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
+        }
+    }
+}
+#endif
 
 private struct MacLastFMPane: View {
     @Environment(AppModel.self) private var app
@@ -841,18 +924,34 @@ private struct MacBackupPane: View {
 }
 
 private struct MacAboutPane: View {
+    @Environment(AppModel.self) private var app
+
     var body: some View {
+        @Bindable var updates = app.updates
+        MacSettingsGroup(title: "Updates", footer: "Koda looks for a new release on GitHub once a day and asks before installing it.") {
+            MacSettingsToggle(title: "Check for updates automatically", isOn: $updates.checksAutomatically)
+            #if os(macOS)
+            MacSettingsRow(title: "Check now", detail: lastChecked) {
+                CheckForUpdatesButton(updates: updates)
+            }
+            #endif
+        }
         MacSettingsGroup(footer: "Koda is an unofficial client and isn't affiliated with YouTube or Google. Lyrics come from YouLyPlus, BetterLyrics and LRCLIB. App icon by sameerasw (github.com/sameerasw).") {
             MacSettingsRow(title: "Version") {
                 Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
                     .foregroundStyle(.secondary)
             }
             MacSettingsRow(title: "Koda on GitHub") {
-                Link("Open", destination: URL(string: "https://github.com/Ivorisnoob/Koda-iOS")!)
+                Link("Open", destination: URL(string: "https://github.com/Ivorisnoob/iKoda")!)
             }
             MacSettingsRow(title: "Koda for Android") {
                 Link("Open", destination: URL(string: "https://github.com/Ivorisnoob/Koda")!)
             }
         }
+    }
+
+    private var lastChecked: String {
+        guard let date = app.updates.lastCheck else { return "Not checked yet" }
+        return "Last checked \(date.formatted(.relative(presentation: .named)))"
     }
 }

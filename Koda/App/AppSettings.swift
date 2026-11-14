@@ -120,6 +120,18 @@ final class AppSettings {
     /// The cover's colours drift behind Now Playing; off, they hold still.
     var animatesPlayerBackground: Bool { didSet { defaults.set(animatesPlayerBackground, forKey: Keys.animatedBackground) } }
     var animatedArt: AnimatedArt { didSet { defaults.set(animatedArt.rawValue, forKey: Keys.animatedArt) } }
+    /// SponsorBlock: skip sponsor, self-promotion and subscribe-reminder parts of videos. Off by
+    /// default: it asks an outside service (with only a hash prefix of the video's id).
+    var skipsSponsors: Bool { didSet { defaults.set(skipsSponsors, forKey: Keys.sponsorBlock) } }
+    /// Return YouTube Dislike's estimate beside the dislike button. Off by default: it sends
+    /// the video's id to an outside service.
+    var showsDislikes: Bool { didSet { defaults.set(showsDislikes, forKey: Keys.dislikes) } }
+    /// How wide a Mac page grows in a wide window before it centres.
+    var pageWidth: PageWidth { didSet { defaults.set(pageWidth.rawValue, forKey: Keys.pageWidth) } }
+    /// A video thumbnail plays muted while the pointer rests on it (Mac), as YouTube's do.
+    var previewsVideosOnHover: Bool { didSet { defaults.set(previewsVideosOnHover, forKey: Keys.videoHoverPreview) } }
+    /// Your Mix at the top of Home; off, it isn't made at all, so it costs no requests.
+    var showsMixOnHome: Bool { didSet { defaults.set(showsMixOnHome, forKey: Keys.homeMix) } }
     /// YouTube Music's charts as a row on Home: the one row there not built from the listener.
     var showsChartsOnHome: Bool { didSet { defaults.set(showsChartsOnHome, forKey: Keys.homeCharts) } }
     /// Every lyrics service, best first; the order decides which answer wins.
@@ -172,6 +184,11 @@ final class AppSettings {
         static let animatedBackground = "koda.player.animatedBackground"
         static let animatedArt = "koda.player.animatedArt"
         static let homeCharts = "koda.home.charts"
+        static let homeMix = "koda.home.mix"
+        static let videoHoverPreview = "koda.video.hoverPreview"
+        static let pageWidth = "koda.mac.pageWidth"
+        static let sponsorBlock = "koda.video.sponsorBlock"
+        static let dislikes = "koda.video.dislikes"
         static let lyricsOrder = "koda.lyrics.order"
         static let lyricsDisabled = "koda.lyrics.disabled"
         static let lyricsMotion = "koda.lyrics.motion"
@@ -202,6 +219,11 @@ final class AppSettings {
         // Wi-Fi only to begin with: a new album's loop is a few megabytes, about a song's worth.
         animatedArt = d.string(forKey: Keys.animatedArt).flatMap(AnimatedArt.init(rawValue:)) ?? .wifiOnly
         showsChartsOnHome = d.object(forKey: Keys.homeCharts) as? Bool ?? true
+        showsMixOnHome = d.object(forKey: Keys.homeMix) as? Bool ?? true
+        previewsVideosOnHover = d.object(forKey: Keys.videoHoverPreview) as? Bool ?? true
+        pageWidth = d.string(forKey: Keys.pageWidth).flatMap(PageWidth.init(rawValue:)) ?? .standard
+        skipsSponsors = d.bool(forKey: Keys.sponsorBlock)
+        showsDislikes = d.bool(forKey: Keys.dislikes)
         // Services added in a later version join at the end of a saved order.
         let saved = (d.stringArray(forKey: Keys.lyricsOrder) ?? []).compactMap(LyricsSource.init(rawValue:))
         lyricsSourceOrder = saved + LyricsSource.allCases.filter { !saved.contains($0) }
@@ -240,6 +262,32 @@ final class AppSettings {
             disabledLyricsSources.remove(source)
         } else if lyricsSources.count > 1 {
             disabledLyricsSources.insert(source)
+        }
+    }
+}
+
+extension AppSettings {
+    /// Where a Mac page stops widening in a wide window: at a comfortable reading width and
+    /// centred (Default), wider, or the whole window.
+    enum PageWidth: String, CaseIterable, Identifiable {
+        case standard, wide, full
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .standard: "Default"
+            case .wide: "Wide"
+            case .full: "Full Width"
+            }
+        }
+
+        var maxWidth: CGFloat {
+            switch self {
+            case .standard: 1500
+            case .wide: 2000
+            case .full: .infinity
+            }
         }
     }
 }

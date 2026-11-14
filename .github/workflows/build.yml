@@ -38,7 +38,26 @@ jobs:
             build 2>&1 | tee build.log | tail -n 40 \
             || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
 
-      # An unsigned .ipa: AltStore, SideStore and Sideloadly sign it with the installer's own Apple ID.
+      # The app and its widgets share a folder (an App Group) so the Now Playing widget can show
+      # what's playing. The installer's signer only gives the app what the bundle says it wants,
+      # and reads that from the code signature: so each bundle gets an ad-hoc one that carries
+      # the entitlement and nothing else (AltStore and SideStore then make a group of the
+      # installer's own and say which in ALTAppGroups; see Shared/WidgetShare.swift).
+      - name: Declare the app group
+        run: |
+          set -euo pipefail
+          app=build/Build/Products/Release-iphoneos/Koda.app
+          # Inside out: a bundle's signature covers the ones in it.
+          codesign --force --sign - "$app/PlugIns/KodaShare.appex"
+          codesign --force --sign - --entitlements Koda-iOS.entitlements "$app/PlugIns/KodaWidgets.appex"
+          codesign --force --sign - --entitlements Koda-iOS.entitlements "$app"
+          codesign --verify --deep --strict "$app"
+          for bundle in "$app" "$app/PlugIns/KodaWidgets.appex"; do
+            codesign -d --entitlements - --xml "$bundle" 2>/dev/null | grep -q group.ivors.Koda \
+              || { echo "::error::$bundle doesn't declare the app group"; exit 1; }
+          done
+
+      # Not signed for any device: AltStore, SideStore and Sideloadly sign it with the installer's own Apple ID.
       - name: Package .ipa
         run: |
           mkdir -p Payload
@@ -52,32 +71,31 @@ jobs:
           path: Koda.ipa
           retention-days: 30
 
+  # The Mac app: SwiftUI on AppKit (target KodaMac), one binary for Apple silicon and Intel.
+  # Ad-hoc signed: Apple silicon refuses to run unsigned code, and without a Developer ID there
+  # is nothing better to sign with. Same bundle id as the Catalyst app it replaced, so it opens
+  # the same library, settings and Keychain items.
   mac:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
-      # One binary for Apple silicon and Intel. Ad-hoc signed: Apple silicon refuses to run
-      # unsigned code, and without a Developer ID there is nothing better to sign with.
       - name: Build universal Mac app
         run: |
           set -o pipefail
-          xcodebuild -project Koda.xcodeproj -scheme Koda -configuration Release \
-            -destination 'generic/platform=macOS,variant=Mac Catalyst' -derivedDataPath build \
+          xcodebuild -project Koda.xcodeproj -scheme KodaMac -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build \
             ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="" \
             build 2>&1 | tee build.log | tail -n 40 \
             || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
-          lipo -info build/Build/Products/Release-maccatalyst/Koda.app/Contents/MacOS/Koda
+          lipo -info build/Build/Products/Release/Koda.app/Contents/MacOS/Koda
 
-      # The usual disk image: Koda beside a link to Applications, to drag across.
+      # The install window: Koda and Applications laid out on Packaging/dmg-background.tiff
+      # by Finder, the disk wearing Koda's icon (see Packaging/make-dmg.sh).
       - name: Package .dmg
         run: |
-          mkdir dmg
-          cp -R build/Build/Products/Release-maccatalyst/Koda.app dmg/
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname Koda -srcfolder dmg -fs APFS -format ULFO -ov Koda.dmg
+          Packaging/make-dmg.sh build/Build/Products/Release/Koda.app Koda.dmg
           ls -lh Koda.dmg
 
       - uses: actions/upload-artifact@v7

@@ -95,12 +95,13 @@ final class HomeModel {
     }
 
     /// `signedIn`: the profile has a YouTube Music account, whose own Home then gives Quick picks.
-    func load(music: YouTubeMusic, library: Library, signedIn: Bool) async {
+    /// `includesMix`: off when the listener turned Your Mix off, which then isn't made at all.
+    func load(music: YouTubeMusic, library: Library, signedIn: Bool, includesMix: Bool = true) async {
         // Worked out here, not in the view's body: the body is drawn again every few seconds
         // while music plays, as listening time is added, and this ranks every song ever played.
         yourArtists = topArtists(library)
         if state.value == nil { state = .loading }
-        if mix == nil { mixPending = true }
+        if mix == nil, includesMix { mixPending = true }
         let recent = library.recent
         let taste = Taste(library: library)
         // What the listener asked not to be offered stays out of everything Home suggests.
@@ -134,7 +135,7 @@ final class HomeModel {
             }
             state = .loaded(content)
             loadedAt = Date()
-            if mix == nil, taste.isEmpty, !content.trending.isEmpty {
+            if includesMix, mix == nil, taste.isEmpty, !content.trending.isEmpty {
                 mix = Mix(artists: Array(Set(content.trending.map(Taste.leadArtist))).sorted().prefix(3).map { $0 },
                           songs: content.trending, isPersonal: false)
             }
@@ -142,11 +143,13 @@ final class HomeModel {
             if state.value == nil { state = .failed(error.friendlyMessage) }
         }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.buildMix(music: music, taste: taste, picks: pickedArtists, recent: recent, hidden: hidden) }
+            if includesMix {
+                group.addTask { await self.buildMix(music: music, taste: taste, picks: pickedArtists, recent: recent, hidden: hidden) }
+            }
             group.addTask { await self.loadArtists(music: music, picks: pickedArtists, library: library, hidden: hidden) }
         }
         // Radios that all failed still leave a card: trending songs, as for someone new.
-        if mix == nil, let trending = state.value?.trending, !trending.isEmpty {
+        if includesMix, mix == nil, let trending = state.value?.trending, !trending.isEmpty {
             mix = Mix(artists: Array(Set(trending.map(Taste.leadArtist))).sorted().prefix(3).map { $0 }, songs: trending, isPersonal: false)
         }
         withAnimation(.smooth) { mixPending = false }
@@ -309,6 +312,7 @@ struct HomeView: View {
             .animation(.smooth, value: model.state.value == nil)
         }
         .navigationTitle(greeting)
+        #if os(iOS)
         .toolbar {
             if app.settings.videoModeEnabled {
                 ToolbarItem(placement: .topBarLeading) { ModeToggle() }
@@ -317,24 +321,32 @@ struct HomeView: View {
                 ProfileToolbarButton { app.isProfilePresented = true }
             }
         }
+        #endif
         .refreshable {
             await app.music.clearPageCache()
             await load()
         }
         // A snapshot from the last launch shows at once; the fresh Home replaces it in place.
         .task { if model.needsRefresh { await load() } }
+        // Turned back on: made now, since a Home without it never asked for it.
+        .onChange(of: app.settings.showsMixOnHome) { _, shows in
+            if shows, model.mix == nil { Task { await load() } }
+        }
     }
 
     @ViewBuilder
     private func sections(_ content: HomeModel.Content) -> some View {
-        if let mix = model.mix {
-            MixHero(mix: mix)
-                .padding(.horizontal, 20)
-                .transition(.scale(scale: 0.96).combined(with: .opacity))
-        } else if model.mixPending {
-            MixHero(mix: .placeholder)
-                .loadingPlaceholder()
-                .padding(.horizontal, 20)
+        if app.settings.showsMixOnHome {
+            if let mix = model.mix {
+                MixHero(mix: mix)
+                    .padding(.horizontal, 20)
+                    .contextMenu { HideMixButton() }
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+            } else if model.mixPending {
+                MixHero(mix: .placeholder)
+                    .loadingPlaceholder()
+                    .padding(.horizontal, 20)
+            }
         }
 
         JumpBackIn()
@@ -420,6 +432,17 @@ struct HomeView: View {
 
 // MARK: - Your Mix
 
+/// Turns Your Mix off, from the card's own menu; Settings → Home turns it back on.
+struct HideMixButton: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button("Hide Your Mix", systemImage: "eye.slash") {
+            withAnimation(.smooth) { app.settings.showsMixOnHome = false }
+        }
+    }
+}
+
 /// The first thing on Home: the listener's mix as a card in its covers' colours, three
 /// of its covers along the top and a button that plays it.
 struct MixHero: View {
@@ -471,17 +494,17 @@ struct MixHero: View {
                 coverRow
                     .padding(.bottom, 24)
                 Text(mix.isPersonal ? "Made for you" : "New here")
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(.white.opacity(0.7))
                 Text(title)
-                    .font(.largeTitle.bold())
+                    .font(.scaled(.largeTitle).bold())
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 HStack(spacing: 16) {
                     Text(caption)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -503,7 +526,7 @@ struct MixHero: View {
                 player.play(mix.songs)
             } label: {
                 Image(systemName: "play.fill")
-                    .font(.title3.weight(.semibold))
+                    .font(.scaled(.title3).weight(.semibold))
                     .frame(width: Self.playSize, height: Self.playSize)
             }
             .buttonStyle(.glass)
@@ -682,7 +705,7 @@ struct JumpBackIn: View {
             PlaylistMosaic(songs: songs, size: size)
                 .overlay(alignment: .bottomTrailing) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.scaledSystem(size: 13, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 28, height: 28)
                         .background(.black.opacity(0.45), in: .circle)
@@ -707,7 +730,7 @@ struct JumpBackIn: View {
                 PlaylistMosaic(songs: songs, size: width)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "heart.fill")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.scaledSystem(size: 13, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 28, height: 28)
                             .background(.black.opacity(0.45), in: .circle)

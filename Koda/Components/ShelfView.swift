@@ -34,23 +34,23 @@ struct SectionHeader: View {
         VStack(alignment: .leading, spacing: 2) {
             if let strapline {
                 Text(strapline)
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
             }
             if let seeAll {
                 NavigationLink(value: seeAll) {
                     HStack(spacing: 4) {
-                        Text(title).font(.title3.bold())
+                        Text(title).font(.scaled(.title3).bold())
                         Image(systemName: "chevron.right")
-                            .font(.subheadline.weight(.bold))
+                            .font(.scaled(.subheadline).weight(.bold))
                             .foregroundStyle(.secondary)
                     }
                     .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
             } else {
-                Text(title).font(.title3.bold())
+                Text(title).font(.scaled(.title3).bold())
             }
         }
         .accessibilityAddTraits(.isHeader)

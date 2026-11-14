@@ -170,7 +170,7 @@ struct NowPlayingView: View {
                 // Bare symbols, as the transport's are: nothing behind them but a soft circle while held.
                 Button { close() } label: {
                     Image(systemName: "chevron.down")
-                        .font(.title3.weight(.semibold))
+                        .font(.scaled(.title3).weight(.semibold))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(TransportButtonStyle(diameter: 44))
@@ -196,7 +196,7 @@ struct NowPlayingView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.title3.weight(.semibold))
+                        .font(.scaled(.title3).weight(.semibold))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(TransportButtonStyle(diameter: 44))
@@ -297,6 +297,11 @@ struct NowPlayingView: View {
             panelButton(.lyrics, systemImage: "quote.bubble", activeImage: "quote.bubble.fill", label: "Lyrics")
                 .frame(maxWidth: .infinity)
             AirPlayButton()
+                #if os(macOS)
+                // AppKit's route button draws its symbol as large as its view, so the view is the
+                // size of the symbols beside it.
+                .frame(width: CGFloat(20).scaled, height: CGFloat(20).scaled)
+                #endif
                 .frame(width: 52, height: 40)
                 .frame(maxWidth: .infinity)
             panelButton(.queue, systemImage: "list.bullet", activeImage: "list.bullet", label: "Queue")
@@ -311,7 +316,7 @@ struct NowPlayingView: View {
             setPanel(active ? .artwork : target)
         } label: {
             Image(systemName: active ? activeImage : systemImage)
-                .font(.body.weight(.semibold))
+                .font(.scaled(.body).weight(.semibold))
                 .frame(width: 52, height: 40)
         }
         .buttonStyle(PlayerToggleStyle(isOn: active))
@@ -363,7 +368,7 @@ struct LikeButton: View {
             library.toggleLike(song)
         } label: {
             Image(systemName: liked ? "heart.fill" : "heart")
-                .font(.title3.weight(.semibold))
+                .font(.scaled(.title3).weight(.semibold))
                 .foregroundStyle(liked ? Color.pink : .white)
                 .contentTransition(.symbolEffect(.replace))
                 .symbolEffect(.bounce, value: liked)
@@ -430,7 +435,7 @@ struct TransportControls: View {
     private func skipButton(_ symbol: String, label: String, size: CGFloat = 32, taps: Int, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: size))
+                .font(.scaledSystem(size: size))
                 .symbolEffect(.bounce.down, value: taps)
                 // Up to 72 wide: five to a row still fits the narrowest iPhone.
                 .frame(maxWidth: 72, minHeight: 60)
@@ -466,19 +471,33 @@ struct PlayerToggleStyle: ButtonStyle {
     var offFill: Double = 0
 
     func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        configuration.label
-            // The page's ink when on, so it reads on Now Playing's dark colours and in a light panel.
-            .foregroundStyle(isOn ? AnyShapeStyle(.background) : AnyShapeStyle(.primary))
-            .background {
-                // Color.primary, not the hierarchical style: that follows the label's own ink,
-                // which is the page colour while on.
-                Capsule().fill(Color.primary.opacity(isOn ? (pressed ? 0.85 : 1) : offFill + (pressed ? 0.12 : 0)))
-            }
-            .contentShape(.capsule)
-            .scaleEffect(pressed ? 0.95 : 1)
-            .animation(.snappy(duration: 0.2), value: pressed)
-            .animation(.smooth(duration: 0.25), value: isOn)
+        ToggleBody(label: configuration.label, isOn: isOn, offFill: offFill, pressed: configuration.isPressed)
+    }
+
+    private struct ToggleBody: View {
+        let label: Configuration.Label
+        let isOn: Bool
+        let offFill: Double
+        let pressed: Bool
+        @Environment(\.colorScheme) private var colorScheme
+
+        var body: some View {
+            // Plain colours from the colour scheme, never the `.background` or hierarchical `.primary`
+            // styles: in the Mac's side panel those resolve to the inspector's translucent material,
+            // and the symbols took on whatever was behind the window or faded into it. Now Playing
+            // forces the dark scheme, so it still reads white with a dark symbol while on.
+            let ink = colorScheme == .dark ? Color.white : Color.black
+            let paper = colorScheme == .dark ? Color.black : Color.white
+            label
+                .foregroundStyle(isOn ? paper : ink)
+                .background {
+                    Capsule().fill(ink.opacity(isOn ? (pressed ? 0.85 : 1) : offFill + (pressed ? 0.12 : 0)))
+                }
+                .contentShape(.capsule)
+                .scaleEffect(pressed ? 0.95 : 1)
+                .animation(.snappy(duration: 0.2), value: pressed)
+                .animation(.smooth(duration: 0.25), value: isOn)
+        }
     }
 }
 
@@ -489,8 +508,8 @@ private struct FailureBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-            Text(message).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
-            Button("Retry", action: retry).font(.footnote.weight(.semibold)).buttonStyle(.glass)
+            Text(message).font(.scaled(.footnote)).frame(maxWidth: .infinity, alignment: .leading)
+            Button("Retry", action: retry).font(.scaled(.footnote).weight(.semibold)).buttonStyle(.glass)
         }
         .padding(12)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
@@ -507,7 +526,7 @@ private struct SleepTimerPill: View {
         } label: {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Label(app.sleepTimer.label(at: context.date), systemImage: "moon.fill")
-                    .font(.footnote.weight(.semibold).monospacedDigit())
+                    .font(.scaled(.footnote).weight(.semibold).monospacedDigit())
                     .padding(.horizontal, 12)
                     .frame(height: 30)
             }
@@ -536,7 +555,9 @@ private struct LyricsTimingMenu: View {
             Label(offset == 0 ? "Lyrics Timing" : String(format: "Lyrics Timing (%+.1fs)", offset), systemImage: "timer")
         }
         // The menu stays open between steps, so the listener can nudge and watch the lyrics move.
+        #if os(iOS)
         .menuActionDismissBehavior(.disabled)
+        #endif
     }
 }
 

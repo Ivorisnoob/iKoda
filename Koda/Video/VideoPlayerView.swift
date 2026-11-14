@@ -2,7 +2,11 @@ import AVFoundation
 import AVKit
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The video with Koda's own controls over it, the same inline and full screen: back (inline, on
 /// the iPhone), AirPlay, picture in picture and a settings menu (quality, speed, captions) along
@@ -64,6 +68,10 @@ struct VideoPlayerView: View {
                 VideoThumbnail(video: video, cornerRadius: 0, width: 800, showsProgress: false)
             }
             gestureLayer
+            if Platform.isMac, isThis, playback.isInPictureInPicture {
+                // As the Mac's players show it: the picture is floating, so this one says so.
+                PictureInPicturePlaceholder { playback.togglePictureInPicture() }
+            }
             if isThis, let error = playback.error {
                 errorView(error)
             } else if counting, let next = playback.upNext {
@@ -71,8 +79,14 @@ struct VideoPlayerView: View {
                                 cancel: { playback.cancelAutoplay() }, play: { playback.playNext() })
                     .transition(.opacity)
             } else {
-                controls
+                if Platform.isMac { macControls } else { controls }
                 feedback
+            }
+            if isThis, let skip = playback.sponsorSkip {
+                SponsorSkipNote(skip: skip, undo: { playback.undoSponsorSkip() }, dismiss: { playback.dismissSponsorSkip() })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(isFullScreen ? 28 : 14)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
@@ -106,11 +120,148 @@ struct VideoPlayerView: View {
         .onChange(of: playback.isPlaying) { _, playing in if !playing { reveal() } }
         .onDisappear {
             playback.endBoost()
-            if let systemBrightness { Self.screen?.brightness = systemBrightness }
+            if let systemBrightness { ScreenBrightness.set(systemBrightness) }
         }
         .sensoryFeedback(.selection, trigger: skipTaps)
         .sensoryFeedback(.impact(weight: .medium), trigger: commits)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: counting)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: playback.sponsorSkip)
+    }
+
+    // MARK: Mac controls
+
+    /// The Mac's controls, the way its own players lay them out: everything in one glass bar along
+    /// the foot of the picture (play, skips, the timeline, volume, captions, settings, AirPlay,
+    /// picture in picture, theater and full screen), the title only in full screen, and nothing
+    /// over the middle of the picture but a spinner, or Play for a video that isn't on yet.
+    private var macControls: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                if isFullScreen {
+                    LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom).frame(height: 130)
+                }
+                Spacer(minLength: 0)
+                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .top, endPoint: .bottom).frame(height: 150)
+            }
+            .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 10) {
+                if isFullScreen { macTitle }
+                Spacer(minLength: 0)
+                if showsResumed, let from = playback.resumedFrom {
+                    ResumedNote(from: from) {
+                        showsResumed = false
+                        playback.seek(to: 0)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                macBar
+                    .frame(maxWidth: 980)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(isFullScreen ? 28 : 14)
+            macCentre
+        }
+        .foregroundStyle(.white)
+        .environment(\.colorScheme, .dark)
+        .opacity(controlsShown ? 1 : 0)
+        .allowsHitTesting(controlsShown)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: showsControls)
+    }
+
+    private var macTitle: some View {
+        HStack(spacing: 12) {
+            ControlButton(systemImage: "xmark", label: "Exit Full Screen") { playback.isFullScreen = false }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(playback.current?.title ?? video.title).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                if let channel = (playback.current ?? video).channel?.name {
+                    Text(channel).font(.system(size: 13)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var macCentre: some View {
+        if isThis, playback.isLoading || (playback.isBuffering && !isScrubbing) {
+            ProgressView().controlSize(.large).tint(.white)
+        } else if !isThis {
+            ControlButton(systemImage: "play.fill", label: "Play", size: 68) { playback.play(video) }
+        } else if playback.hasEnded {
+            ControlButton(systemImage: "arrow.counterclockwise", label: "Replay", size: 68) {
+                poke()
+                playback.togglePlay()
+            }
+        }
+    }
+
+    /// The bar. A narrow player drops the skips and theater (J, L and T still do them).
+    private var macBar: some View {
+        let compact = size.width < 620
+        return HStack(spacing: compact ? 6 : 10) {
+            MacBarButton(systemImage: playback.hasEnded ? "arrow.counterclockwise" : playback.isPlaying ? "pause.fill" : "play.fill",
+                         label: playback.isPlaying ? "Pause (Space)" : "Play (Space)", size: 18) {
+                poke()
+                if isThis { playback.togglePlay() } else { playback.play(video) }
+            }
+            .contentTransition(.symbolEffect(.replace))
+            if hasPicture, !playback.isLive, !compact {
+                MacBarButton(systemImage: "gobackward.10", label: "Back 10 Seconds (J)") {
+                    poke()
+                    playback.skip(by: -10)
+                }
+                MacBarButton(systemImage: "goforward.10", label: "Forward 10 Seconds (L)") {
+                    poke()
+                    playback.skip(by: 10)
+                }
+            }
+            if hasPicture, playback.isLive {
+                Label("Live", systemImage: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.red, in: .capsule)
+                Spacer(minLength: 0)
+            } else if hasPicture {
+                MacTimeline(playback: playback, isScrubbing: $isScrubbing)
+                    .padding(.horizontal, 4)
+            } else {
+                Spacer(minLength: 0)
+            }
+            MacVolume(playback: playback)
+            if hasPicture {
+                if !playback.captions.isEmpty { MacCaptionsMenu(playback: playback) }
+                MacVideoSettingsMenu(playback: playback)
+                RoutePicker()
+                    .frame(width: 17, height: 17)
+                    .frame(width: 30, height: 30)
+                    .help("AirPlay")
+                    .accessibilityLabel("AirPlay")
+                if playback.canPictureInPicture {
+                    MacBarButton(systemImage: playback.isInPictureInPicture ? "pip.exit" : "pip.enter", label: "Picture in Picture") {
+                        poke()
+                        playback.togglePictureInPicture()
+                    }
+                }
+            }
+            if !isFullScreen, !compact {
+                MacBarButton(systemImage: app.settings.videoTheater ? "rectangle.inset.filled" : "rectangle.ratio.16.to.9",
+                             label: app.settings.videoTheater ? "Default View (T)" : "Theater Mode (T)") {
+                    poke()
+                    toggleTheater()
+                }
+            }
+            MacBarButton(systemImage: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                         label: isFullScreen ? "Exit Full Screen (F)" : "Full Screen (F)") {
+                playback.isFullScreen.toggle()
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+        .glassEffect(.regular, in: .capsule)
+        // Clicks between the buttons are the bar's, not the picture's (which would pause).
+        .contentShape(.capsule)
+        .onTapGesture {}
     }
 
     // MARK: Controls
@@ -147,9 +298,9 @@ struct VideoPlayerView: View {
                 ControlButton(systemImage: "xmark", label: "Exit Full Screen") { playback.isFullScreen = false }
                     .keyboardShortcut(.cancelAction)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(playback.current?.title ?? video.title).font(.headline).lineLimit(1)
+                    Text(playback.current?.title ?? video.title).font(.scaled(.headline)).lineLimit(1)
                     if let channel = (playback.current ?? video).channel?.name {
-                        Text(channel).font(.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                        Text(channel).font(.scaled(.caption)).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
                     }
                 }
                 .padding(.leading, 4)
@@ -159,6 +310,10 @@ struct VideoPlayerView: View {
             Spacer(minLength: 0)
             if hasPicture {
                 RoutePicker()
+                    #if os(macOS)
+                    // AppKit's route button fills its view; the symbol keeps the others' size.
+                    .frame(width: 18, height: 18)
+                    #endif
                     .frame(width: 36, height: 36)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("AirPlay")
@@ -230,13 +385,13 @@ struct VideoPlayerView: View {
                 if hasPicture {
                     if playback.isLive {
                         Label("Live", systemImage: "dot.radiowaves.left.and.right")
-                            .font(.caption.weight(.bold))
+                            .font(.scaled(.caption).weight(.bold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(.red, in: .capsule)
                         Spacer(minLength: 0)
                     } else {
-                        VideoScrubber(time: playback.time, duration: playback.duration, isScrubbing: $isScrubbing) { playback.seek(to: $0) }
+                        LiveScrubber(playback: playback, isScrubbing: $isScrubbing)
                     }
                     ControlButton(systemImage: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                                   label: isFullScreen ? "Exit Full Screen" : "Full Screen") {
@@ -262,7 +417,7 @@ struct VideoPlayerView: View {
                 } icon: {
                     Image(systemName: "forward.fill")
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(.scaled(.subheadline).weight(.semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .glassEffect(.regular, in: .capsule)
@@ -278,7 +433,7 @@ struct VideoPlayerView: View {
             }
             if let note {
                 Text(note)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.scaled(.subheadline).weight(.semibold))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .glassEffect(.regular, in: .capsule)
@@ -338,6 +493,10 @@ struct VideoPlayerView: View {
                 guard Date().timeIntervalSince(boostEnded) > 0.3 else { return }
                 if let skipping, hasPicture, side(of: value.location) == (skipping.forward ? 1 : -1) {
                     skip(at: value.location)
+                } else if Platform.isMac, hasPicture {
+                    // A click on the picture plays or pauses, as the Mac's players do.
+                    playback.togglePlay()
+                    reveal()
                 } else {
                     toggleControls()
                 }
@@ -415,7 +574,7 @@ struct VideoPlayerView: View {
                     guard abs(dy) > abs(dx) * 1.4 else { return }
                     drag = kind(start: value.startLocation, down: dy > 0)
                     if drag == .brightness {
-                        let current = Self.screen?.brightness ?? 0.5
+                        let current = ScreenBrightness.current ?? 0.5
                         if systemBrightness == nil { systemBrightness = current }
                         brightnessAtStart = current
                     }
@@ -425,7 +584,7 @@ struct VideoPlayerView: View {
                     // The lane's full height takes it from dark to bright.
                     let level = min(1, max(0, brightnessAtStart - dy / max(size.height * 0.8, 1)))
                     brightness = level
-                    Self.screen?.brightness = level
+                    ScreenBrightness.set(level)
                 case .minimize:
                     // Follows the finger, with resistance, so it's clear what letting go will do.
                     pullDown = max(0, dy) * 0.55
@@ -501,15 +660,41 @@ struct VideoPlayerView: View {
                 note = playback.isMuted ? "Muted" : "Sound On"
             }
             .keyboardShortcut("m", modifiers: [])
+            // YouTube's own: 0–9 jump to that tenth, , and . step a frame while paused, < and >
+            // change the speed, C turns subtitles on or off.
+            ForEach(0..<10, id: \.self) { tenth in
+                Button("Jump to \(tenth * 10)%") {
+                    guard playback.duration > 0, !playback.isLive else { return }
+                    playback.seek(to: playback.duration * Double(tenth) / 10)
+                    reveal()
+                }
+                .keyboardShortcut(KeyEquivalent(Character(String(tenth))), modifiers: [])
+            }
+            Button("Previous Frame") { playback.step(by: -1) }.keyboardShortcut(",", modifiers: [])
+            Button("Next Frame") { playback.step(by: 1) }.keyboardShortcut(".", modifiers: [])
+            Button("Slower") {
+                playback.stepSpeed(by: -1)
+                note = playback.speed == 1 ? "Normal Speed" : VideoSettingsMenu.speedName(playback.speed)
+            }
+            .keyboardShortcut(",", modifiers: .shift)
+            Button("Faster") {
+                playback.stepSpeed(by: 1)
+                note = playback.speed == 1 ? "Normal Speed" : VideoSettingsMenu.speedName(playback.speed)
+            }
+            .keyboardShortcut(".", modifiers: .shift)
+            Button("Subtitles") {
+                guard !playback.captions.isEmpty else {
+                    note = "No Subtitles"
+                    return
+                }
+                playback.toggleCaptions()
+                note = playback.caption.map { "Subtitles: \($0.displayName)" } ?? "Subtitles Off"
+            }
+            .keyboardShortcut("c", modifiers: [])
         }
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
-    }
-
-    /// The screen the app is on, for the brightness lane.
-    private static var screen: UIScreen? {
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }?.screen
     }
 
     private func toggleControls() {
@@ -557,10 +742,10 @@ private struct SkipBadge: View {
                 .offset(x: skipping.forward ? 70 : -70)
             VStack(spacing: 6) {
                 Image(systemName: skipping.forward ? "forward.fill" : "backward.fill")
-                    .font(.system(size: isFullScreen ? 26 : 20, weight: .semibold))
+                    .font(.scaledSystem(size: isFullScreen ? 26 : 20, weight: .semibold))
                     .symbolEffect(.bounce, value: skipping.pulse)
                 Text("\(skipping.seconds) seconds")
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .monospacedDigit()
                     .contentTransition(.numericText(value: Double(skipping.seconds)))
             }
@@ -588,7 +773,7 @@ private struct LevelIndicator: View {
                 .overlay(alignment: .bottom) {
                     Capsule().fill(.white).frame(width: 6, height: 120 * value)
                 }
-            Image(systemName: systemImage).font(.subheadline.weight(.semibold))
+            Image(systemName: systemImage).font(.scaled(.subheadline).weight(.semibold))
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 12)
@@ -607,10 +792,10 @@ private struct ResumedNote: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("Resumed at \(VideoScrubber.format(from))")
-                .font(.footnote.weight(.medium))
+                .font(.scaled(.footnote).weight(.medium))
                 .monospacedDigit()
             Button("Start Over", action: startOver)
-                .font(.footnote.weight(.semibold))
+                .font(.scaled(.footnote).weight(.semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(.white)
                 .underline()
@@ -639,15 +824,15 @@ private struct UpNextCountdown: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Up Next in \(seconds)")
-                        .font(.caption.weight(.semibold))
+                        .font(.scaled(.caption).weight(.semibold))
                         .foregroundStyle(.white.opacity(0.75))
                         .monospacedDigit()
                         .contentTransition(.numericText(countsDown: true))
                     Text(next.title)
-                        .font(isCompact ? .subheadline.weight(.semibold) : .headline)
+                        .font(isCompact ? .scaled(.subheadline).weight(.semibold) : .scaled(.headline))
                         .lineLimit(2)
                     if let channel = next.channel?.name {
-                        Text(channel).font(.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                        Text(channel).font(.scaled(.caption)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
                     }
                     HStack(spacing: 8) {
                         Button("Cancel", action: cancel).buttonStyle(.glass)
@@ -675,7 +860,7 @@ private struct ControlButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: size * 0.42, weight: .semibold))
+                .font(.scaledSystem(size: size * 0.42, weight: .semibold))
                 .frame(width: size, height: size)
                 .contentShape(.circle)
         }
@@ -732,7 +917,7 @@ private struct VideoSettingsMenu: View {
             }
         } label: {
             Image(systemName: playback.caption == nil ? "gearshape.fill" : "captions.bubble.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.scaledSystem(size: 15, weight: .semibold))
                 .frame(width: 36, height: 36)
                 .contentShape(.circle)
         }
@@ -795,7 +980,7 @@ struct VideoScrubber: View {
                 Spacer()
                 Text("-" + Self.format(max(0, duration - shown)))
             }
-            .font(.caption2.weight(.medium).monospacedDigit())
+            .font(.scaled(.caption2).weight(.medium).monospacedDigit())
             .foregroundStyle(.white.opacity(0.85))
         }
         .accessibilityElement()
@@ -814,22 +999,22 @@ struct VideoScrubber: View {
 
 /// The picture: an AVPlayerLayer, registered with the player under its role so picture in
 /// picture can float whichever is in front.
-struct VideoSurface: UIViewRepresentable {
+struct VideoSurface {
     let player: AVPlayer
     let role: VideoPlayback.SurfaceRole
     /// Cropped to fill the frame rather than fitted inside it.
     var fills = false
     let register: (AVPlayerLayer, VideoPlayback.SurfaceRole) -> Void
 
-    func makeUIView(context: Context) -> PlayerLayerView {
+    private func make() -> PlayerLayerView {
         let view = PlayerLayerView()
         view.playerLayer.player = player
         view.playerLayer.videoGravity = .resizeAspect
-        view.backgroundColor = .black
+        view.playerLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         return view
     }
 
-    func updateUIView(_ view: PlayerLayerView, context: Context) {
+    private func update(_ view: PlayerLayerView) {
         if view.playerLayer.player !== player { view.playerLayer.player = player }
         let gravity: AVLayerVideoGravity = fills ? .resizeAspectFill : .resizeAspect
         if view.playerLayer.videoGravity != gravity {
@@ -840,6 +1025,49 @@ struct VideoSurface: UIViewRepresentable {
         }
         register(view.playerLayer, role)
     }
+}
+
+#if os(macOS)
+extension VideoSurface: NSViewRepresentable {
+    func makeNSView(context: Context) -> PlayerLayerView { make() }
+    func updateNSView(_ view: PlayerLayerView, context: Context) { update(view) }
+}
+
+/// A view whose layer is an AVPlayerLayer (layer-hosting, as AppKit has it).
+final class PlayerLayerView: NSView {
+    let playerLayer = AVPlayerLayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        layer = playerLayer
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}
+
+/// The system's AirPlay button.
+private struct RoutePicker: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        view.setRoutePickerButtonColor(.white, for: .normal)
+        view.setRoutePickerButtonColor(.systemBlue, for: .active)
+        return view
+    }
+
+    func updateNSView(_ view: AVRoutePickerView, context: Context) {}
+}
+
+/// A Mac has no screen brightness an app may set.
+enum ScreenBrightness {
+    static var current: CGFloat? { nil }
+    static func set(_ level: CGFloat?) {}
+}
+#else
+extension VideoSurface: UIViewRepresentable {
+    func makeUIView(context: Context) -> PlayerLayerView { make() }
+    func updateUIView(_ view: PlayerLayerView, context: Context) { update(view) }
 }
 
 final class PlayerLayerView: UIView {
@@ -860,6 +1088,20 @@ private struct RoutePicker: UIViewRepresentable {
     func updateUIView(_ view: AVRoutePickerView, context: Context) {}
 }
 
+/// The brightness of the screen the app is on, for the full-screen brightness lane.
+enum ScreenBrightness {
+    private static var screen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }?.screen
+    }
+
+    static var current: CGFloat? { screen?.brightness }
+
+    static func set(_ level: CGFloat?) {
+        if let level { screen?.brightness = level }
+    }
+}
+#endif
+
 // MARK: - Full screen
 
 /// The player filling the screen; on the iPhone a landscape video turns the screen with it. The
@@ -872,6 +1114,7 @@ struct FullScreenVideoView: View {
         VideoPlayerView(playback: playback, video: playback.current ?? video, isFullScreen: true)
             .ignoresSafeArea()
             .background(.black)
+            #if os(iOS)
             .statusBarHidden()
             .persistentSystemOverlays(.hidden)
             .onAppear {
@@ -889,9 +1132,11 @@ struct FullScreenVideoView: View {
                 let size = playback.presentationSize
                 if UIDevice.current.orientation == .portrait, size.width > size.height { playback.isFullScreen = false }
             }
+            #endif
     }
 }
 
+#if os(iOS)
 /// The iPhone is portrait everywhere but a full-screen video; the app delegate answers with this.
 @MainActor
 enum Orientation {
@@ -941,6 +1186,377 @@ struct InteractivePopEnabler: UIViewControllerRepresentable {
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             (navigationController?.viewControllers.count ?? 0) > 1
         }
+    }
+}
+#endif
+
+/// "Skipped Sponsor", with Undo, for a few seconds after SponsorBlock skips a part.
+private struct SponsorSkipNote: View {
+    let skip: VideoPlayback.SponsorSkip
+    let undo: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Label("Skipped \(skip.title)", systemImage: "forward.end.fill")
+                .font(.system(size: 13, weight: .semibold))
+            Button("Undo", action: undo)
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.tint)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .glassEffect(.regular, in: .capsule)
+        .environment(\.colorScheme, .dark)
+        .task(id: skip.id) {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.smooth) { dismiss() }
+        }
+    }
+}
+
+/// Where the picture was, while it floats in picture in picture.
+private struct PictureInPicturePlaceholder: View {
+    let bringBack: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black
+            VStack(spacing: 12) {
+                Image(systemName: "pip").font(.system(size: 44, weight: .light))
+                Text("This video is playing in Picture in Picture.")
+                    .font(.system(size: 13, weight: .medium))
+                Button("Return to Window", action: bringBack)
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+            }
+            .foregroundStyle(.white.opacity(0.75))
+            .environment(\.colorScheme, .dark)
+        }
+    }
+}
+
+/// The playing time as its own view: the timeline is the only part of the controls that changes
+/// four times a second. Reading it in the player's body redrew the whole of it each time, and
+/// an open menu in it (quality, speed) lost its submenus while the video played.
+private struct LiveScrubber: View {
+    let playback: VideoPlayback
+    @Binding var isScrubbing: Bool
+
+    var body: some View {
+        VideoScrubber(time: playback.time, duration: playback.duration, isScrubbing: $isScrubbing) { playback.seek(to: $0) }
+    }
+}
+
+/// A symbol button in the Mac's control bar: no glass of its own (the bar is the glass), lit
+/// under the pointer, with its shortcut in the tooltip.
+private struct MacBarButton: View {
+    let systemImage: String
+    let label: String
+    var size: CGFloat = 15
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: size, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(.rect)
+        }
+        .buttonStyle(BarButtonStyle())
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The Mac's timeline: the time played, the line, the time left. The line breaks at each
+/// chapter and marks SponsorBlock's parts; under the pointer it thickens and shows, above it,
+/// the frame there (YouTube's storyboard), the chapter's name and the time. A click or drag goes there.
+private struct MacTimeline: View {
+    let playback: VideoPlayback
+    @Binding var isScrubbing: Bool
+    @State private var dragged: Double?
+    @State private var hoverX: CGFloat?
+
+    var body: some View {
+        let duration = playback.duration
+        let fraction = dragged ?? (duration > 0 ? min(1, playback.time / duration) : 0)
+        let shown = duration * fraction
+        HStack(spacing: 10) {
+            Text(VideoScrubber.format(shown))
+                .frame(minWidth: 36, alignment: .trailing)
+            GeometryReader { geometry in
+                let width = max(geometry.size.width, 1)
+                let thick = hoverX != nil || dragged != nil
+                let starts = duration > 0 ? playback.chapters.map { CGFloat($0.start / duration) } : []
+                let track = ChapterTrack(starts: starts)
+                ZStack(alignment: .leading) {
+                    track.fill(.white.opacity(0.28))
+                    // SponsorBlock's parts, where they are on the line.
+                    if duration > 0 {
+                        ForEach(playback.sponsorSegments, id: \.id) { segment in
+                            Rectangle()
+                                .fill(.green.opacity(0.85))
+                                .frame(width: max(2, width * CGFloat((segment.end - segment.start) / duration)))
+                                .offset(x: width * CGFloat(segment.start / duration))
+                        }
+                        .mask(track)
+                    }
+                    Rectangle().fill(.white)
+                        .frame(width: max(0, width * fraction))
+                        .mask(track)
+                }
+                .frame(height: thick ? 7 : 4)
+                .frame(maxHeight: .infinity)
+                .contentShape(.rect)
+                .overlay(alignment: .topLeading) {
+                    if let hoverX, dragged == nil, duration > 0 {
+                        let seconds = duration * Double(min(1, max(0, hoverX / width)))
+                        // Hung from a point just above the line at the pointer (kept clear of the
+                        // line's ends), so it floats over the control bar centred on the pointer.
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .overlay(alignment: .bottom) {
+                                TimelinePreview(playback: playback, seconds: seconds)
+                                    .fixedSize()
+                            }
+                            .position(x: min(max(hoverX, 96), max(96, width - 96)), y: -22)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onContinuousHover { phase in
+                    if case .active(let point) = phase { hoverX = point.x } else { hoverX = nil }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if dragged == nil { isScrubbing = true }
+                            dragged = min(1, max(0, value.location.x / width))
+                        }
+                        .onEnded { _ in
+                            if let dragged { playback.seek(to: duration * dragged) }
+                            dragged = nil
+                            isScrubbing = false
+                        })
+                .animation(.snappy(duration: 0.15), value: thick)
+            }
+            .frame(height: 24)
+            Text("-" + VideoScrubber.format(max(0, duration - shown)))
+                .frame(minWidth: 40, alignment: .leading)
+        }
+        .font(.system(size: 12, weight: .medium).monospacedDigit())
+        .foregroundStyle(.white.opacity(0.9))
+        .accessibilityElement()
+        .accessibilityLabel("Playback position")
+        .accessibilityValue("\(VideoScrubber.format(shown)) of \(VideoScrubber.format(duration))")
+        .accessibilityAdjustableAction { direction in
+            playback.seek(to: playback.time + (direction == .increment ? 10 : -10))
+        }
+    }
+}
+
+/// The timeline's line, broken where each chapter after the first starts.
+private nonisolated struct ChapterTrack: Shape {
+    /// Where chapters start, as fractions of the video.
+    let starts: [CGFloat]
+
+    func path(in rect: CGRect) -> Path {
+        let gap: CGFloat = 2
+        let edges = ([0] + starts.filter { $0 > 0.001 && $0 < 0.999 } + [1]).sorted()
+        var path = Path()
+        for (from, to) in zip(edges, edges.dropFirst()) {
+            let start = rect.minX + rect.width * from + (from > 0 ? gap / 2 : 0)
+            let end = rect.minX + rect.width * to - (to < 1 ? gap / 2 : 0)
+            guard end > start else { continue }
+            path.addRoundedRect(in: CGRect(x: start, y: rect.minY, width: end - start, height: rect.height),
+                                cornerSize: CGSize(width: rect.height / 2, height: rect.height / 2))
+        }
+        return path
+    }
+}
+
+/// Over the timeline under the pointer: the frame at that time (when YouTube has a storyboard
+/// for the video), the chapter's name and the time.
+private struct TimelinePreview: View {
+    let playback: VideoPlayback
+    let seconds: TimeInterval
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let frame = playback.storyboard?.frame(at: seconds, duration: playback.duration) {
+                StoryboardFrame(frame: frame)
+                    .frame(width: 176, height: 99)
+                    .clipShape(.rect(cornerRadius: 8, style: .continuous))
+            }
+            if let chapter = VideoChapter.current(in: playback.chapters, at: seconds) {
+                Text(chapter.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: 176)
+            }
+            Text(VideoScrubber.format(seconds))
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+        }
+        .padding(6)
+        .glassEffect(.regular, in: .rect(cornerRadius: 12, style: .continuous))
+    }
+}
+
+/// One frame cut from a storyboard sheet. Sheets are kept as they load, so moving along the
+/// timeline reuses them (25 frames to a sheet).
+private struct StoryboardFrame: View {
+    let frame: VideoStoryboard.Frame
+    @State private var image: CGImage?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let image {
+                Image(decorative: image, scale: 1).resizable().scaledToFill()
+            }
+        }
+        .task(id: frame) { image = await StoryboardSheets.shared.frame(frame) }
+    }
+}
+
+@MainActor
+private final class StoryboardSheets {
+    static let shared = StoryboardSheets()
+    private var sheets: [URL: CGImage] = [:]
+
+    func frame(_ frame: VideoStoryboard.Frame) async -> CGImage? {
+        let sheet: CGImage
+        if let cached = sheets[frame.sheet] {
+            sheet = cached
+        } else {
+            // Asked for larger than any sheet, so it comes at its own size (thumbnails never upscale)
+            // and frames are cut at their stated pixels; a last sheet can be shorter than the rest.
+            guard let loaded = await ImagePipeline.shared.image(frame.sheet, pixels: 4096)?.cgImage else { return nil }
+            if sheets.count > 24 { sheets.removeAll() }
+            sheets[frame.sheet] = loaded
+            sheet = loaded
+        }
+        let rect = frame.rect.intersection(CGRect(x: 0, y: 0, width: sheet.width, height: sheet.height))
+        guard !rect.isEmpty else { return nil }
+        return sheet.cropping(to: rect)
+    }
+}
+
+/// The speaker: a click mutes, and under the pointer a slider slides out beside it, as the
+/// Mac's players have it.
+private struct MacVolume: View {
+    @Bindable var playback: VideoPlayback
+    @State private var expanded = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            MacBarButton(systemImage: symbol, label: playback.isMuted ? "Unmute (M)" : "Mute (M)") {
+                playback.isMuted.toggle()
+            }
+            .contentTransition(.symbolEffect(.replace))
+            if expanded {
+                GeometryReader { geometry in
+                    let width = max(geometry.size.width, 1)
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.28))
+                        Capsule().fill(.white).frame(width: width * CGFloat(playback.isMuted ? 0 : playback.volume))
+                    }
+                    .frame(height: 5)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(.rect)
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                        playback.volume = Float(min(1, max(0, value.location.x / width)))
+                        if playback.isMuted { playback.isMuted = false }
+                    })
+                }
+                .frame(width: 76, height: 24)
+                .padding(.trailing, 4)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .onHover { over in withAnimation(.snappy(duration: 0.2)) { expanded = over } }
+        .accessibilityElement(children: .contain)
+        .accessibilityValue(Text(Double(playback.isMuted ? 0 : playback.volume), format: .percent.precision(.fractionLength(0))))
+    }
+
+    private var symbol: String {
+        if playback.isMuted || playback.volume == 0 { return "speaker.slash.fill" }
+        return playback.volume < 0.34 ? "speaker.wave.1.fill" : playback.volume < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+    }
+}
+
+/// Subtitles, as their own button the way the Mac's players have it: Off or a language.
+private struct MacCaptionsMenu: View {
+    let playback: VideoPlayback
+
+    var body: some View {
+        Menu {
+            Picker("Subtitles", selection: Binding(get: { playback.caption }, set: { playback.setCaption($0) })) {
+                Text("Off").tag(AVMediaSelectionOption?.none)
+                ForEach(playback.captions, id: \.self) { option in
+                    Text(option.displayName).tag(Optional(option))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: playback.caption == nil ? "captions.bubble" : "captions.bubble.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(.rect)
+        }
+        .menuStyle(.button)
+        .buttonStyle(BarButtonStyle())
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Subtitles")
+        .accessibilityLabel("Subtitles")
+    }
+}
+
+/// Quality and Playback Speed, each a submenu showing what's chosen.
+private struct MacVideoSettingsMenu: View {
+    let playback: VideoPlayback
+
+    var body: some View {
+        Menu {
+            Picker(selection: Binding(get: { playback.quality }, set: { playback.setQuality($0) })) {
+                Text("Auto").tag(0)
+                ForEach(playback.qualities, id: \.self) { lines in
+                    Text(VideoQualityName.short(lines)).tag(lines)
+                }
+                if playback.quality != 0, !playback.qualities.contains(playback.quality) {
+                    Text(VideoQualityName.short(playback.quality)).tag(playback.quality)
+                }
+            } label: {
+                Text("Quality")
+                Text(playback.quality == 0 ? "Auto" : VideoQualityName.short(playback.quality))
+            }
+            .pickerStyle(.menu)
+            .disabled(playback.qualities.isEmpty)
+            Picker(selection: Binding(get: { playback.speed }, set: { playback.setSpeed($0) })) {
+                ForEach(VideoPlayback.speeds, id: \.self) { rate in
+                    Text(rate == 1 ? "Normal" : VideoSettingsMenu.speedName(rate)).tag(rate)
+                }
+            } label: {
+                Text("Playback Speed")
+                Text(playback.speed == 1 ? "Normal" : VideoSettingsMenu.speedName(playback.speed))
+            }
+            .pickerStyle(.menu)
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(.rect)
+        }
+        .menuStyle(.button)
+        .buttonStyle(BarButtonStyle())
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Quality and Speed")
+        .accessibilityLabel("Video Settings")
     }
 }
 

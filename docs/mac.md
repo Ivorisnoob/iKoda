@@ -1,6 +1,6 @@
 # Koda on the Mac
 
-Koda for Mac is the same app target built with Mac Catalyst in the Mac idiom (device family 6, "Optimize for Mac"), as one universal binary for Apple silicon and Intel. It needs macOS 26 for Liquid Glass; that is also the last macOS for Intel, so the 2019–2020 Intel Macs are the oldest it runs on.
+Koda for Mac is a native macOS app (target `KodaMac`): the same `Koda/` sources built for macOS with SwiftUI on AppKit, as one universal binary for Apple silicon and Intel. Until 0.4 it was a Mac Catalyst build; notes below that mention Catalyst are from then. It needs macOS 26 for Liquid Glass; that is also the last macOS for Intel, so the 2019–2020 Intel Macs are the oldest it runs on.
 
 ## Shared and separate
 

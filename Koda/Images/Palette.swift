@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// Colours taken from a cover, for the player background and tinted buttons.
 struct Palette: Equatable, Sendable {
@@ -18,7 +22,7 @@ struct Palette: Equatable, Sendable {
 }
 
 enum PaletteExtractor {
-    static func palette(for image: UIImage) -> Palette {
+    static func palette(for image: PlatformImage) -> Palette {
         guard let cg = image.cgImage else { return .fallback }
         // The cover drawn into 3×3 pixels averages each region of it.
         var pixels = [UInt8](repeating: 0, count: 9 * 4)
@@ -31,10 +35,10 @@ enum PaletteExtractor {
         }
         guard drawn else { return .fallback }
 
-        var colors: [UIColor] = []
+        var colors: [PlatformColor] = []
         for i in 0..<9 {
             let r = CGFloat(pixels[i * 4]) / 255, g = CGFloat(pixels[i * 4 + 1]) / 255, b = CGFloat(pixels[i * 4 + 2]) / 255
-            colors.append(UIColor(red: r, green: g, blue: b, alpha: 1))
+            colors.append(PlatformColor(red: r, green: g, blue: b, alpha: 1))
         }
         // Darken for white text; a pale cover still reads as itself, only deeper.
         let mesh = colors.map { color -> Color in
@@ -49,13 +53,13 @@ enum PaletteExtractor {
         return Palette(mesh: mesh, accent: accent, isLight: false)
     }
 
-    private static func saturation(_ c: UIColor) -> CGFloat {
+    private static func saturation(_ c: PlatformColor) -> CGFloat {
         var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0, a: CGFloat = 0
         c.getHue(&h, saturation: &s, brightness: &v, alpha: &a)
         return s
     }
 
-    private static func brightness(_ c: UIColor) -> CGFloat {
+    private static func brightness(_ c: PlatformColor) -> CGFloat {
         var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0, a: CGFloat = 0
         c.getHue(&h, saturation: &s, brightness: &v, alpha: &a)
         return v

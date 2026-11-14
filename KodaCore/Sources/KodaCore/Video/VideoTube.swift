@@ -20,8 +20,10 @@ extension YouTubeMusic {
     }
 
     /// Videos and the channels that match, best first. Shorts are left out.
-    public func searchVideos(_ query: String) async throws -> VideoSearchResults {
-        VideoPages.search(try await api.web("search", ["query": query]))
+    public func searchVideos(_ query: String, filters: VideoSearchFilters = VideoSearchFilters()) async throws -> VideoSearchResults {
+        var payload: [String: Any] = ["query": query]
+        if let params = filters.params { payload["params"] = params }
+        return VideoPages.search(try await api.web("search", payload))
     }
 
     /// The next page of a list.
@@ -104,6 +106,27 @@ extension YouTubeMusic {
         VideoPages.comments(try await api.web("next", ["continuation": token]))
     }
 
+    /// Post a comment on a video as the account: `params` is the first comments page's
+    /// `createParams`. Hands back the comment as YouTube now has it.
+    public func postComment(_ text: String, params: String) async throws -> VideoComment {
+        let root = try await api.web("comment/create_comment", ["commentText": text, "createCommentParams": params], signing: .required)
+        guard let comment = VideoPages.createdComment(root) else { throw MusicError.badResponse(200) }
+        return comment
+    }
+
+    /// Reply to a comment as the account: `params` is that comment's `replyParams`.
+    public func postReply(_ text: String, params: String) async throws -> VideoComment {
+        let root = try await api.web("comment/create_comment_reply", ["commentText": text, "createReplyParams": params], signing: .required)
+        guard let comment = VideoPages.createdComment(root) else { throw MusicError.badResponse(200) }
+        return comment
+    }
+
+    /// Like, unlike or delete a comment: one of its `likeAction`, `unlikeAction`, `deleteAction`.
+    public func performCommentAction(_ action: String) async throws {
+        let root = try await api.web("comment/perform_comment_action", ["actions": [action]], signing: .required)
+        guard VideoPages.commentActionSucceeded(root) else { throw MusicError.badResponse(200) }
+    }
+
     /// Like, dislike or clear the account's rating of a video, on YouTube itself (a like there
     /// is a like in YouTube Music too, for a song).
     public func rate(videoId: String, _ status: LikeStatus) async throws {
@@ -113,6 +136,16 @@ extension YouTubeMusic {
         case .indifferent: "like/removelike"
         }
         _ = try await api.web(endpoint, ["target": ["videoId": videoId]], signing: .required)
+    }
+
+    /// Save a video to the account's Watch Later, or take it out, as YouTube's own Save does
+    /// (`browse/edit_playlist` on the `WL` playlist). The answer's status says whether it took.
+    public func setWatchLater(videoId: String, saved: Bool) async throws {
+        let action: [String: String] = saved
+            ? ["action": "ACTION_ADD_VIDEO", "addedVideoId": videoId]
+            : ["action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": videoId]
+        let root = try await api.web("browse/edit_playlist", ["playlistId": "WL", "actions": [action]], signing: .required)
+        guard AccountPages.editSucceeded(root) else { throw MusicError.badResponse(200) }
     }
 
     /// Subscribe to a channel on YouTube itself, or unsubscribe.

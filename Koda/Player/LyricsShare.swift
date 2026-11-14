@@ -30,9 +30,9 @@ struct LyricsShareSheet: View {
     @Environment(\.displayScale) private var displayScale
     @State private var selected: Set<Int>
     @State private var style: LyricsCardStyle = .colors
-    @State private var cover: UIImage?
+    @State private var cover: PlatformImage?
     @State private var palette = PaletteModel()
-    @State private var rendered: UIImage?
+    @State private var rendered: PlatformImage?
     @State private var limitHit = 0
     /// The card's natural height at preview width, measured as it lays out.
     @State private var cardHeight: CGFloat = 0
@@ -68,7 +68,7 @@ struct LyricsShareSheet: View {
 
     private var hint: some View {
         Text(selected.count >= Self.maxLines ? "Up to \(Self.maxLines) lines" : "Click lines to add or remove them")
-            .font(.footnote.weight(.medium))
+            .font(.scaled(.footnote).weight(.medium))
             .foregroundStyle(.white.opacity(0.65))
             .contentTransition(.opacity)
             .animation(.smooth, value: selected.count >= Self.maxLines)
@@ -97,7 +97,7 @@ struct LyricsShareSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Copy Image", systemImage: "doc.on.doc") {
-                    UIPasteboard.general.image = rendered
+                    rendered.map(PlatformImages.copy)
                     copied += 1
                 }
                 .disabled(rendered == nil)
@@ -127,7 +127,7 @@ struct LyricsShareSheet: View {
                 stylePicker
 
                 Text(selected.count >= Self.maxLines ? "Up to \(Self.maxLines) lines" : "Tap lines to add or remove them")
-                    .font(.footnote.weight(.medium))
+                    .font(.scaled(.footnote).weight(.medium))
                     .foregroundStyle(.white.opacity(0.65))
                     .contentTransition(.opacity)
                     .animation(.smooth, value: selected.count >= Self.maxLines)
@@ -137,6 +137,7 @@ struct LyricsShareSheet: View {
             }
             .background { backdrop }
             .navigationTitle("Share Lyrics")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -146,6 +147,7 @@ struct LyricsShareSheet: View {
                     shareButton
                 }
             }
+            #endif
         }
         .presentationDetents([.large])
         .presentationBackground(.clear)
@@ -198,7 +200,7 @@ struct LyricsShareSheet: View {
                                 .clipShape(.circle)
                                 .overlay(Circle().strokeBorder(.white.opacity(0.6), lineWidth: 1))
                             Text(option.title)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.scaled(.subheadline).weight(.semibold))
                         }
                         .padding(.horizontal, 14)
                         .frame(height: 40)
@@ -219,7 +221,7 @@ struct LyricsShareSheet: View {
             LinearGradient(colors: [palette.palette.mesh[0], palette.palette.mesh[8]], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .cover:
             // Cropped in an overlay, so a wide video frame can't widen the swatch.
-            Color.gray.overlay { if let cover { Image(uiImage: cover).resizable().scaledToFill() } }.clipped()
+            Color.gray.overlay { if let cover { Image(platformImage: cover).resizable().scaledToFill() } }.clipped()
         case .dark:
             Color(white: 0.1)
         }
@@ -237,7 +239,7 @@ struct LyricsShareSheet: View {
                             toggle(line.id)
                         } label: {
                             Text(line.text)
-                                .font(.title3.weight(.bold))
+                                .font(.scaled(.title3).weight(.bold))
                                 .foregroundStyle(.white.opacity(isOn ? 1 : 0.45))
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,10 +273,10 @@ struct LyricsShareSheet: View {
     @ViewBuilder
     private var shareButton: some View {
         if let rendered {
-            let image = Image(uiImage: rendered)
+            let image = Image(platformImage: rendered)
             ShareLink(item: image, preview: SharePreview("\(song.title) · \(song.artistLine)", image: image)) {
                 Label(Platform.isMac ? "Share…" : "Share Card", systemImage: "square.and.arrow.up")
-                    .font(.body.weight(.semibold))
+                    .font(.scaled(.body).weight(.semibold))
                     .padding(.horizontal, Platform.isMac ? 0 : 24)
             }
         } else {
@@ -303,7 +305,7 @@ struct LyricsShareSheet: View {
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: card)
         renderer.scale = max(displayScale, 3)
-        rendered = renderer.uiImage
+        rendered = renderer.platformImage
     }
 }
 
@@ -311,7 +313,7 @@ struct LyricsShareSheet: View {
 struct LyricsCard: View {
     let lines: [String]
     let song: Song
-    let cover: UIImage?
+    let cover: PlatformImage?
     let palette: Palette
     var style: LyricsCardStyle = .colors
 
@@ -320,7 +322,7 @@ struct LyricsCard: View {
             HStack(spacing: 12) {
                 Group {
                     if let cover {
-                        Image(uiImage: cover).resizable().scaledToFill()
+                        Image(platformImage: cover).resizable().scaledToFill()
                     } else {
                         Rectangle().fill(.white.opacity(0.15))
                     }
@@ -329,14 +331,14 @@ struct LyricsCard: View {
                 .clipShape(.rect(cornerRadius: 9, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title).font(.subheadline.weight(.bold)).lineLimit(1)
-                    Text(song.artistLine).font(.footnote).opacity(0.75).lineLimit(1)
+                    Text(song.title).font(.scaled(.subheadline).weight(.bold)).lineLimit(1)
+                    Text(song.artistLine).font(.scaled(.footnote)).opacity(0.75).lineLimit(1)
                 }
             }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     Text(line)
-                        .font(.system(size: 25, weight: .bold))
+                        .font(.scaledSystem(size: 25, weight: .bold))
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
@@ -345,7 +347,7 @@ struct LyricsCard: View {
                 Image(systemName: "waveform")
                 Text("Koda")
             }
-            .font(.caption.weight(.bold))
+            .font(.scaled(.caption).weight(.bold))
             .opacity(0.6)
         }
         .foregroundStyle(.white)
@@ -370,7 +372,7 @@ struct LyricsCard: View {
             Color.black
                 .overlay {
                     if let cover {
-                        Image(uiImage: cover)
+                        Image(platformImage: cover)
                             .resizable()
                             .scaledToFill()
                             .blur(radius: 28)

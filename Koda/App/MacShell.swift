@@ -4,7 +4,7 @@ import SwiftUI
 /// Where Koda runs. The iPhone layout and the Mac's share their screens; only the shell
 /// around them differs: a sidebar, a player bar and a menu bar on the Mac.
 enum Platform {
-    #if targetEnvironment(macCatalyst)
+    #if os(macOS)
     static let isMac = true
     #else
     static let isMac = false
@@ -13,9 +13,10 @@ enum Platform {
 
 // MARK: - Player bar
 
-/// The Mac's mini player: a floating glass bar under the page, always there once something
-/// has played. The song on the left opens Now Playing; the transport and progress sit in
-/// the middle, where the eye expects them; lyrics, queue and volume on the right.
+/// The Mac's mini player, laid out as Music's: a glass capsule floating over the foot of the
+/// page, centred and no wider than it needs. The transport on the left; in the middle a panel
+/// with the cover, the song and its progress (the cover or the song opens Now Playing); lyrics,
+/// Up Next and volume on the right.
 struct MacPlayerBar: View {
     /// The song opens Now Playing; lyrics and the queue open beside the page instead.
     let openNowPlaying: () -> Void
@@ -25,66 +26,75 @@ struct MacPlayerBar: View {
     @Environment(Player.self) private var player
     @State private var width: CGFloat = 900
 
-    /// A narrow window: the transport gives up some width, and the volume keeps its speaker.
-    private var isNarrow: Bool { width < 760 }
-    /// The smallest windows: shuffle and repeat step out (the Controls menu keeps both), so the
-    /// song's title still has room beside the transport.
-    private var isCompact: Bool { width < 560 }
+    /// A narrow bar: the transport tightens, and the volume keeps only its speaker.
+    private var isNarrow: Bool { width < 700 }
+    /// The smallest: shuffle and repeat step out (the Controls menu keeps both), so the song
+    /// still has room in the middle.
+    private var isCompact: Bool { width < 540 }
 
     var body: some View {
-        HStack(spacing: isNarrow ? 10 : 16) {
-            nowPlaying
-                .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(spacing: 4) {
-                transport
-                BarProgress()
-            }
-            .frame(width: isCompact ? 180 : isNarrow ? 270 : 360)
-            // Compact, the transport moves off centre to leave the title what's left.
+        HStack(spacing: isNarrow ? 6 : 12) {
+            transport
+            display
+                .frame(maxWidth: .infinity)
             trailing
-                .frame(maxWidth: isCompact ? nil : .infinity, alignment: .trailing)
         }
         // Measured on a flexible frame: the bar's own parts have fixed widths, and measuring
         // them would hold the bar at its old width.
         .frame(minWidth: 0, maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .padding(.horizontal, 12)
-        .frame(height: 68)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+        .padding(.leading, 18)
+        .padding(.trailing, 14)
+        .frame(height: CGFloat(64).scaled)
+        .glassEffect(.regular, in: .capsule)
         // The whole bar takes its clicks: through the glass between its buttons they reached the
         // page scrolling underneath, and a click beside the speaker played a song in the list.
-        .contentShape(.rect(cornerRadius: 22, style: .continuous))
+        .contentShape(.capsule)
+        // As wide as Music's at most, centred; a narrower window gets all of its width.
+        .frame(maxWidth: CGFloat(940).scaled)
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
 
-    private var nowPlaying: some View {
-        Button { openNowPlaying() } label: {
-            HStack(spacing: 12) {
-                // Concentric with the bar's corners, as the system's own nested shapes are.
-                ArtworkView(artwork: player.current?.artwork, size: 46, cornerRadius: 12)
+    /// The middle panel: the cover, the song centred over its progress, as Music's display.
+    private var display: some View {
+        HStack(spacing: 10) {
+            Button { openNowPlaying() } label: {
+                ArtworkView(artwork: player.current?.artwork, size: CGFloat(40).scaled, cornerRadius: 7)
                     .modifier(ZoomSource(namespace: zoom))
-                    .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(player.current?.title ?? "Not Playing")
-                        .font(.callout.weight(.semibold))
-                    Text(player.current?.artistLine ?? "")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .lineLimit(1)
-                .contentTransition(.opacity)
-                if let mixing = player.mixing {
-                    MixingBadge(mixing: mixing, compact: true)
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                }
             }
-            .contentShape(.rect)
-            .animation(.smooth(duration: 0.35), value: player.mixing)
+            .buttonStyle(.plain)
+            .help("Show Now Playing")
+            VStack(spacing: 1) {
+                Button { openNowPlaying() } label: {
+                    HStack(spacing: 6) {
+                        VStack(spacing: 0) {
+                            Text(player.current?.title ?? "Not Playing")
+                                .font(.scaled(.callout).weight(.semibold))
+                            Text(player.current?.artistLine ?? " ")
+                                .font(.scaled(.subheadline))
+                                .foregroundStyle(.secondary)
+                        }
+                        .lineLimit(1)
+                        .contentTransition(.opacity)
+                        if let mixing = player.mixing {
+                            MixingBadge(mixing: mixing, compact: true)
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(.rect)
+                    .animation(.smooth(duration: 0.35), value: player.mixing)
+                }
+                .buttonStyle(.plain)
+                .help("Show Now Playing")
+                BarProgress()
+            }
         }
-        .buttonStyle(BarButtonStyle(padding: 4))
+        .padding(5)
+        .padding(.trailing, 6)
+        .background(.primary.opacity(0.05), in: .rect(cornerRadius: 12, style: .continuous))
         .disabled(player.current == nil)
-        .help("Show Now Playing")
         .animation(.smooth(duration: 0.3), value: player.current?.id)
     }
 
@@ -130,7 +140,7 @@ struct MacPlayerBar: View {
     private func iconButton(_ symbol: String, help: String, isOn: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.scaledSystem(size: 14, weight: .semibold))
                 .foregroundStyle(isOn ? Color.accentColor : .primary)
                 .frame(width: 28, height: 28)
                 .contentTransition(.symbolEffect(.replace))
@@ -162,7 +172,7 @@ struct BarButtonStyle: ButtonStyle {
 }
 
 /// A thin progress line that thickens under the pointer; a click or drag puts the song there.
-private struct BarProgress: View {
+struct BarProgress: View {
     @Environment(Player.self) private var player
     @State private var hovering = false
     @State private var dragFraction: Double?
@@ -199,7 +209,7 @@ private struct BarProgress: View {
                 Text(format(duration))
                     .frame(width: 36, alignment: .leading)
             }
-            .font(.caption2.monospacedDigit())
+            .font(.scaled(.caption2).monospacedDigit())
             .foregroundStyle(.secondary)
             .animation(.snappy(duration: 0.15), value: hovering)
         }
@@ -228,7 +238,7 @@ private struct BarVolume: View {
                 if showsSlider { player.volume = player.volume > 0 ? 0 : 0.7 } else { showsPopover.toggle() }
             } label: {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.scaledSystem(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 28, height: 28)
                     .contentTransition(.symbolEffect(.replace))
@@ -329,6 +339,18 @@ struct KodaCommands: Commands {
                 Text("One").tag(RepeatMode.one)
             }
             .disabled(!hasSong)
+            // As Music's: the playing song's album, or Now Playing for a song with none.
+            Button("Go to Current Song") {
+                guard let song = player.current else { return }
+                if let album = song.album {
+                    model.open(.album(AlbumSummary(id: album.id, title: album.title, artistLine: song.artistLine,
+                                                   artists: song.artists, artwork: song.artwork)))
+                } else {
+                    model.isNowPlayingPresented = true
+                }
+            }
+            .keyboardShortcut("l", modifiers: .command)
+            .disabled(!hasSong)
             Divider()
             Button(model.isNowPlayingPresented ? "Hide Now Playing" : "Show Now Playing") {
                 model.isNowPlayingPresented.toggle()
@@ -359,12 +381,24 @@ struct KodaCommands: Commands {
                     .keyboardShortcut("4", modifiers: .command)
             }
         }
+        #if os(macOS)
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesButton(updates: model.updates)
+        }
+        // Settings… (⌘,) is the Settings scene's own. One window is the whole app (a second would
+        // play over the first), so File's New makes a playlist, as Music's does.
+        CommandGroup(replacing: .newItem) {
+            Button("New Playlist…") { model.isNamingPlaylist = true }
+                .keyboardShortcut("n", modifiers: .command)
+        }
+        #else
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { model.isProfilePresented = true }
                 .keyboardShortcut(",", modifiers: .command)
         }
         // One window is the whole app; a second would play over the first.
         CommandGroup(replacing: .newItem) {}
+        #endif
     }
 }
 

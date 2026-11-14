@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS runs widget extensions only in the App Sandbox. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- The ad-hoc signed app can't share an App Group, so it writes what the widgets show to
+	     ~/Library/Application Support/Koda/Widgets/ (Shared/WidgetShare.swift), and the widget
+	     may read that folder and nothing else of the listener's. -->
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+	<array>
+		<string>/Library/Application Support/Koda/Widgets/</string>
+	</array>
+</dict>
+</plist>

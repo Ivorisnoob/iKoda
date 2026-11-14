@@ -99,7 +99,7 @@ struct SongMenuButton: View {
             SongMenuItems(song: song)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.body.weight(.semibold))
+                .font(.scaled(.body).weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 36, height: 44)
                 .contentShape(.rect)

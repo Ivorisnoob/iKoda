@@ -38,7 +38,7 @@ struct SettingsView: View {
                             } maximumValueLabel: {
                                 Text("12 s")
                             }
-                            .font(.caption)
+                            .font(.scaled(.caption))
                             .foregroundStyle(.secondary)
                         }
                     }
@@ -91,6 +91,12 @@ struct SettingsView: View {
                         Toggle(isOn: $settings.swipesForBrightness) {
                             SettingLabel("Swipe for Brightness", systemImage: "sun.max.fill", tint: .yellow)
                         }
+                        Toggle(isOn: $settings.skipsSponsors) {
+                            SettingLabel("Skip Sponsors", systemImage: "forward.end.fill", tint: .green)
+                        }
+                        Toggle(isOn: $settings.showsDislikes) {
+                            SettingLabel("Show Dislikes", systemImage: "hand.thumbsdown.fill", tint: .gray)
+                        }
                     }
                 } header: {
                     Text("Videos")
@@ -98,7 +104,7 @@ struct SettingsView: View {
                     if !settings.videoModeEnabled {
                         Text("Video Mode adds YouTube itself beside your music: a Music and Video switch on Home, with videos, subscriptions and the video player.")
                     } else {
-                        Text("Video Mode adds a Music and Video switch on Home. Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen.")
+                        Text("Video Mode adds a Music and Video switch on Home. Each video starts at the Default Quality, or the best it has below it; Auto follows the connection. The player's menu changes the quality of the video playing. Double-tap either side of a video to skip 10 seconds, and keep tapping to skip further. Hold to Speed Up plays at 2× while you hold, and sliding sideways changes the speed. Swipe up on a video for full screen and down to leave it; in full screen, Swipe for Brightness sets the screen from the left half, and pinching fills the screen. Skip Sponsors uses SponsorBlock and Show Dislikes uses Return YouTube Dislike, services run by volunteers: SponsorBlock is told only part of a fingerprint of each video's id, Return YouTube Dislike the id itself.")
                     }
                 }
 
@@ -165,13 +171,16 @@ struct SettingsView: View {
                         SettingLabel("Your Taste", systemImage: "sparkles", tint: .pink)
                     }
                     .foregroundStyle(.primary)
+                    Toggle(isOn: $settings.showsMixOnHome) {
+                        SettingLabel("Your Mix", systemImage: "square.stack.3d.up.fill", tint: .purple)
+                    }
                     Toggle(isOn: $settings.showsChartsOnHome) {
                         SettingLabel("Charts on Home", systemImage: "chart.line.uptrend.xyaxis", tint: .red)
                     }
                 } header: {
                     Text("Home")
                 } footer: {
-                    Text("Your Taste is the artists, genres and songs Home starts from. Charts on Home adds YouTube Music's global and local charts to Home.")
+                    Text("Your Taste is the artists, genres and songs Home starts from. Your Mix is a mix of radios from the artists you play most. Charts on Home adds YouTube Music's global and local charts to Home.")
                 }
 
                 Section {
@@ -198,7 +207,8 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-                    Link(destination: URL(string: "https://github.com/Ivorisnoob/Koda-iOS")!) {
+                    UpdateCheckRow()
+                    Link(destination: URL(string: "https://github.com/Ivorisnoob/iKoda")!) {
                         Label("Koda on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                     }
                     Link(destination: URL(string: "https://github.com/Ivorisnoob/Koda")!) {
@@ -211,12 +221,17 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            // Its own sheet: Settings is itself a sheet, which one from the root can't cover.
+            // Its own sheets: Settings is itself a sheet, which one from the root can't cover.
+            .sheet(item: Binding(get: { app.updates.offered }, set: { if $0 == nil { app.updates.dismiss() } })) { release in
+                UpdateNoticeView(release: release).appEnvironment(app)
+            }
             .sheet(isPresented: $tuningTaste) {
                 OnboardingView(start: .taste, music: app.music, library: library).appEnvironment(app)
             }
             .scrollEdgeEffectStyle(.soft, for: .all)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", systemImage: "checkmark") { dismiss() }
@@ -243,7 +258,7 @@ struct SettingLabel: View {
             Text(title)
         } icon: {
             Image(systemName: systemImage)
-                .font(.footnote.weight(.semibold))
+                .font(.scaled(.footnote).weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 29, height: 29)
                 .background(tint.gradient, in: .rect(cornerRadius: 7, style: .continuous))
@@ -264,7 +279,7 @@ struct LyricsSettingsView: View {
                     Toggle(isOn: Binding(get: { settings.isEnabled(source) }, set: { settings.setEnabled(source, $0) })) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(source.title)
-                            Text(source.detail).font(.footnote).foregroundStyle(.secondary)
+                            Text(source.detail).font(.scaled(.footnote)).foregroundStyle(.secondary)
                         }
                     }
                     .disabled(settings.isEnabled(source) && settings.lyricsSources.count == 1)
@@ -297,7 +312,9 @@ struct LyricsSettingsView: View {
                 Text("Lyrics found earlier are kept until Koda closes. This forgets them, so the next song you open asks the sources again.")
             }
         }
+        #if os(iOS)
         .environment(\.editMode, .constant(.active))
+        #endif
         .navigationTitle("Lyrics")
     }
 }
@@ -618,5 +635,27 @@ struct BackupSettingsView: View {
         .alert(outcome ?? "", isPresented: Binding(get: { outcome != nil }, set: { if !$0 { outcome = nil } })) {
             Button("OK", role: .cancel) {}
         }
+    }
+}
+
+/// Check for Updates in the About section, with the answer beside it; a release found opens the
+/// update notice.
+private struct UpdateCheckRow: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button {
+            Task { await app.updates.check(asked: true) }
+        } label: {
+            LabeledContent("Check for Updates") {
+                switch app.updates.phase {
+                case .checking: ProgressView()
+                case .upToDate: Text("Up to Date")
+                case .failed: Text("Couldn't Check")
+                default: EmptyView()
+                }
+            }
+        }
+        .disabled(app.updates.phase == .checking)
     }
 }

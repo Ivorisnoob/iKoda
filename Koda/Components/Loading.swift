@@ -87,7 +87,7 @@ struct PlayShuffleButtons: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .font(.body.weight(.semibold))
+        .font(.scaled(.body).weight(.semibold))
         .controlSize(.large)
         .buttonStyle(.glass)
         .sensoryFeedback(.impact(weight: .light), trigger: taps)
@@ -137,7 +137,7 @@ struct RevealedTitle: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(title)
-                        .font(.headline)
+                        .font(.scaled(.headline))
                         .lineLimit(1)
                         .opacity(shown ? 1 : 0)
                         .accessibilityHidden(!shown)

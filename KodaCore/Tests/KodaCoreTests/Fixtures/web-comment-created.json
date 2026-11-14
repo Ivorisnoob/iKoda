@@ -1,0 +1,196 @@
+{
+ "actionResult": {
+  "status": "STATUS_SUCCEEDED"
+ },
+ "actions": [
+  {
+   "createCommentAction": {
+    "contents": {
+     "commentThreadRenderer": {
+      "commentViewModel": {
+       "commentViewModel": {
+        "commentKey": "EhpVZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZyAoKAE%3D",
+        "sharedKey": "EgAgKygB",
+        "toolbarStateKey": "EhpVZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZyAsKAE%3D",
+        "toolbarSurfaceKey": "Eh1VZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZy8xMiBGKAE%3D",
+        "commentId": "UgyEnXfdC-umwvTt8JF4AaABAg",
+        "commentSurfaceKey": "Eh1VZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZy8xMiBPKAE%3D",
+        "sharedSurfaceKey": "EhVWSUVXSU5HX0NPTlRFWFRfV0FUQ0gg9AIoAQ%3D%3D",
+        "inlineRepliesKey": "empty_inline_replies",
+        "rendererContext": {}
+       }
+      }
+     }
+    }
+   }
+  }
+ ],
+ "frameworkUpdates": {
+  "entityBatchUpdate": {
+   "mutations": [
+    {
+     "entityKey": "EhpVZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZyAoKAE%3D",
+     "type": "ENTITY_MUTATION_TYPE_REPLACE",
+     "payload": {
+      "commentEntityPayload": {
+       "key": "EhpVZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZyAoKAE%3D",
+       "properties": {
+        "commentId": "UgyEnXfdC-umwvTt8JF4AaABAg",
+        "content": {
+         "content": "Gonna flag this for nudity so I can rick roll the YouTube staff"
+        },
+        "publishedTime": "6 years ago",
+        "replyLevel": 0,
+        "authorButtonA11y": "@Oatman69",
+        "toolbarStateKey": "EhpVZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZyAsKAE%3D",
+        "translateButtonEntityKey": "EhpVZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZyD_ASgB"
+       },
+       "author": {
+        "channelId": "UCWf34D_s8K_m2vwBISIDWtg",
+        "displayName": "@Oatman69",
+        "avatarThumbnailUrl": "https://yt3.ggpht.com/ghenbV7T5VMOA3iqp3PThC82exqcu7iVng_iWNx1Ujak72Ti4oZZ_XzSVzIrfk9arP1XrFtnZA=s88-c-k-c0x00ffffff-no-rj",
+        "isVerified": false,
+        "isCurrentUser": true,
+        "isCreator": false,
+        "channelCommand": {
+         "innertubeCommand": {
+          "commandMetadata": {
+           "webCommandMetadata": {
+            "url": "/@Oatman69",
+            "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+            "rootVe": 3611,
+            "apiUrl": "/youtubei/v1/browse"
+           }
+          },
+          "browseEndpoint": {
+           "browseId": "UCWf34D_s8K_m2vwBISIDWtg",
+           "canonicalBaseUrl": "/@Oatman69"
+          }
+         }
+        },
+        "isArtist": false
+       },
+       "toolbar": {
+        "likeCountLiked": "569K",
+        "likeCountNotliked": "569K",
+        "replyCount": "723",
+        "likeButtonA11y": "Like this comment along with 569K other people",
+        "engagementToolbarStyle": {
+         "value": "ENGAGEMENT_TOOLBAR_STYLE_VALUE_DEFAULT"
+        },
+        "likeCountA11y": "569K likes",
+        "replyCountA11y": "723 replies",
+        "likeInactiveTooltip": "Like",
+        "likeActiveTooltip": "Unlike",
+        "dislikeInactiveTooltip": "Dislike",
+        "dislikeActiveTooltip": "Remove dislike",
+        "heartActiveTooltip": "\u2764 by @RickAstleyYT"
+       }
+      }
+     }
+    },
+    {
+     "entityKey": "Eh1VZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZy8xMiBGKAE%3D",
+     "type": "ENTITY_MUTATION_TYPE_REPLACE",
+     "payload": {
+      "engagementToolbarSurfaceEntityPayload": {
+       "key": "Eh1VZ3lFblhmZEMtdW13dlR0OEpGNEFhQUJBZy8xMiBGKAE%3D",
+       "likeCommand": {
+        "innertubeCommand": {
+         "performCommentActionEndpoint": {
+          "action": "LIKE-1"
+         }
+        }
+       },
+       "unlikeCommand": {
+        "innertubeCommand": {
+         "performCommentActionEndpoint": {
+          "action": "UNLIKE-1"
+         }
+        }
+       },
+       "dislikeCommand": {
+        "innertubeCommand": {}
+       },
+       "undislikeCommand": {
+        "innertubeCommand": {}
+       },
+       "replyCommand": {
+        "innertubeCommand": {
+         "createCommentReplyDialogEndpoint": {
+          "dialog": {
+           "commentReplyDialogRenderer": {
+            "replyButton": {
+             "buttonRenderer": {
+              "serviceEndpoint": {
+               "createCommentReplyEndpoint": {
+                "createReplyParams": "REPLY-1"
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       },
+       "isEngagementToolbar": true,
+       "menuCommand": {
+        "innertubeCommand": {
+         "menuEndpoint": {
+          "menu": {
+           "menuRenderer": {
+            "items": [
+             {
+              "menuNavigationItemRenderer": {
+               "text": {
+                "runs": [
+                 {
+                  "text": "Report"
+                 }
+                ]
+               },
+               "navigationEndpoint": {}
+              }
+             },
+             {
+              "menuNavigationItemRenderer": {
+               "text": {
+                "runs": [
+                 {
+                  "text": "Delete"
+                 }
+                ]
+               },
+               "navigationEndpoint": {
+                "confirmDialogEndpoint": {
+                 "content": {
+                  "confirmDialogRenderer": {
+                   "confirmButton": {
+                    "buttonRenderer": {
+                     "serviceEndpoint": {
+                      "performCommentActionEndpoint": {
+                       "action": "DELETE-1"
+                      }
+                     }
+                    }
+                   }
+                  }
+                 }
+                }
+               }
+              }
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

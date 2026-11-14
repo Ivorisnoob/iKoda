@@ -38,10 +38,10 @@ struct ModeToggle: View {
                             .contentTransition(.symbolEffect(.replace))
                         Text(app.settings.mode.title)
                         Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.bold))
+                            .font(.scaled(.caption2).weight(.bold))
                             .foregroundStyle(.secondary)
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(.scaled(.subheadline).weight(.semibold))
                     .padding(.horizontal, 4)
                 }
                 .accessibilityLabel("Mode")
@@ -119,7 +119,7 @@ struct VideoLibraryView: View {
                                 Label("Channels", systemImage: "person.2")
                             }
                         }
-                        .font(.body.weight(.medium))
+                        .font(.scaled(.body).weight(.medium))
                     }
                     Section {
                     ForEach(library.watched) { video in
@@ -163,12 +163,12 @@ struct VideoLibraryView: View {
 private struct ExploreGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Explore").font(.title3.bold())
+            Text("Explore").font(.scaled(.title3).bold())
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(ExploreTopic.allCases) { topic in
                     NavigationLink(value: Route.explore(topic)) {
                         Label(topic.title, systemImage: topic.systemImage)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.scaled(.subheadline).weight(.semibold))
                             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
                             .padding(.horizontal, 14)
                             .background(.fill.quinary, in: .rect(cornerRadius: 14, style: .continuous))

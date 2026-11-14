@@ -30,7 +30,7 @@ struct TasteArtistsPage: View {
             VStack(spacing: 8) {
                 if !taste.picked.isEmpty {
                     Text(taste.picked.count == 1 ? "1 artist picked" : "\(taste.picked.count) artists picked")
-                        .font(.footnote)
+                        .font(.scaled(.footnote))
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                 }
@@ -43,7 +43,9 @@ struct TasteArtistsPage: View {
                 Button("Skip Setup", action: skip)
             }
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
     @ViewBuilder
@@ -103,7 +105,7 @@ private struct TasteArtistCell: View {
                     .overlay(alignment: .bottomTrailing) {
                         if isPicked {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
+                                .font(.scaled(.title2))
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(.white, Color.accentColor)
                                 .background(Circle().fill(.background).padding(2))
@@ -114,7 +116,7 @@ private struct TasteArtistCell: View {
                     .scaleEffect(isPicked ? 0.92 : 1)
                     .padding(6)
                 Text(artist.name)
-                    .font(.subheadline.weight(isPicked ? .semibold : .regular))
+                    .font(.scaled(.subheadline).weight(isPicked ? .semibold : .regular))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
             }
@@ -167,7 +169,9 @@ struct TasteGenresPage: View {
                 Button("Skip Setup", action: skip)
             }
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
@@ -181,12 +185,12 @@ private struct GenreChip: View {
             HStack(spacing: 6) {
                 if isOn {
                     Image(systemName: "checkmark")
-                        .font(.subheadline.weight(.bold))
+                        .font(.scaled(.subheadline).weight(.bold))
                         .transition(.scale.combined(with: .opacity))
                 }
                 Text(title)
             }
-            .font(.body.weight(.medium))
+            .font(.scaled(.body).weight(.medium))
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .foregroundStyle(isOn ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
@@ -285,7 +289,7 @@ struct TasteDeckPage: View {
                     .frame(maxHeight: .infinity)
             } else if let card = taste.current {
                 Text("\(taste.deckIndex + 1) of \(taste.deck.count)")
-                    .font(.subheadline.monospacedDigit())
+                    .font(.scaled(.subheadline).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
                 cards(top: card)
@@ -309,7 +313,9 @@ struct TasteDeckPage: View {
                 }
             }
         }
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .sensoryFeedback(.impact(weight: .light), trigger: answers)
         .focusable()
         .focusEffectDisabled()
@@ -378,7 +384,7 @@ struct TasteDeckPage: View {
 
     private func stamp(_ systemImage: String, _ color: Color) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 30, weight: .bold))
+            .font(.scaledSystem(size: 30, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: 60, height: 60)
             .background(color, in: .circle)
@@ -425,7 +431,7 @@ private struct DeckCardView: View {
                         case .waiting: EmptyView()
                         }
                     }
-                    .font(.title3.weight(.semibold))
+                    .font(.scaled(.title3).weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
                     .glassEffect(.regular, in: .circle)
@@ -434,14 +440,14 @@ private struct DeckCardView: View {
                 }
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.reason.uppercased())
-                    .font(.caption.weight(.semibold))
+                    .font(.scaled(.caption).weight(.semibold))
                     .foregroundStyle(.tint)
                     .lineLimit(1)
                 Text(card.song.title)
-                    .font(.title2.bold())
+                    .font(.scaled(.title2).bold())
                     .lineLimit(2, reservesSpace: true)
                 Text(card.song.artistLine)
-                    .font(.body)
+                    .font(.scaled(.body))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -463,7 +469,7 @@ private struct DeckButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: large ? 28 : 22, weight: .semibold))
+                .font(.scaledSystem(size: large ? 28 : 22, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: large ? 72 : 60, height: large ? 72 : 60)
         }

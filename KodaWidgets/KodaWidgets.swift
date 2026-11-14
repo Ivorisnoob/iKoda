@@ -2,25 +2,25 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-// Koda's widgets: quick ways in that need nothing from the app to draw, since the builds
-// Koda ships can't share a container with an extension. What's playing is already on the
-// Lock Screen and in Control Center through the system's own Now Playing controls.
+// Koda's widgets, on the iPhone and the Mac. Quick Play and the Control Center controls need
+// nothing from the app to draw. Now Playing, Recently Played and Listening read what the app
+// writes to the shared folder (`SharedContainer`): the app group on the iPhone, once its
+// installer signs it with one, and on the Mac a folder in the listener's Library that the
+// widget's sandbox may read.
 
 @main
 struct KodaWidgets: WidgetBundle {
     var body: some Widget {
+        NowPlayingWidget()
+        RecentlyPlayedWidget()
+        ListeningWidget()
         QuickPlayWidget()
-        #if !targetEnvironment(macCatalyst)
+        #if os(iOS)
+        DownloadActivityWidget()
         LikedSongsControl()
         PlayPauseControl()
         #endif
     }
-}
-
-/// Koda's accent, as the app's asset catalog has it.
-private extension Color {
-    static let koda = Color(red: 0x3D / 255, green: 0x5A / 255, blue: 0xFE / 255)
-    static let kodaLight = Color(red: 0x86 / 255, green: 0x9C / 255, blue: 0xFF / 255)
 }
 
 // MARK: - Quick Play
@@ -48,10 +48,10 @@ struct QuickPlayWidget: Widget {
     }
 
     private static var families: [WidgetFamily] {
-        #if targetEnvironment(macCatalyst)
-        [.systemSmall, .systemMedium]
-        #else
+        #if os(iOS)
         [.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular]
+        #else
+        [.systemSmall, .systemMedium]
         #endif
     }
 }
@@ -62,8 +62,10 @@ struct QuickPlayView: View {
     var body: some View {
         switch family {
         case .systemMedium: medium
+        #if os(iOS)
         case .accessoryCircular: circular
         case .accessoryRectangular: rectangular
+        #endif
         default: small
         }
     }
@@ -148,7 +150,7 @@ struct QuickPlayView: View {
 
 // MARK: - Control Center
 
-#if !targetEnvironment(macCatalyst)
+#if os(iOS)
 struct LikedSongsControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "LikedSongsControl") {

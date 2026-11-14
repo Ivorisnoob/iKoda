@@ -1,7 +1,11 @@
 import KodaCore
 import PhotosUI
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A playlist made on this phone: play it, find in it, reorder it, give it a photo, name and
 /// description, or delete it.
@@ -17,19 +21,28 @@ struct UserPlaylistView: View {
     @State private var draftSummary = ""
     @State private var photo: PhotosPickerItem?
     @State private var confirmDelete = false
+    #if os(iOS)
     @State private var editMode: EditMode = .inactive
+    /// The songs chosen while editing, for the bar along the bottom (`SongSelectionBar`).
+    @State private var selection = Set<String>()
+    #endif
     @State private var query = ""
 
     var body: some View {
         if let playlist = library.userPlaylist(id) {
+            #if os(iOS)
             if Platform.isMac { macContent(playlist) } else { content(playlist) }
+            #else
+            macContent(playlist)
+            #endif
         } else {
             ContentUnavailableView("Playlist Deleted", systemImage: "music.note.list")
         }
     }
 
+#if os(iOS)
     private func content(_ playlist: UserPlaylist) -> some View {
-        List {
+        List(selection: $selection) {
             Group {
                 if editMode.isEditing { editableHeader(playlist) } else { header(playlist) }
             }
@@ -45,6 +58,8 @@ struct UserPlaylistView: View {
                 SongRow(song: song) {
                     player.play(playlist.songs, startAt: playlist.songs.firstIndex { $0.id == song.id } ?? 0)
                 }
+                // While editing, a tap is the list's: it selects the row.
+                .allowsHitTesting(!editMode.isEditing)
                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
                 .listRowSeparator(.hidden)
                 .swipeActions(edge: .leading) {
@@ -77,7 +92,23 @@ struct UserPlaylistView: View {
             }
         }
         .listStyle(.plain)
-        .environment(\.editMode, $editMode)
+        .modifier(SongSelectionBar(selection: $selection, editMode: $editMode, songs: playlist.songs,
+                                   removal: .init(title: "Remove from Playlist", systemImage: "minus.circle") { songs in
+            let chosen = Set(songs.map(\.id))
+            let offsets = IndexSet(playlist.songs.indices.filter { chosen.contains(playlist.songs[$0].id) })
+            library.removeSongs(atOffsets: offsets, fromPlaylist: id)
+        }))
+        // However editing starts or ends (the button, an action in the bar, the system's own
+        // two-finger select), the fields start from the playlist and what was typed is kept.
+        .onChange(of: editMode.isEditing) { _, editing in
+            if editing {
+                draftName = playlist.name
+                draftSummary = playlist.summary ?? ""
+                query = ""
+            } else {
+                saveDetails()
+            }
+        }
         .searchable(text: $query, placement: .navigationBarDrawer, prompt: "Find in Playlist")
         .background { PlaylistGlow(songs: playlist.songs) }
         .navigationBarTitleDisplayMode(.inline)
@@ -85,13 +116,6 @@ struct UserPlaylistView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(editMode.isEditing ? "Done" : "Edit") {
-                    if editMode.isEditing {
-                        saveDetails()
-                    } else {
-                        draftName = playlist.name
-                        draftSummary = playlist.summary ?? ""
-                        query = ""
-                    }
                     withAnimation { editMode = editMode.isEditing ? .inactive : .active }
                 }
                 .fontWeight(editMode.isEditing ? .semibold : .regular)
@@ -127,6 +151,7 @@ struct UserPlaylistView: View {
             Text("The songs stay wherever else you saved them.")
         }
     }
+#endif
 
     /// The Mac's playlist page: the mosaic beside the name, songs in columns, and each song's
     /// menu able to move it or take it out, where the phone drags and swipes.
@@ -202,15 +227,15 @@ struct UserPlaylistView: View {
                 .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
             VStack(spacing: 4) {
                 Text(playlist.name)
-                    .font(.title2.bold())
+                    .font(.scaled(.title2).bold())
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 Text(detail(playlist))
-                    .font(.subheadline)
+                    .font(.scaled(.subheadline))
                     .foregroundStyle(.secondary)
                 if let summary = playlist.summary {
                     Text(summary)
-                        .font(.footnote)
+                        .font(.scaled(.footnote))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 4)
@@ -239,7 +264,7 @@ struct UserPlaylistView: View {
                 PlaylistCover(playlist: playlist, size: 232, cornerRadius: 16)
                     .overlay {
                         Image(systemName: "camera.fill")
-                            .font(.title2)
+                            .font(.scaled(.title2))
                             .foregroundStyle(.white)
                             .frame(width: 64, height: 64)
                             .glassEffect(.regular.interactive(), in: .circle)
@@ -248,11 +273,11 @@ struct UserPlaylistView: View {
             }
             .accessibilityLabel("Playlist Photo")
             TextField("Playlist Name", text: $draftName)
-                .font(.title2.bold())
+                .font(.scaled(.title2).bold())
                 .multilineTextAlignment(.center)
                 .submitLabel(.done)
             TextField("Description", text: $draftSummary, axis: .vertical)
-                .font(.subheadline)
+                .font(.scaled(.subheadline))
                 .multilineTextAlignment(.center)
                 .lineLimit(1...5)
         }
@@ -312,7 +337,7 @@ struct PlaylistMosaic: View {
                 LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.accentColor.opacity(0.35)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                 Image(systemName: "music.note.list")
-                    .font(.system(size: size * 0.32, weight: .medium))
+                    .font(.scaledSystem(size: size * 0.32, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
             }
         }
@@ -333,7 +358,7 @@ struct PlaylistCover: View {
         if playlist.hasCover, let image = PlaylistCoverImages.image(for: playlist, in: library) {
             Color.clear
                 .frame(width: size, height: size)
-                .overlay { Image(uiImage: image).resizable().scaledToFill() }
+                .overlay { Image(platformImage: image).resizable().scaledToFill() }
                 .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(.primary.opacity(0.06), lineWidth: 0.5))
         } else {
@@ -346,31 +371,20 @@ struct PlaylistCover: View {
 /// never shown as the old one.
 @MainActor
 enum PlaylistCoverImages {
-    private static var cache: [String: UIImage] = [:]
+    private static var cache: [String: PlatformImage] = [:]
 
-    static func image(for playlist: UserPlaylist, in library: Library) -> UIImage? {
+    static func image(for playlist: UserPlaylist, in library: Library) -> PlatformImage? {
         let key = "\(playlist.id)-\(playlist.coverVersion)"
         if let hit = cache[key] { return hit }
         guard let file = library.playlistCoverFile(playlist.id),
-              let image = (try? Data(contentsOf: file)).flatMap(UIImage.init(data:)) else { return nil }
+              let image = (try? Data(contentsOf: file)).flatMap(PlatformImage.init(data:)) else { return nil }
         cache[key] = image
         return image
     }
 
     /// A picked photo cropped to a square 1024 pixels wide, as JPEG; nil if it isn't an image.
     nonisolated static func squareJPEG(_ data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let side = min(image.size.width, image.size.height)
-        guard side > 0 else { return nil }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let target = CGSize(width: min(1024, side), height: min(1024, side))
-        let scale = target.width / side
-        let squared = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            image.draw(in: CGRect(x: -(image.size.width - side) / 2 * scale, y: -(image.size.height - side) / 2 * scale,
-                                  width: image.size.width * scale, height: image.size.height * scale))
-        }
-        return squared.jpegData(compressionQuality: 0.85)
+        PlatformImages.squareJPEG(data, maxSide: 1024)
     }
 }
 
@@ -405,11 +419,11 @@ struct AddToPlaylistSheet: View {
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "plus")
-                                .font(.title3.weight(.semibold))
+                                .font(.scaled(.title3).weight(.semibold))
                                 .foregroundStyle(Color.accentColor)
                                 .frame(width: 52, height: 52)
                                 .background(.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
-                            Text("New Playlist").font(.body.weight(.medium))
+                            Text("New Playlist").font(.scaled(.body).weight(.medium))
                         }
                     }
                     .buttonStyle(.plain)
@@ -428,13 +442,13 @@ struct AddToPlaylistSheet: View {
                                 HStack(spacing: 14) {
                                     PlaylistCover(playlist: playlist, size: 52, cornerRadius: 8)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(playlist.name).font(.body.weight(.medium)).lineLimit(1)
+                                        Text(playlist.name).font(.scaled(.body).weight(.medium)).lineLimit(1)
                                         // Songs already in it are skipped, never added twice; said before the tap.
                                         Text([playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs",
                                               containsAll ? (target.songs.count == 1 ? "Already added" : "All already added")
                                                   : already > 0 ? "\(already) already in it" : nil]
                                             .compactMap { $0 }.joined(separator: " · "))
-                                            .font(.subheadline).foregroundStyle(.secondary)
+                                            .font(.scaled(.subheadline)).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     if containsAll {
@@ -451,7 +465,9 @@ struct AddToPlaylistSheet: View {
                 }
             }
             .navigationTitle(target.songs.count == 1 ? "Add to Playlist" : "Add \(target.songs.count) Songs")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") { dismiss() }
@@ -540,9 +556,9 @@ struct MacNewPlaylistSheet: View {
             HStack(spacing: 14) {
                 PlaylistMosaic(songs: target.songs, size: 64, cornerRadius: 8)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("New Playlist").font(.headline)
+                    Text("New Playlist").font(.scaled(.headline))
                     Text(target.songs.count == 1 ? "With “\(target.songs[0].title)”" : "With these \(target.songs.count) songs")
-                        .font(.callout)
+                        .font(.scaled(.callout))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -595,7 +611,7 @@ struct MacPlaylistDetailsSheet: View {
             HStack(alignment: .top, spacing: 18) {
                 PlaylistCover(playlist: current, size: 120, cornerRadius: 10)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Edit Details").font(.headline)
+                    Text("Edit Details").font(.scaled(.headline))
                     PhotosPicker(current.hasCover ? "Choose Another Photo…" : "Choose Photo…", selection: $photo, matching: .images)
                     if current.hasCover {
                         Button("Remove Photo", role: .destructive) { library.setPlaylistCover(nil, for: playlist.id) }

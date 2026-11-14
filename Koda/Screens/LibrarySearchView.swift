@@ -82,9 +82,9 @@ struct LibrarySearchResults: View {
         HStack(spacing: 14) {
             cover()
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body).lineLimit(1)
+                Text(title).font(.scaled(.body)).lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle).font(.scaled(.subheadline)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }

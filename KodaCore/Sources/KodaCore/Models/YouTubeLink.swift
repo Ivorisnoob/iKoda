@@ -70,6 +70,21 @@ public enum YouTubeLink: Equatable, Sendable {
         }
     }
 
+    /// The link inside one Koda's share extension handed over (`koda://open?url=<the link>`),
+    /// or `url` itself.
+    public static func unwrapped(_ url: URL) -> URL {
+        guard url.scheme?.lowercased() == "koda", url.host()?.lowercased() == "open",
+              let inner = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "url" })?.value,
+              let link = URL(string: inner) else { return url }
+        return link
+    }
+
+    /// Whether a link is to YouTube itself rather than YouTube Music: with Video Mode on, its
+    /// video is one to watch and its channel a channel, not a song and an artist.
+    public static func isVideoSite(_ url: URL) -> Bool {
+        ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].contains(url.host()?.lowercased() ?? "")
+    }
+
     /// A playlist id, or nil for a radio mix (`RD…`), which has no page of its own.
     private static func playlistLink(_ playlistId: String) -> YouTubeLink? {
         guard !playlistId.isEmpty, !playlistId.hasPrefix("RD") else { return nil }

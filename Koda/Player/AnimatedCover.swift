@@ -2,7 +2,11 @@ import AVFoundation
 import KodaCore
 import MediaPlayer
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The playing album's animated cover laid over its still one, as Music shows it: it fades
 /// in once the loop's first frame is ready, moves while the music plays and holds its frame
@@ -181,7 +185,7 @@ struct SideMotionArt: View {
 
 /// A muted loop on an AVPlayerLayer. It never keeps the screen awake, never goes to AirPlay
 /// and never touches the audio session: the music's own player owns all three.
-private struct LoopingVideo: UIViewRepresentable {
+private struct LoopingVideo {
     let file: URL
     let isPlaying: Bool
     let onReady: @MainActor @Sendable () -> Void
@@ -201,22 +205,22 @@ private struct LoopingVideo: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> PlayerLayerView {
+    private func make(_ coordinator: Coordinator) -> PlayerLayerView {
         let view = PlayerLayerView()
         view.playerLayer.videoGravity = .resizeAspectFill
-        view.playerLayer.player = context.coordinator.player
-        context.coordinator.looper = AVPlayerLooper(player: context.coordinator.player, templateItem: AVPlayerItem(url: file))
-        context.coordinator.readiness = Self.observeReadiness(view.playerLayer, onReady: onReady)
+        view.playerLayer.player = coordinator.player
+        coordinator.looper = AVPlayerLooper(player: coordinator.player, templateItem: AVPlayerItem(url: file))
+        coordinator.readiness = Self.observeReadiness(view.playerLayer, onReady: onReady)
         return view
     }
 
-    func updateUIView(_ view: PlayerLayerView, context: Context) {
-        let player = context.coordinator.player
+    private func update(_ coordinator: Coordinator) {
+        let player = coordinator.player
         if isPlaying, player.timeControlStatus == .paused { player.play() }
         if !isPlaying, player.timeControlStatus != .paused { player.pause() }
     }
 
-    static func dismantleUIView(_ view: PlayerLayerView, coordinator: Coordinator) {
+    fileprivate static func dismantle(_ coordinator: Coordinator) {
         coordinator.readiness?.invalidate()
         coordinator.looper?.disableLooping()
         coordinator.player.pause()
@@ -231,6 +235,20 @@ private struct LoopingVideo: UIViewRepresentable {
         }
     }
 }
+
+#if os(macOS)
+extension LoopingVideo: NSViewRepresentable {
+    func makeNSView(context: Context) -> PlayerLayerView { make(context.coordinator) }
+    func updateNSView(_ view: PlayerLayerView, context: Context) { update(context.coordinator) }
+    static func dismantleNSView(_ view: PlayerLayerView, coordinator: Coordinator) { dismantle(coordinator) }
+}
+#else
+extension LoopingVideo: UIViewRepresentable {
+    func makeUIView(context: Context) -> PlayerLayerView { make(context.coordinator) }
+    func updateUIView(_ view: PlayerLayerView, context: Context) { update(context.coordinator) }
+    static func dismantleUIView(_ view: PlayerLayerView, coordinator: Coordinator) { dismantle(coordinator) }
+}
+#endif
 
 /// The animated covers handed to the Lock Screen, square and tall. The system asks for the
 /// preview frame and the loop file only when it is about to show them, at the size it wants,
@@ -256,7 +274,7 @@ enum LockScreenAnimatedArt {
             let pixels = Int(max(size.width, size.height * shape.aspect).rounded())
             Task {
                 let data = await motion.previewImage(covers, shape: shape, pixels: pixels, allowsCellular: allowsCellular)
-                reply.send(data.flatMap(UIImage.init(data:)))
+                reply.send(data.flatMap(PlatformImage.init(data:)))
             }
         } videoAssetFileURLRequestHandler: { size, completion in
             let reply = Reply(send: completion)

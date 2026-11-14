@@ -28,6 +28,29 @@ import Testing
         #expect(link("https://youtu.be/short") == nil)
     }
 
+    @Test func aLinkFromTheShareExtensionIsUnwrapped() throws {
+        let shared = try #require(URL(string: "koda://open?url=https%3A%2F%2Fyoutu.be%2FdQw4w9WgXcQ%3Fsi%3Dabc"))
+        let inner = YouTubeLink.unwrapped(shared)
+        #expect(inner.absoluteString == "https://youtu.be/dQw4w9WgXcQ?si=abc")
+        #expect(YouTubeLink(inner) == .song(videoId: "dQw4w9WgXcQ"))
+        #expect(YouTubeLink.isVideoSite(inner))
+        // Anything else is left as it came, and YouTube Music is not the video site.
+        let own = try #require(URL(string: "koda://watch?v=dQw4w9WgXcQ"))
+        #expect(YouTubeLink.unwrapped(own) == own)
+        #expect(!YouTubeLink.isVideoSite(try #require(URL(string: "https://music.youtube.com/watch?v=dQw4w9WgXcQ"))))
+    }
+
+    @Test func downloadProgressCountsPartFetchedSongs() {
+        let progress = Downloads.Progress(finished: 2, total: 8, fetching: [0.5, 0.25], current: "Song")
+        #expect(progress.finished == 2)
+        #expect(progress.total == 8)
+        #expect(abs(progress.fraction - 2.75 / 8) < 0.0001)
+        // A count that fell behind what is known never reads past the whole.
+        let odd = Downloads.Progress(finished: 3, total: 1, fetching: [1], current: nil)
+        #expect(odd.total == 4)
+        #expect(odd.fraction == 1)
+    }
+
     @Test func findsALinkInText() {
         #expect(YouTubeLink(text: "listen to this https://youtu.be/dQw4w9WgXcQ !!") == .song(videoId: "dQw4w9WgXcQ"))
         #expect(YouTubeLink(text: "the weeknd") == nil)

@@ -42,8 +42,13 @@ final class VideoPlayback {
     private(set) var resumedFrom: TimeInterval?
     /// The video played to its end.
     private(set) var hasEnded = false
-    /// What plays when this one ends: Up Next's first choice.
-    private(set) var upNext: Video?
+    /// Videos the listener lined up (Play Next, Add to Queue): they play in this order when the
+    /// one on ends, before anything YouTube suggests, and whether or not Autoplay is on.
+    private(set) var queue: [Video] = []
+    /// YouTube's own pick for after this video, from its watch page.
+    private(set) var suggested: Video?
+    /// What plays when this one ends: the queue's first, else YouTube's pick.
+    var upNext: Video? { queue.first ?? suggested }
     /// Seconds until `upNext` starts, counting down after the end; nil when nothing is counting.
     private(set) var autoplayCountdown: Int?
     /// The last move to the next video that the player made by itself, so the page showing the
@@ -55,6 +60,29 @@ final class VideoPlayback {
 
     let player = AVPlayer()
     static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+    /// The frames the timeline previews under the pointer, from the stream's answer.
+    private(set) var storyboard: VideoStoryboard?
+    /// Chapters by video, as watch pages bring them in (a page can load before or after its
+    /// video starts).
+    private(set) var knownChapters: [String: [VideoChapter]] = [:]
+    /// The playing video's chapters, in order; empty when it has none.
+    var chapters: [VideoChapter] { current.flatMap { knownChapters[$0.id] } ?? [] }
+    /// Sponsor, self-promotion and subscribe-reminder parts SponsorBlock marked in the playing
+    /// video, skipped as they come (only with Skip Sponsors on).
+    private(set) var sponsorSegments: [SponsorSegment] = []
+    /// The part just skipped, for the player to say so and offer to go back.
+    private(set) var sponsorSkip: SponsorSkip?
+    /// Whether SponsorBlock is asked about each video (Settings → Videos, off by default).
+    @ObservationIgnored var skipsSponsors: () -> Bool = { false }
+    @ObservationIgnored private var skippedSegments: Set<String> = []
+    /// Where a video asked for at a time (a chapter of one not yet on) starts.
+    @ObservationIgnored private var pendingStart: TimeInterval?
+
+    struct SponsorSkip: Equatable {
+        let id: String
+        let title: String
+        let from: TimeInterval
+    }
     /// The rates a hold can reach by sliding sideways.
     static let boostRange: ClosedRange<Float> = 1.25...3
 
@@ -99,6 +127,7 @@ final class VideoPlayback {
     init(music: YouTubeMusic) {
         self.music = music
         player.allowsExternalPlayback = true
+        player.volume = volume
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main,
                                                       using: Self.ticker(for: self))
         endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main,
@@ -136,6 +165,7 @@ final class VideoPlayback {
         }
         guard let id = current?.id, player.currentItem != nil else { return }
         if playing { playedSeconds += 0.25 }
+        skipSponsorSegment()
         // Where it got to: every few seconds while it plays, and as it stops.
         if !isLive, duration > 0, abs(time - lastProgressSave) >= 5 || (wasPlaying && !playing) {
             lastProgressSave = time
@@ -164,9 +194,12 @@ final class VideoPlayback {
 
     // MARK: Playing
 
-    /// Start `video`, unless it's already the one on.
-    func play(_ video: Video) {
+    /// Start `video`, unless it's already the one on; `startingAt` jumps there (a chapter).
+    func play(_ video: Video, startingAt start: TimeInterval? = nil) {
         if current?.id == video.id, player.currentItem != nil || (isLoading && error == nil) {
+            if let start {
+                if player.currentItem != nil { seek(to: start) } else { pendingStart = start }
+            }
             // Back on the same video's page, or the page catching up with an autoplay already
             // loading it: keep the details fresher, don't restart it.
             current = video.merged(over: current)
@@ -181,7 +214,8 @@ final class VideoPlayback {
         isLoading = true
         hasEnded = false
         resumedFrom = nil
-        upNext = nil
+        suggested = nil
+        queue.removeAll { $0.id == video.id }
         boost = nil
         time = 0
         duration = video.duration ?? 0
@@ -190,6 +224,11 @@ final class VideoPlayback {
         captions = []
         caption = nil
         legible = nil
+        storyboard = nil
+        sponsorSegments = []
+        sponsorSkip = nil
+        skippedSegments = []
+        pendingStart = start
         quality = defaultQuality()
         spanStart = 0
         playedSeconds = 0
@@ -202,9 +241,13 @@ final class VideoPlayback {
                 let stream = try await music.videoStream(video.id)
                 guard !Task.isCancelled, current?.id == video.id else { return }
                 let item = AVPlayerItem(url: stream.url)
+                #if os(iOS)
                 item.externalMetadata = Self.metadata(for: video)
+                #endif
                 item.preferredMaximumResolution = Self.limit(for: quality)
                 qualities = stream.qualities
+                storyboard = stream.storyboard
+                if skipsSponsors(), !stream.isLive { loadSponsorSegments(for: video.id) }
                 player.replaceCurrentItem(with: item)
                 player.defaultRate = speed
                 // Back where it was left, as YouTube does; a live stream is always now.
@@ -215,6 +258,14 @@ final class VideoPlayback {
                     spanStart = position
                     lastProgressSave = position
                     resumedFrom = position
+                }
+                if let start = pendingStart {
+                    pendingStart = nil
+                    await player.seek(to: CMTime(seconds: start, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                    guard current?.id == video.id else { return }
+                    time = start
+                    spanStart = start
+                    resumedFrom = nil
                 }
                 Self.activateVideoSession()
                 player.play()
@@ -232,7 +283,9 @@ final class VideoPlayback {
     func update(_ video: Video) {
         guard current?.id == video.id else { return }
         current = video.merged(over: current)
+        #if os(iOS)
         player.currentItem?.externalMetadata = Self.metadata(for: video)
+        #endif
     }
 
     func togglePlay() {
@@ -254,6 +307,11 @@ final class VideoPlayback {
         tick()
     }
 
+    /// Play on if it's paused (a time tapped in a comment starts the video there).
+    func resume() {
+        if player.currentItem != nil, player.timeControlStatus == .paused { togglePlay() }
+    }
+
     func seek(to seconds: TimeInterval) {
         let target = max(0, duration > 0 ? min(seconds, duration) : seconds)
         // A jump ends the span watched so far; what was skipped is never claimed as seen.
@@ -264,6 +322,68 @@ final class VideoPlayback {
         resumedFrom = nil
         cancelAutoplay()
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    // MARK: Chapters and SponsorBlock
+
+    func setChapters(_ chapters: [VideoChapter], for videoId: String) {
+        guard knownChapters[videoId] != chapters else { return }
+        knownChapters[videoId] = chapters
+        // A handful is enough to keep; pages come and go.
+        if knownChapters.count > 30, let stale = knownChapters.keys.first(where: { $0 != current?.id && $0 != videoId }) {
+            knownChapters[stale] = nil
+        }
+    }
+
+    private func loadSponsorSegments(for videoId: String) {
+        Task {
+            let segments = await SponsorBlock.segments(for: videoId)
+            guard current?.id == videoId else { return }
+            let skipped: Set<SponsorSegment.Category> = [.sponsor, .selfpromo, .interaction]
+            sponsorSegments = segments.filter { skipped.contains($0.category) }
+        }
+    }
+
+    /// Playing into a marked part jumps to its end, once per part, so seeking back into it on
+    /// purpose plays it.
+    private func skipSponsorSegment() {
+        guard isPlaying, !sponsorSegments.isEmpty,
+              let segment = sponsorSegments.first(where: { time >= $0.start && time < $0.end - 0.5 && !skippedSegments.contains($0.id) })
+        else { return }
+        skippedSegments.insert(segment.id)
+        seek(to: segment.end)
+        sponsorSkip = SponsorSkip(id: segment.id, title: segment.category.title, from: segment.start)
+    }
+
+    /// Back to the start of the part just skipped; it then plays.
+    func undoSponsorSkip() {
+        guard let skip = sponsorSkip else { return }
+        sponsorSkip = nil
+        seek(to: skip.from)
+    }
+
+    func dismissSponsorSkip() {
+        sponsorSkip = nil
+    }
+
+    /// One frame on or back, while paused (`,` and `.`).
+    func step(by frames: Int) {
+        guard let item = player.currentItem, !isPlaying else { return }
+        item.step(byCount: frames)
+    }
+
+    /// The next speed up or down the list (`>` and `<`).
+    func stepSpeed(by offset: Int) {
+        let index = Self.speeds.firstIndex(of: speed) ?? Self.speeds.firstIndex(of: 1)!
+        setSpeed(Self.speeds[min(Self.speeds.count - 1, max(0, index + offset))])
+    }
+
+    /// Subtitles on (the listener's language if offered, else the first) or off (`C`).
+    func toggleCaptions() {
+        if caption != nil { return setCaption(nil) }
+        let language = Locale.current.language.languageCode?.identifier
+        let preferred = captions.first { $0.locale?.language.languageCode?.identifier == language } ?? captions.first
+        setCaption(preferred)
     }
 
     func skip(by seconds: TimeInterval) {
@@ -286,7 +406,8 @@ final class VideoPlayback {
         isPlaying = false
         isLoading = false
         error = nil
-        upNext = nil
+        suggested = nil
+        queue = []
         isFullScreen = false
     }
 
@@ -297,9 +418,18 @@ final class VideoPlayback {
         if isPlaying { reportSpan(final: true) }
     }
 
-    var isMuted: Bool {
-        get { player.isMuted }
-        set { player.isMuted = newValue }
+    /// Muted, kept here as well as on the player so the controls redraw when it changes.
+    var isMuted = false {
+        didSet { player.isMuted = isMuted }
+    }
+
+    /// The video's own volume (the Mac's controls set it; the iPhone's buttons set the system's),
+    /// remembered between videos and launches.
+    var volume: Float = UserDefaults.standard.object(forKey: "koda.video.volume") as? Float ?? 1 {
+        didSet {
+            player.volume = volume
+            UserDefaults.standard.set(volume, forKey: "koda.video.volume")
+        }
     }
 
     // MARK: Hold to speed up
@@ -329,7 +459,52 @@ final class VideoPlayback {
     /// The watch page knows what YouTube would play next.
     func setUpNext(_ video: Video?, after id: String) {
         guard current?.id == id, video?.id != id else { return }
-        upNext = video
+        suggested = video
+    }
+
+    // MARK: Queue
+
+    /// Right after the one playing. With nothing on, it simply plays.
+    func queueNext(_ video: Video) {
+        guard current != nil else { return play(video) }
+        guard video.id != current?.id else { return }
+        queue.removeAll { $0.id == video.id }
+        queue.insert(video, at: 0)
+    }
+
+    /// After everything already lined up.
+    func queueLast(_ video: Video) {
+        guard current != nil else { return play(video) }
+        guard video.id != current?.id, !queue.contains(where: { $0.id == video.id }) else { return }
+        queue.append(video)
+    }
+
+    /// One of the queued videos now, ahead of its turn. The page showing the video before
+    /// follows it, as it follows Up Next.
+    func playFromQueue(_ video: Video) {
+        guard let from = current?.id, from != video.id else { return play(video) }
+        play(video)
+        autoplayed = (from, video)
+    }
+
+    func isQueued(_ video: Video) -> Bool {
+        queue.contains { $0.id == video.id }
+    }
+
+    func removeFromQueue(_ ids: Set<String>) {
+        queue.removeAll { ids.contains($0.id) }
+    }
+
+    func removeFromQueue(atOffsets offsets: IndexSet) {
+        queue.remove(atOffsets: offsets)
+    }
+
+    func moveQueue(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        queue.move(fromOffsets: offsets, toOffset: destination)
+    }
+
+    func clearQueue() {
+        queue = []
     }
 
     /// The watch page showing `id` is on screen, or went away.
@@ -354,13 +529,14 @@ final class VideoPlayback {
         tick()
         if let id = self.current?.id, !isLive, duration > 0 { onProgress?(id, duration, duration) }
         reportSpan(final: true)
-        guard autoplays(), !isLive, let id = self.current?.id else { return }
+        // A queue plays on by itself; YouTube's pick only with Autoplay on.
+        guard !queue.isEmpty || autoplays(), !isLive, let id = self.current?.id else { return }
         countdown = Task {
             if upNext == nil {
                 // The page was never opened (or hadn't loaded): ask YouTube what's next.
                 let page = try? await music.watchPage(id)
                 guard !Task.isCancelled, self.current?.id == id else { return }
-                upNext = page?.next
+                suggested = page?.next
             }
             guard upNext != nil else { return }
             for remaining in stride(from: 5, through: 1, by: -1) {
@@ -453,7 +629,9 @@ final class VideoPlayback {
         guard AVPictureInPictureController.isPictureInPictureSupported(), pictureInPictureLayer !== layer else { return }
         pictureInPictureLayer = layer
         let controller = AVPictureInPictureController(playerLayer: layer)
+        #if os(iOS)
         controller?.canStartPictureInPictureAutomaticallyFromInline = true
+        #endif
         let delegate = PictureInPictureDelegate { [weak self] active in self?.isInPictureInPicture = active }
         controller?.delegate = delegate
         pictureInPicture = controller
@@ -476,10 +654,12 @@ final class VideoPlayback {
     /// The songs' session is long-form audio, which iOS won't put a picture in picture over; a
     /// video plays as a movie. The songs' player sets its own policy back each time it starts.
     private static func activateVideoSession() {
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         guard session.routeSharingPolicy != .default || session.mode != .moviePlayback else { return }
         try? session.setCategory(.playback, mode: .moviePlayback, policy: .default)
         try? session.setActive(true)
+        #endif
     }
 
     private static func message(_ error: MusicError) -> String {

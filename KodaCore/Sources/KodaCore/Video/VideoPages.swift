@@ -59,7 +59,9 @@ enum VideoPages {
             commentCount: comments.first("engagementPanelTitleHeaderRenderer")["contextualInfo"].text.nonEmptyString,
             commentsToken: commentsToken(root),
             autoplayId: root.first("autoplayVideo")["watchEndpoint"]["videoId"].nonEmpty,
-            related: page(related)
+            related: page(related),
+            chapters: chapters(root),
+            richDescription: RichText(secondary["attributedDescription"])
         )
     }
 
@@ -216,31 +218,130 @@ enum VideoPages {
         return components.scheme?.hasPrefix("http") == true ? components.url : nil
     }
 
-    /// A page of comments: `commentEntityPayload`s in the framework updates, in order (replies
-    /// left out), and the token at the end of the list for the next page.
+    /// A page of comments or of one comment's replies. The comments themselves are
+    /// `commentEntityPayload`s in the framework updates; their order, and each one's replies, are
+    /// the response's list of `commentThreadRenderer`s (bare `commentViewModel`s on a page of
+    /// replies) [verified November 2026]. What an account can do with each (like, reply, delete)
+    /// sits in its toolbar surface entity, empty stubs signed out [Koda for Android, July 2026].
     static func comments(_ root: JSON) -> CommentsPage {
-        let comments = root.objects("commentEntityPayload").compactMap { payload -> VideoComment? in
-            let properties = payload["properties"]
-            guard let id = properties["commentId"].nonEmpty, (properties["replyLevel"].int ?? 0) == 0 else { return nil }
-            let author = payload["author"]
-            let toolbar = payload["toolbar"]
-            return VideoComment(id: id, author: author["displayName"].string ?? "", authorChannelId: author["channelId"].nonEmpty,
-                                avatar: author["avatarThumbnailUrl"].string.flatMap(URL.imageURL),
-                                text: properties["content"]["content"].string ?? "", published: properties["publishedTime"].string ?? "",
-                                likes: toolbar["likeCountNotliked"].string ?? "", replies: toolbar["replyCount"].string ?? "",
-                                isCreator: author["isCreator"].bool == true, isVerified: author["isVerified"].bool == true)
-        }
+        let entities = commentEntities(root)
+        var comments: [VideoComment] = []
         var token: String?
         for key in ["onResponseReceivedEndpoints", "onResponseReceivedActions"] {
             for action in root[key].array {
                 let items = action["reloadContinuationItemsCommand"]["continuationItems"].exists
                     ? action["reloadContinuationItemsCommand"]["continuationItems"]
                     : action["appendContinuationItemsAction"]["continuationItems"]
-                if let found = Self.token(items) { token = found }
+                for item in items.array {
+                    let thread = item["commentThreadRenderer"]
+                    let model = viewModel(thread.exists ? thread : item)
+                    if let id = model["commentId"].nonEmpty, let entity = entities.byId[id] {
+                        // A thread's first continuation opens its replies.
+                        let replies = thread["replies"].first("continuationCommand")["token"].nonEmpty
+                        comments.append(comment(id: id, entity: entity, model: model, repliesToken: replies, in: entities))
+                    } else if let next = item["continuationItemRenderer"].first("continuationCommand")["token"].nonEmpty {
+                        // More comments end the list with an endpoint, more replies with a button.
+                        token = next
+                    }
+                }
+            }
+        }
+        if comments.isEmpty {
+            // The list's shape moved: the entities alone still say what was written, in order.
+            comments = entities.order.compactMap { id in
+                guard let entity = entities.byId[id], (entity["properties"]["replyLevel"].int ?? 0) == 0 else { return nil }
+                return comment(id: id, entity: entity, model: .null, repliesToken: nil, in: entities)
             }
         }
         var seen = Set<String>()
-        return CommentsPage(comments: comments.filter { seen.insert($0.id).inserted }, continuation: token)
+        return CommentsPage(comments: comments.filter { seen.insert($0.id).inserted }, continuation: token,
+                            createParams: root.first("createCommentEndpoint")["createCommentParams"].nonEmpty)
+    }
+
+    /// The comment a post made, from `comment/create_comment` or `create_comment_reply`'s answer;
+    /// nil unless YouTube says it took.
+    static func createdComment(_ root: JSON) -> VideoComment? {
+        guard root.objects("actionResult").contains(where: { $0["status"].string == "STATUS_SUCCEEDED" }) else { return nil }
+        let entities = commentEntities(root)
+        guard let id = entities.order.first, let entity = entities.byId[id] else { return nil }
+        let model = root.objects("commentViewModel").map(viewModel(wrapped:)).first { $0["commentId"].string == id } ?? .null
+        var comment = comment(id: id, entity: entity, model: model, repliesToken: nil, in: entities)
+        comment.replyParams = comment.replyParams ?? root.first("createCommentReplyEndpoint")["createReplyParams"].nonEmpty
+        comment.isOwn = true
+        return comment
+    }
+
+    /// Whether a `comment/perform_comment_action` (like, unlike, delete) took. An answer with no
+    /// verdict at all is YouTube's plain "done".
+    static func commentActionSucceeded(_ root: JSON) -> Bool {
+        let results = root.objects("actionResult")
+        return results.isEmpty || results.contains { $0["status"].string == "STATUS_SUCCEEDED" }
+    }
+
+    private struct CommentEntities {
+        var byId: [String: JSON] = [:]
+        var order: [String] = []
+        /// Like and heart state, by `toolbarStateKey`.
+        var states: [String: JSON] = [:]
+        /// The actions an account may take, by `toolbarSurfaceKey`.
+        var surfaces: [String: JSON] = [:]
+    }
+
+    private static func commentEntities(_ root: JSON) -> CommentEntities {
+        var found = CommentEntities()
+        for payload in root.objects("commentEntityPayload") {
+            guard let id = payload["properties"]["commentId"].nonEmpty, found.byId[id] == nil else { continue }
+            found.byId[id] = payload
+            found.order.append(id)
+        }
+        for state in root.objects("engagementToolbarStateEntityPayload") {
+            if let key = state["key"].nonEmpty { found.states[key] = state }
+        }
+        for surface in root.objects("engagementToolbarSurfaceEntityPayload") {
+            if let key = surface["key"].nonEmpty { found.surfaces[key] = surface }
+        }
+        return found
+    }
+
+    /// A list item's `commentViewModel`, which wraps another of the same name.
+    private static func viewModel(_ item: JSON) -> JSON {
+        viewModel(wrapped: item["commentViewModel"])
+    }
+
+    private static func viewModel(wrapped model: JSON) -> JSON {
+        model["commentViewModel"].exists ? model["commentViewModel"] : model
+    }
+
+    private static func comment(id: String, entity: JSON, model: JSON, repliesToken: String?, in entities: CommentEntities) -> VideoComment {
+        let properties = entity["properties"]
+        let author = entity["author"]
+        let toolbar = entity["toolbar"]
+        let content = RichText(properties["content"])
+        var comment = VideoComment(id: id, author: author["displayName"].string ?? "", authorChannelId: author["channelId"].nonEmpty,
+                                   avatar: author["avatarThumbnailUrl"].string.flatMap(URL.imageURL),
+                                   text: content.text, published: properties["publishedTime"].string ?? "",
+                                   likes: toolbar["likeCountNotliked"].string?.trimmingCharacters(in: .whitespaces) ?? "",
+                                   replies: toolbar["replyCount"].string?.trimmingCharacters(in: .whitespaces) ?? "",
+                                   isCreator: author["isCreator"].bool == true, isVerified: author["isVerified"].bool == true)
+        comment.links = content.links
+        comment.likesIfLiked = toolbar["likeCountLiked"].string?.trimmingCharacters(in: .whitespaces) ?? ""
+        comment.isOwn = author["isCurrentUser"].bool == true
+        comment.isPinned = model["pinnedText"].exists
+        comment.repliesToken = repliesToken
+        if let state = properties["toolbarStateKey"].nonEmpty.flatMap({ entities.states[$0] }) {
+            comment.isLiked = state["likeState"].string == "TOOLBAR_LIKE_STATE_LIKED"
+            comment.isHearted = state["heartState"].string == "TOOLBAR_HEART_STATE_HEARTED"
+        }
+        if let surface = model["toolbarSurfaceKey"].nonEmpty.flatMap({ entities.surfaces[$0] }) {
+            comment.likeAction = surface["likeCommand"].first("performCommentActionEndpoint")["action"].nonEmpty
+            comment.unlikeAction = surface["unlikeCommand"].first("performCommentActionEndpoint")["action"].nonEmpty
+            comment.replyParams = surface.first("createCommentReplyEndpoint")["createReplyParams"].nonEmpty
+            // The account's own comments have Delete in their menu; the request pins English.
+            comment.deleteAction = surface["menuCommand"].objects("menuNavigationItemRenderer")
+                .first { $0["text"].text == "Delete" }?
+                .first("performCommentActionEndpoint")["action"].nonEmpty
+        }
+        return comment
     }
 
     /// A channel's own rows leave the channel out; it's the page's.

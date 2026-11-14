@@ -25,13 +25,14 @@ struct RootView: View {
     }
 
     var body: some View {
-        if Platform.isMac {
-            MacRootView()
-        } else {
-            phone
-        }
+        #if os(iOS)
+        phone
+        #else
+        MacRootView()
+        #endif
     }
 
+#if os(iOS)
     private var phone: some View {
         @Bindable var model = model
         return TabView(selection: $model.selectedTab) {
@@ -94,7 +95,8 @@ struct RootView: View {
         // One bar under the tabs: a video left playing away from its page (in video mode, or
         // still playing in music mode, so it can always be stopped), else the songs' player,
         // which belongs to music mode.
-        .modifier(MiniPlayerAccessory(isEnabled: showsVideoBar || (player.current != nil && model.settings.mode == .music)) {
+        .modifier(MiniPlayerAccessory(isEnabled: !model.isSelectingSongs
+                                      && (showsVideoBar || (player.current != nil && model.settings.mode == .music))) {
             if showsVideoBar {
                 VideoMiniPlayer(playback: model.videos) {
                     if let video = model.videos.current { model.open(.video(video)) }
@@ -115,6 +117,12 @@ struct RootView: View {
         .task(id: player.current?.artwork) { await model.nowPlayingPalette.load(player.current?.artwork) }
         .playlistPicker(whenOnTop: !showsNowPlaying)
         .sheet(isPresented: $model.isProfilePresented) { ProfileView().appEnvironment(model) }
+        // A new release found by the daily check; never over the welcome or Settings, which
+        // shows it itself when asked from there.
+        .sheet(item: Binding(get: { model.onboarding == nil && !model.isProfilePresented ? model.updates.offered : nil },
+                             set: { if $0 == nil { model.updates.dismiss() } })) { release in
+            UpdateNoticeView(release: release).appEnvironment(model)
+        }
         .sheet(isPresented: $model.isAddingProfile) { AddProfileView().appEnvironment(model) }
         .fullScreenCover(item: $model.onboarding) { start in
             OnboardingView(start: start, music: model.music, library: model.library).appEnvironment(model)
@@ -131,7 +139,7 @@ struct RootView: View {
             videoSearchPath = []
         }
         .onOpenURL { url in
-            if !model.open(url) { model.linkError = "Koda can open YouTube Music songs, albums, playlists and artists." }
+            if !model.open(url) { model.linkError = "Koda can open links to YouTube and YouTube Music: songs, videos, albums, playlists, artists and channels." }
         }
         .alert("Couldn't Open Link", isPresented: Binding(get: { model.linkError != nil }, set: { if !$0 { model.linkError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -153,8 +161,10 @@ struct RootView: View {
             }
         }
     }
+#endif
 }
 
+#if os(iOS)
 /// The mini player as the tab bar's accessory; hidden while nothing is queued where the system allows it.
 private struct MiniPlayerAccessory<Accessory: View>: ViewModifier {
     let isEnabled: Bool
@@ -168,3 +178,4 @@ private struct MiniPlayerAccessory<Accessory: View>: ViewModifier {
         }
     }
 }
+#endif

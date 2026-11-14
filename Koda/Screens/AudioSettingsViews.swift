@@ -47,7 +47,9 @@ struct EqualizerSettingsView: View {
         }
         .sensoryFeedback(.selection, trigger: player.equalizer)
         .navigationTitle("Equalizer")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
@@ -66,7 +68,9 @@ struct AudioQualitySettingsView: View {
             }
         }
         .navigationTitle("Audio Quality")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
     private func picker(_ title: String, selection: Binding<StreamQuality>) -> some View {
@@ -74,11 +78,13 @@ struct AudioQualitySettingsView: View {
             ForEach(StreamQuality.allCases, id: \.self) { quality in
                 VStack(alignment: .leading) {
                     Text(quality.title)
-                    Text(quality.detail).font(.caption).foregroundStyle(.secondary)
+                    Text(quality.detail).font(.scaled(.caption)).foregroundStyle(.secondary)
                 }
                 .tag(quality)
             }
         }
+        #if os(iOS)
         .pickerStyle(.navigationLink)
+        #endif
     }
 }

@@ -27,6 +27,9 @@ final class AppModel {
     let discord: DiscordPresence?
 
     var isNowPlayingPresented = false
+    /// A song list is selecting (iPhone): the mini player steps away with the tab bar, as
+    /// Music's does, or it sat over the selection's action bar.
+    var isSelectingSongs = false
     /// The panel Now Playing should show when it next opens or is already open: the Mac's
     /// player bar and menu bar open lyrics and the queue directly.
     var requestedPanel: NowPlayingView.Panel?
@@ -34,10 +37,14 @@ final class AppModel {
     var sidePanel: MacSidePanel?
     /// Profile and Settings, opened from Home or from the Mac's Settings menu item.
     var isProfilePresented = false
+    /// File → New Playlist… on the Mac: the window asks for the name.
+    var isNamingPlaylist = false
     /// A sidebar place for the Mac's window to go to, asked for from elsewhere, e.g. Settings.
     var requestedMacSection: MacSection?
     /// The playing song's colours, kept ready for Now Playing while it is closed.
     let nowPlayingPalette = PaletteModel()
+    /// New releases of Koda: installed on the Mac, announced on the iPhone.
+    let updates = UpdateCenter()
     /// Set to switch tabs from anywhere, e.g. "Go to artist" inside Now Playing.
     var selectedTab: AppTab = .home
     /// A page to open on the current tab's stack.
@@ -82,8 +89,19 @@ final class AppModel {
     @ObservationIgnored private var videoFeeds: [VideoFeedModel.Kind: VideoFeedModel] = [:]
     /// Videos rated from Koda this run, by id, for the same reason.
     var videoRatings: [String: LikeStatus] = [:]
+    /// Videos known to be in the account's Watch Later (true) or taken out (false): saved or
+    /// removed from Koda this run, or seen on the Watch Later page. YouTube's other pages don't say.
+    var watchLater: [String: Bool] = [:]
+    /// The muted preview a video thumbnail plays while the pointer rests on it (Mac).
+    let videoPreview = VideoHoverPreview()
     /// The video being reported to the account's YouTube history, and whose account it is.
     @ObservationIgnored var videoHistory: (session: VideoWatchSession, profile: UUID)?
+    /// The widgets (iPhone and Mac), kept in step from here.
+    @ObservationIgnored private var widgetBridge: WidgetBridge?
+    #if os(iOS)
+    /// The iPhone's downloads Live Activity.
+    @ObservationIgnored private var downloadActivity: DownloadActivityController?
+    #endif
 
     struct PlaylistTarget: Identifiable {
         let id = UUID()
@@ -133,6 +151,7 @@ final class AppModel {
         }
         videos.autoplays = { settings.autoplaysVideos }
         videos.defaultQuality = { settings.videoQuality }
+        videos.skipsSponsors = { settings.skipsSponsors }
         videos.pauseMusic = { [player] in
             if player.wantsToPlay { player.togglePlayPause(from: "a video starting") }
         }
@@ -176,6 +195,12 @@ final class AppModel {
             return await LockScreenAnimatedArt.artwork(for: song, app: self)
         }
         connectAccounts()
+        widgetBridge = WidgetBridge(player: player, library: library)
+        updates.beforeRelaunch = { [weak self] in self?.saveState() }
+        updates.start()
+        #if os(iOS)
+        downloadActivity = DownloadActivityController(downloads: downloads)
+        #endif
         if settings.mode == .video { selectedTab = .videos }
         // Someone upgrading already has a library; the welcome is for a new install.
         if !settings.hasSeenOnboarding {
@@ -254,6 +279,7 @@ final class AppModel {
         channelsByUpload = []
         subscriptions = [:]
         videoRatings = [:]
+        watchLater = [:]
     }
 
     /// Open a page from outside a navigation stack: closes Now Playing and pushes it on the current tab.
@@ -316,9 +342,32 @@ final class AppModel {
     /// Open a YouTube, YouTube Music or koda:// link: a song plays with its radio, anything else opens its page.
     @discardableResult
     func open(_ url: URL) -> Bool {
+        // The share extension hands a link over inside one of Koda's own.
+        let url = YouTubeLink.unwrapped(url)
         guard let link = YouTubeLink(url) else { return false }
+        // From YouTube itself, with Video Mode on, a video is one to watch and a channel a
+        // channel; from YouTube Music, or with videos off, they are a song and an artist.
+        if settings.videoModeEnabled, YouTubeLink.isVideoSite(url) {
+            switch link {
+            case .song(let videoId):
+                showVideoSide()
+                open(.video(Video(id: videoId, title: "")))
+                return true
+            case .artist(let channelId):
+                showVideoSide()
+                open(.channel(id: channelId, name: ""))
+                return true
+            case .album, .playlist:
+                break
+            }
+        }
         openLink(link)
         return true
+    }
+
+    /// The iPhone's video tabs, for a page that belongs there; the Mac has one sidebar for both.
+    private func showVideoSide() {
+        if !Platform.isMac, settings.mode != .video { go(to: .videos) }
     }
 
     func openLink(_ link: YouTubeLink) {

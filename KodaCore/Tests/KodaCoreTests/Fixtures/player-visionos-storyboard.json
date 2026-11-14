@@ -1,0 +1,15 @@
+{
+ "playabilityStatus": {
+  "status": "OK"
+ },
+ "storyboards": {
+  "playerStoryboardSpecRenderer": {
+   "spec": "https://i.ytimg.com/sb/aqz-KE-bpKQ/storyboard3_L$L/$N.jpg?sqp=-oaymwGhAUg48quKqQOYAYgBAZUBAAAEQpgBMqABPKgBBLIBQBANDBAVHyYtDg4PEhcrLCkPDhAVHyoyKQ8RFBgmPTgtERQeKjFLRzYVHCkuOUdNPyUuNz1HUlFFM0BCQ0xERkO6AUARERUjRENDQxETFi9DQ0NDFRYpQ0NDQ0MjL0NDQ0NDQ0RDQ0NDQ0JCQ0NDQ0NCQkJDQ0NDQkJCQkNDQ0JCQkJCovOX_wMGCMSPtKgG|48#27#100#10#10#0#default#rs$AOn4CLAxqd1-Eh_jLaTTu9mqIES2u03Awg|80#45#128#10#10#5000#M$M#rs$AOn4CLDFGy6wrK1BMg2cHbC2_luWwMD5xw|160#90#128#5#5#5000#M$M#rs$AOn4CLC7aItN_RejAPMNuUuVk2lyfgHzJQ",
+   "recommendedLevel": 2
+  }
+ },
+ "videoDetails": {
+  "videoId": "aqz-KE-bpKQ",
+  "lengthSeconds": "635"
+ }
+}

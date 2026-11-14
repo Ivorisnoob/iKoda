@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// The profiles' photos, read once and kept in memory, keyed by profile and photo version so a
 /// new photo is never shown as the old one.
@@ -8,15 +12,15 @@ import UIKit
 @Observable
 final class ProfilePhotos {
     private let roster: ProfileRoster
-    @ObservationIgnored private var cache: [UUID: (version: Int, image: UIImage?)] = [:]
+    @ObservationIgnored private var cache: [UUID: (version: Int, image: PlatformImage?)] = [:]
 
     init(roster: ProfileRoster) {
         self.roster = roster
     }
 
-    func photo(for profile: KodaProfile) -> UIImage? {
+    func photo(for profile: KodaProfile) -> PlatformImage? {
         if let hit = cache[profile.id], hit.version == profile.photoVersion { return hit.image }
-        let image = (try? Data(contentsOf: roster.photoFile(for: profile.id))).flatMap(UIImage.init(data:))
+        let image = (try? Data(contentsOf: roster.photoFile(for: profile.id))).flatMap(PlatformImage.init(data:))
         cache[profile.id] = (profile.photoVersion, image)
         return image
     }
@@ -26,7 +30,7 @@ final class ProfilePhotos {
     func setPhoto(_ data: Data?, for id: UUID) {
         guard let profile = roster.profile(id) else { return }
         let file = roster.photoFile(for: id)
-        guard let data, let image = UIImage(data: data) else {
+        guard let data, let squared = PlatformImages.squareJPEG(data, maxSide: 512) else {
             try? FileManager.default.removeItem(at: file)
             roster.update(id) {
                 $0.picture = profile.accountPhoto != nil ? .account : .drawn
@@ -34,16 +38,7 @@ final class ProfilePhotos {
             }
             return
         }
-        let side = min(image.size.width, image.size.height)
-        let crop = CGRect(x: (image.size.width - side) / 2, y: (image.size.height - side) / 2, width: side, height: side)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let target = CGSize(width: 512, height: 512)
-        let squared = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            let scale = target.width / side
-            image.draw(in: CGRect(x: -crop.minX * scale, y: -crop.minY * scale, width: image.size.width * scale, height: image.size.height * scale))
-        }
-        try? squared.jpegData(compressionQuality: 0.85)?.write(to: file, options: .atomic)
+        try? squared.write(to: file, options: .atomic)
         roster.update(id) {
             $0.picture = .photo
             $0.photoVersion += 1
@@ -78,7 +73,7 @@ struct ProfileAvatar: View {
         case .photo:
             if let image = app.profilePhotos.photo(for: profile) {
                 Circle().fill(.quaternary)
-                    .overlay { Image(uiImage: image).resizable().scaledToFill() }
+                    .overlay { Image(platformImage: image).resizable().scaledToFill() }
                     .clipShape(.circle)
             } else {
                 KodaAvatarView(avatar: profile.avatar, size: size)
@@ -101,12 +96,12 @@ private struct AccountPhoto: View {
     let url: URL
     let size: CGFloat
     @Environment(\.displayScale) private var scale
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
 
     var body: some View {
         ZStack {
             if let image {
-                Image(uiImage: image).resizable().scaledToFill()
+                Image(platformImage: image).resizable().scaledToFill()
                     .frame(width: size, height: size)
                     .clipShape(.circle)
                     .transition(.opacity)

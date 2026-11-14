@@ -1,6 +1,10 @@
 import KodaCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 
 /// A channel: its banner, picture, name and counts, Subscribe, what it says about itself (the
 /// About sheet), and its videos or live streams, newest first or in another order, paging as
@@ -101,7 +105,9 @@ struct ChannelView: View {
                 .padding(.bottom, 32)
             }
             .ignoresSafeArea(edges: .top)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .revealsTitle(page.channel.name, after: bannerHeight + 60)
             .refreshable { await model.load(music: app.music, fresh: true) }
         }
@@ -116,13 +122,13 @@ struct ChannelView: View {
                 .frame(maxWidth: .infinity)
                 .overlay(alignment: .bottom) {
                     // The banner fades into the page rather than ending on a hard edge.
-                    LinearGradient(colors: [.clear, Color(uiColor: .systemBackground)], startPoint: .top, endPoint: .bottom)
+                    LinearGradient(colors: [.clear, Color.platformBackground], startPoint: .top, endPoint: .bottom)
                         .frame(height: 70)
                 }
                 .clipped()
             VStack(alignment: .leading, spacing: 14) {
                 ChannelAvatar(avatar: page.channel.avatar, size: 84)
-                    .overlay(Circle().strokeBorder(Color(uiColor: .systemBackground), lineWidth: 3))
+                    .overlay(Circle().strokeBorder(Color.platformBackground, lineWidth: 3))
                     .padding(.top, -50)
                 identity(page, nameFont: .title.bold())
                 if let description = page.description {
@@ -131,9 +137,9 @@ struct ChannelView: View {
                             Text(description)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.right").font(.scaled(.caption).weight(.semibold)).foregroundStyle(.tertiary)
                         }
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .foregroundStyle(.secondary)
                         .contentShape(.rect)
                     }
@@ -179,13 +185,13 @@ struct ChannelView: View {
                     .textSelection(.enabled)
                 if page.isVerified {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.title3)
+                        .font(.scaled(.title3))
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Verified")
                 }
             }
             Text([page.channel.handle, page.channel.subscribers, page.videoCount].compactMap { $0 }.joined(separator: " · "))
-                .font(.subheadline)
+                .font(.scaled(.subheadline))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
@@ -207,7 +213,7 @@ struct ChannelView: View {
                     identity(page, nameFont: .largeTitle.bold())
                     if let description = page.description {
                         Text(description)
-                            .font(.subheadline)
+                            .font(.scaled(.subheadline))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .frame(maxWidth: 640, alignment: .leading)
@@ -244,7 +250,7 @@ struct ChannelView: View {
                     .pickerStyle(.segmented)
                     .fixedSize()
                 } else {
-                    Text(page.tab.title).font(.title3.bold())
+                    Text(page.tab.title).font(.scaled(.title3).bold())
                 }
                 Spacer(minLength: 0)
                 if !page.sorts.isEmpty {
@@ -258,7 +264,7 @@ struct ChannelView: View {
                         }
                     } label: {
                         Label(selected.title, systemImage: "arrow.up.arrow.down")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.scaled(.subheadline).weight(.semibold))
                     }
                     .menuStyle(.button)
                     .buttonStyle(.glass)
@@ -273,9 +279,7 @@ struct ChannelView: View {
     @ViewBuilder
     private func more(_ page: ChannelPage) -> some View {
         if page.videos.continuation != nil, page.videos.videos.first?.id.hasPrefix("placeholder") != true {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .task { await model.loadMore(music: app.music) }
+            LoadMoreTrigger { await model.loadMore(music: app.music) }
         } else if page.videos.videos.isEmpty {
             ContentUnavailableView(page.tab == .live ? "No Live Streams" : "No Videos", systemImage: "play.rectangle",
                                    description: Text("Nothing here yet."))
@@ -331,7 +335,7 @@ private struct ChannelAboutSheet: View {
             if let description = about.description {
                 Section("Description") {
                     Text(description)
-                        .font(.subheadline)
+                        .font(.scaled(.subheadline))
                         .textSelection(.enabled)
                 }
             }
@@ -340,7 +344,7 @@ private struct ChannelAboutSheet: View {
                     ForEach(about.links) { link in
                         Link(destination: link.url) {
                             LabeledContent {
-                                Image(systemName: "arrow.up.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                Image(systemName: "arrow.up.right").font(.scaled(.footnote).weight(.semibold)).foregroundStyle(.tertiary)
                             } label: {
                                 Text(link.title)
                                 Text(link.label)

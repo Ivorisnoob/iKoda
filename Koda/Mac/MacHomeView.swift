@@ -43,6 +43,11 @@ struct MacHomeView: View {
             // old, refreshes quietly in place.
             if model.needsRefresh { await load() }
         }
+        // Turned back on: made now, since a Home without it never asked for it.
+        .onChange(of: app.settings.showsMixOnHome) { _, shows in
+            if shows, model.mix == nil { Task { await load() } }
+        }
+        .animation(.smooth, value: app.settings.showsMixOnHome)
     }
 
     /// The greeting, with Refresh beside it as Last.fm's page has Sync Now: the window's
@@ -133,16 +138,19 @@ struct MacHomeView: View {
     @ViewBuilder
     private func top(_ content: HomeModel.Content) -> some View {
         // Four rows, as tall as Your Mix beside them, in as many columns as the room allows.
-        let room = width > 900 ? width - MacMetrics.gutter * 2 - 380 - 28 : width - MacMetrics.gutter * 2
+        let showsMix = app.settings.showsMixOnHome
+        let room = width > 900 && showsMix ? width - MacMetrics.gutter * 2 - 380 - 28 : width - MacMetrics.gutter * 2
         let columns = max(1, min(3, Int(room / 230)))
         let picks = Array(content.quickPicks.prefix(columns * 4))
         let layout = width > 900
             ? AnyLayout(HStackLayout(alignment: .top, spacing: 28))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
         layout {
-            mix
-                .frame(width: width > 900 ? 380 : nil)
-                .frame(maxWidth: width > 900 ? nil : 520, alignment: .leading)
+            if showsMix {
+                mix
+                    .frame(width: width > 900 ? 380 : nil)
+                    .frame(maxWidth: width > 900 ? nil : 520, alignment: .leading)
+            }
             if !picks.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     MacSectionTitle(title: content.quickPicksTitle, subtitle: content.quickPicks == content.trending ? "Trending now" : "Start with these")
@@ -163,6 +171,7 @@ struct MacHomeView: View {
     private var mix: some View {
         if let mix = model.mix {
             MixHero(mix: mix)
+                .contextMenu { HideMixButton() }
                 .transition(.scale(scale: 0.96).combined(with: .opacity))
         } else if model.mixPending {
             MixHero(mix: .placeholder)

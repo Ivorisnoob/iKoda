@@ -61,6 +61,10 @@ struct MacRootView: View {
     var body: some View {
         dialogs(nowPlayingLayer(routing(searching(splitView))))
             #if os(macOS)
+            // A daily check that finds a release opens Software Update, as Sparkle's apps do.
+            .onChange(of: model.updates.offered) { _, release in
+                if release != nil { openWindow(id: SoftwareUpdateView.windowID) }
+            }
             // A full-screen video gets a window of its own (MacVideoWindow), so this window and
             // its toolbar never change for it; that window closes itself when the video leaves.
             .onChange(of: model.videos.isFullScreen) { _, isFullScreen in

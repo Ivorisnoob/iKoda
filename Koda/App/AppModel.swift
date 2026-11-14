@@ -43,6 +43,8 @@ final class AppModel {
     var requestedMacSection: MacSection?
     /// The playing song's colours, kept ready for Now Playing while it is closed.
     let nowPlayingPalette = PaletteModel()
+    /// New releases of Koda: installed on the Mac, announced on the iPhone.
+    let updates = UpdateCenter()
     /// Set to switch tabs from anywhere, e.g. "Go to artist" inside Now Playing.
     var selectedTab: AppTab = .home
     /// A page to open on the current tab's stack.
@@ -194,6 +196,8 @@ final class AppModel {
         }
         connectAccounts()
         widgetBridge = WidgetBridge(player: player, library: library)
+        updates.beforeRelaunch = { [weak self] in self?.saveState() }
+        updates.start()
         #if os(iOS)
         downloadActivity = DownloadActivityController(downloads: downloads)
         #endif

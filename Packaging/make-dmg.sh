@@ -27,13 +27,14 @@ mkdir -p "$stage/.background"
 cp -R "$app" "$stage/Koda.app"
 ln -s /Applications "$stage/Applications"
 cp "$here/dmg-background.tiff" "$stage/.background/background.tiff"
-# The disk's own icon, as Finder and the Desktop show it while mounted.
-cp "$app/Contents/Resources/AppIcon.icns" "$stage/.VolumeIcon.icns"
 
 # Built writable first, so Finder can save the window's layout into it.
 hdiutil create -quiet -srcfolder "$stage" -volname Koda -fs HFS+ -format UDRW -ov "$work/rw.dmg"
 mount="$(hdiutil attach -readwrite -noverify -noautoopen "$work/rw.dmg" | awk -F'\t' '/\/Volumes\// { print $NF }' | tail -n 1)"
 volume="$(basename "$mount")"
+# The disk's own icon, as Finder and the Desktop show it while mounted. Copied in here:
+# `hdiutil create -srcfolder` leaves .VolumeIcon.icns out.
+cp "$app/Contents/Resources/AppIcon.icns" "$mount/.VolumeIcon.icns"
 xcrun SetFile -a C "$mount"
 
 layout() {

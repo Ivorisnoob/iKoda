@@ -76,6 +76,20 @@ struct KodaApp: App {
                 .preferredColorScheme(model.settings.theme.colorScheme)
         }
 
+        // Software Update: opened by Koda → Check for Updates… or when a daily check finds one.
+        // Not listed in the Window menu, as Sparkle's isn't.
+        Window("Software Update", id: SoftwareUpdateView.windowID) {
+            SoftwareUpdateView()
+                .appEnvironment(model)
+                .preferredColorScheme(model.settings.theme.colorScheme)
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.titleBar)
+        .defaultPosition(.center)
+        .commandsRemoved()
+        // Opened for a reason each time; reopened at launch it would wait on a check never made.
+        .restorationBehavior(.disabled)
+
         // A full-screen video: its own window, keyed by one value so there is only ever one.
         WindowGroup("Video", id: MacVideoWindow.windowID, for: String.self) { _ in
             MacVideoWindow()

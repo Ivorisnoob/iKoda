@@ -924,18 +924,34 @@ private struct MacBackupPane: View {
 }
 
 private struct MacAboutPane: View {
+    @Environment(AppModel.self) private var app
+
     var body: some View {
+        @Bindable var updates = app.updates
+        MacSettingsGroup(title: "Updates", footer: "Koda looks for a new release on GitHub once a day and asks before installing it.") {
+            MacSettingsToggle(title: "Check for updates automatically", isOn: $updates.checksAutomatically)
+            #if os(macOS)
+            MacSettingsRow(title: "Check now", detail: lastChecked) {
+                CheckForUpdatesButton(updates: updates)
+            }
+            #endif
+        }
         MacSettingsGroup(footer: "Koda is an unofficial client and isn't affiliated with YouTube or Google. Lyrics come from YouLyPlus, BetterLyrics and LRCLIB. App icon by sameerasw (github.com/sameerasw).") {
             MacSettingsRow(title: "Version") {
                 Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
                     .foregroundStyle(.secondary)
             }
             MacSettingsRow(title: "Koda on GitHub") {
-                Link("Open", destination: URL(string: "https://github.com/Ivorisnoob/Koda-iOS")!)
+                Link("Open", destination: URL(string: "https://github.com/Ivorisnoob/iKoda")!)
             }
             MacSettingsRow(title: "Koda for Android") {
                 Link("Open", destination: URL(string: "https://github.com/Ivorisnoob/Koda")!)
             }
         }
+    }
+
+    private var lastChecked: String {
+        guard let date = app.updates.lastCheck else { return "Not checked yet" }
+        return "Last checked \(date.formatted(.relative(presentation: .named)))"
     }
 }

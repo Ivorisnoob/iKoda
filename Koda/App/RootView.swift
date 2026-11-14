@@ -117,6 +117,12 @@ struct RootView: View {
         .task(id: player.current?.artwork) { await model.nowPlayingPalette.load(player.current?.artwork) }
         .playlistPicker(whenOnTop: !showsNowPlaying)
         .sheet(isPresented: $model.isProfilePresented) { ProfileView().appEnvironment(model) }
+        // A new release found by the daily check; never over the welcome or Settings, which
+        // shows it itself when asked from there.
+        .sheet(item: Binding(get: { model.onboarding == nil && !model.isProfilePresented ? model.updates.offered : nil },
+                             set: { if $0 == nil { model.updates.dismiss() } })) { release in
+            UpdateNoticeView(release: release).appEnvironment(model)
+        }
         .sheet(isPresented: $model.isAddingProfile) { AddProfileView().appEnvironment(model) }
         .fullScreenCover(item: $model.onboarding) { start in
             OnboardingView(start: start, music: model.music, library: model.library).appEnvironment(model)

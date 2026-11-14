@@ -382,6 +382,9 @@ struct KodaCommands: Commands {
             }
         }
         #if os(macOS)
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesButton(updates: model.updates)
+        }
         // Settings… (⌘,) is the Settings scene's own. One window is the whole app (a second would
         // play over the first), so File's New makes a playlist, as Music's does.
         CommandGroup(replacing: .newItem) {

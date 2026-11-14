@@ -207,7 +207,8 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-                    Link(destination: URL(string: "https://github.com/Ivorisnoob/Koda-iOS")!) {
+                    UpdateCheckRow()
+                    Link(destination: URL(string: "https://github.com/Ivorisnoob/iKoda")!) {
                         Label("Koda on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                     }
                     Link(destination: URL(string: "https://github.com/Ivorisnoob/Koda")!) {
@@ -220,7 +221,10 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            // Its own sheet: Settings is itself a sheet, which one from the root can't cover.
+            // Its own sheets: Settings is itself a sheet, which one from the root can't cover.
+            .sheet(item: Binding(get: { app.updates.offered }, set: { if $0 == nil { app.updates.dismiss() } })) { release in
+                UpdateNoticeView(release: release).appEnvironment(app)
+            }
             .sheet(isPresented: $tuningTaste) {
                 OnboardingView(start: .taste, music: app.music, library: library).appEnvironment(app)
             }
@@ -631,5 +635,27 @@ struct BackupSettingsView: View {
         .alert(outcome ?? "", isPresented: Binding(get: { outcome != nil }, set: { if !$0 { outcome = nil } })) {
             Button("OK", role: .cancel) {}
         }
+    }
+}
+
+/// Check for Updates in the About section, with the answer beside it; a release found opens the
+/// update notice.
+private struct UpdateCheckRow: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button {
+            Task { await app.updates.check(asked: true) }
+        } label: {
+            LabeledContent("Check for Updates") {
+                switch app.updates.phase {
+                case .checking: ProgressView()
+                case .upToDate: Text("Up to Date")
+                case .failed: Text("Couldn't Check")
+                default: EmptyView()
+                }
+            }
+        }
+        .disabled(app.updates.phase == .checking)
     }
 }

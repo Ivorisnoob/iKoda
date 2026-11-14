@@ -102,6 +102,11 @@ Koda has two modes, as Koda for Android does. Switch between them from the butto
 - Ask Siri or Shortcuts to play your liked songs, a playlist or anything you name, start a radio, or like the song playing; Koda's songs and playlists show up in Spotlight
 - Widgets on the iPhone and the Mac: **Now Playing** on the cover's own colours with play, pause, skip and what's next; **Recently Played**, a tap on any cover plays it; **Listening**, today's time, your streak and your week; and **Quick Play**. On the iPhone, Lock Screen versions and Control Center controls too
 
+### Updates
+
+- On the Mac, Koda checks for new releases once a day and installs them itself: Koda → Check for Updates…
+- On the iPhone, Koda tells you when a new version is out, with what's new; download it from the release page and install it from AltStore, or have it remind you in a week
+
 ### Last.fm and Discord
 
 - Scrobble to your Last.fm profile with your own free [Last.fm API account](https://www.last.fm/api/account/create); Koda never asks for your password, and plays made offline are sent later

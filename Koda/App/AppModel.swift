@@ -27,6 +27,9 @@ final class AppModel {
     let discord: DiscordPresence?
 
     var isNowPlayingPresented = false
+    /// A song list is selecting (iPhone): the mini player steps away with the tab bar, as
+    /// Music's does, or it sat over the selection's action bar.
+    var isSelectingSongs = false
     /// The panel Now Playing should show when it next opens or is already open: the Mac's
     /// player bar and menu bar open lyrics and the queue directly.
     var requestedPanel: NowPlayingView.Panel?

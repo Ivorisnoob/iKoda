@@ -99,7 +99,8 @@ struct RootView: View {
         // One bar under the tabs: a video left playing away from its page (in video mode, or
         // still playing in music mode, so it can always be stopped), else the songs' player,
         // which belongs to music mode.
-        .modifier(MiniPlayerAccessory(isEnabled: showsVideoBar || (player.current != nil && model.settings.mode == .music)) {
+        .modifier(MiniPlayerAccessory(isEnabled: !model.isSelectingSongs
+                                      && (showsVideoBar || (player.current != nil && model.settings.mode == .music))) {
             if showsVideoBar {
                 VideoMiniPlayer(playback: model.videos) {
                     if let video = model.videos.current { model.open(.video(video)) }

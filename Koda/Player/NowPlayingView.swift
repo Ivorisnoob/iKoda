@@ -471,19 +471,33 @@ struct PlayerToggleStyle: ButtonStyle {
     var offFill: Double = 0
 
     func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        configuration.label
-            // The page's ink when on, so it reads on Now Playing's dark colours and in a light panel.
-            .foregroundStyle(isOn ? AnyShapeStyle(.background) : AnyShapeStyle(.primary))
-            .background {
-                // Color.primary, not the hierarchical style: that follows the label's own ink,
-                // which is the page colour while on.
-                Capsule().fill(Color.primary.opacity(isOn ? (pressed ? 0.85 : 1) : offFill + (pressed ? 0.12 : 0)))
-            }
-            .contentShape(.capsule)
-            .scaleEffect(pressed ? 0.95 : 1)
-            .animation(.snappy(duration: 0.2), value: pressed)
-            .animation(.smooth(duration: 0.25), value: isOn)
+        ToggleBody(label: configuration.label, isOn: isOn, offFill: offFill, pressed: configuration.isPressed)
+    }
+
+    private struct ToggleBody: View {
+        let label: Configuration.Label
+        let isOn: Bool
+        let offFill: Double
+        let pressed: Bool
+        @Environment(\.colorScheme) private var colorScheme
+
+        var body: some View {
+            // Plain colours from the colour scheme, never the `.background` or hierarchical `.primary`
+            // styles: in the Mac's side panel those resolve to the inspector's translucent material,
+            // and the symbols took on whatever was behind the window or faded into it. Now Playing
+            // forces the dark scheme, so it still reads white with a dark symbol while on.
+            let ink = colorScheme == .dark ? Color.white : Color.black
+            let paper = colorScheme == .dark ? Color.black : Color.white
+            label
+                .foregroundStyle(isOn ? paper : ink)
+                .background {
+                    Capsule().fill(ink.opacity(isOn ? (pressed ? 0.85 : 1) : offFill + (pressed ? 0.12 : 0)))
+                }
+                .contentShape(.capsule)
+                .scaleEffect(pressed ? 0.95 : 1)
+                .animation(.snappy(duration: 0.2), value: pressed)
+                .animation(.smooth(duration: 0.25), value: isOn)
+        }
     }
 }
 

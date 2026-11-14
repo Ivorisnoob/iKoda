@@ -54,7 +54,12 @@ struct SongSelectionBar: ViewModifier {
             // Leaving edit mode any way (Done, an action) forgets what was selected.
             .onChange(of: editMode.isEditing) { _, editing in
                 if !editing { selection = [] }
+                withAnimation { app.isSelectingSongs = editing }
             }
+            // Leaving the page mid-selection (back swipe, another tab) brings the mini player back,
+            // and coming back to a page still selecting hides it again.
+            .onDisappear { app.isSelectingSongs = false }
+            .onAppear { if editMode.isEditing { app.isSelectingSongs = true } }
     }
 
     private func act(_ action: ([Song]) -> Void) {

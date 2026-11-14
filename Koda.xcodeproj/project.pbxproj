@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4B1D000000000000000D0001 /* KodaMacWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4B1D000000000000000D0000 /* KodaMacWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1FA79FC2307FF2300099A7C2 /* KodaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1FA79FC1307FF2300099A7C2 /* KodaCore */; };
 		4B1D000000000000000B0001 /* KodaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4B1D000000000000000B0002 /* KodaCore */; };
 		4B1D000000000000000A0001 /* KodaWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4B1D000000000000000A0000 /* KodaWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -14,6 +15,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		4B1D000000000000000D0003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1FA79F9C307FF22C0099A7C2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4B1D000000000000000D0005;
+			remoteInfo = KodaMacWidgets;
+		};
 		4B1D000000000000000A0003 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 1FA79F9C307FF22C0099A7C2 /* Project object */;
@@ -31,6 +39,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		4B1D000000000000000D0002 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4B1D000000000000000D0001 /* KodaMacWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B1D000000000000000A0002 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -46,6 +65,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4B1D000000000000000D0000 /* KodaMacWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KodaMacWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1FA79FA4307FF22C0099A7C2 /* Koda.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Koda.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B1D000000000000000A0000 /* KodaWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KodaWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B1D000000000000000C0000 /* KodaShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KodaShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -76,6 +96,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		4B1D000000000000000D0007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B1D000000000000000B0004 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -125,6 +152,7 @@
 			children = (
 				1FA79FA4307FF22C0099A7C2 /* Koda.app */,
 				4B1D000000000000000A0000 /* KodaWidgets.appex */,
+				4B1D000000000000000D0000 /* KodaMacWidgets.appex */,
 				4B1D000000000000000C0000 /* KodaShare.appex */,
 				4B1D000000000000000B0000 /* Koda.app */,
 			);
@@ -134,6 +162,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		4B1D000000000000000D0005 /* KodaMacWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4B1D000000000000000D000B /* Build configuration list for PBXNativeTarget "KodaMacWidgets" */;
+			buildPhases = (
+				4B1D000000000000000D0006 /* Sources */,
+				4B1D000000000000000D0007 /* Frameworks */,
+				4B1D000000000000000D0008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4B1D000000000000000A0009 /* KodaWidgets */,
+				4B1D000000000000000A000A /* Shared */,
+			);
+			name = KodaMacWidgets;
+			productName = KodaMacWidgets;
+			productReference = 4B1D000000000000000D0000 /* KodaMacWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		4B1D000000000000000B0006 /* KodaMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4B1D000000000000000B0007 /* Build configuration list for PBXNativeTarget "KodaMac" */;
@@ -141,10 +190,12 @@
 				4B1D000000000000000B0003 /* Sources */,
 				4B1D000000000000000B0004 /* Frameworks */,
 				4B1D000000000000000B0005 /* Resources */,
+				4B1D000000000000000D0002 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4B1D000000000000000D0004 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				1FA79FA6307FF22C0099A7C2 /* Koda */,
@@ -248,6 +299,9 @@
 					4B1D000000000000000B0006 = {
 						CreatedOnToolsVersion = 26.5;
 					};
+					4B1D000000000000000D0005 = {
+						CreatedOnToolsVersion = 26.5;
+					};
 				};
 			};
 			buildConfigurationList = 1FA79F9F307FF22C0099A7C2 /* Build configuration list for PBXProject "Koda" */;
@@ -271,11 +325,19 @@
 				4B1D000000000000000A0005 /* KodaWidgets */,
 				4B1D000000000000000C0005 /* KodaShare */,
 				4B1D000000000000000B0006 /* KodaMac */,
+				4B1D000000000000000D0005 /* KodaMacWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4B1D000000000000000D0008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B1D000000000000000B0005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -307,6 +369,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4B1D000000000000000D0006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B1D000000000000000B0003 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -338,6 +407,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		4B1D000000000000000D0004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4B1D000000000000000D0005 /* KodaMacWidgets */;
+			targetProxy = 4B1D000000000000000D0003 /* PBXContainerItemProxy */;
+		};
 		4B1D000000000000000A0004 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 4B1D000000000000000A0005 /* KodaWidgets */;
@@ -352,6 +426,74 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		4B1D000000000000000D000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "KodaWidgets-macOS.entitlements";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "KodaWidgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Koda;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.4;
+				PRODUCT_BUNDLE_IDENTIFIER = ivors.Koda.Widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG WIDGET_EXTENSION $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		4B1D000000000000000D000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "KodaWidgets-macOS.entitlements";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "KodaWidgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Koda;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.4;
+				PRODUCT_BUNDLE_IDENTIFIER = ivors.Koda.Widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "WIDGET_EXTENSION $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		4B1D000000000000000B0008 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -762,6 +904,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4B1D000000000000000D000B /* Build configuration list for PBXNativeTarget "KodaMacWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B1D000000000000000D000C /* Debug */,
+				4B1D000000000000000D000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		4B1D000000000000000B0007 /* Build configuration list for PBXNativeTarget "KodaMac" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

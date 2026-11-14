@@ -100,7 +100,7 @@ Koda has two modes, as Koda for Android does. Switch between them from the butto
 ### Siri, Shortcuts and widgets
 
 - Ask Siri or Shortcuts to play your liked songs, a playlist or anything you name, start a radio, or like the song playing; Koda's songs and playlists show up in Spotlight
-- A **Quick Play** widget for the Home Screen and Lock Screen, and Control Center controls on the iPhone
+- Widgets on the iPhone and the Mac: **Now Playing** on the cover's own colours with play, pause, skip and what's next; **Recently Played**, a tap on any cover plays it; **Listening**, today's time, your streak and your week; and **Quick Play**. On the iPhone, Lock Screen versions and Control Center controls too
 
 ### Last.fm and Discord
 
@@ -161,7 +161,7 @@ Every push to `main` or `beta` runs the tests and builds an unsigned `Koda.ipa` 
 |---|---|
 | `KodaCore/` | Swift package with no UI: the InnerTube clients, parsers, stream resolution, accounts, lyrics, the library, the queue and the player |
 | `Koda/` | The SwiftUI app, with its Mac pages in `Koda/Mac` and video in `Koda/Video` |
-| `KodaWidgets/` | The Quick Play widget and Control Center controls |
+| `KodaWidgets/` | The widgets (built for iPhone and Mac) and Control Center controls |
 | `.github/workflows/build.yml` | Tests, the unsigned `.ipa` and the universal `.dmg` |
 
 ## Feedback

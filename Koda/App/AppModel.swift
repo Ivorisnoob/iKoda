@@ -94,9 +94,10 @@ final class AppModel {
     let videoPreview = VideoHoverPreview()
     /// The video being reported to the account's YouTube history, and whose account it is.
     @ObservationIgnored var videoHistory: (session: VideoWatchSession, profile: UUID)?
-    #if os(iOS)
-    /// The iPhone's Now Playing widget and downloads Live Activity, kept in step from here.
+    /// The widgets (iPhone and Mac), kept in step from here.
     @ObservationIgnored private var widgetBridge: WidgetBridge?
+    #if os(iOS)
+    /// The iPhone's downloads Live Activity.
     @ObservationIgnored private var downloadActivity: DownloadActivityController?
     #endif
 
@@ -192,8 +193,8 @@ final class AppModel {
             return await LockScreenAnimatedArt.artwork(for: song, app: self)
         }
         connectAccounts()
+        widgetBridge = WidgetBridge(player: player, library: library)
         #if os(iOS)
-        widgetBridge = WidgetBridge(player: player)
         downloadActivity = DownloadActivityController(downloads: downloads)
         #endif
         if settings.mode == .video { selectedTab = .videos }

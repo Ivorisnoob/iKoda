@@ -2,26 +2,25 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-// Koda's widgets. Quick Play and the Control Center controls need nothing from the app to
-// draw. Now Playing (NowPlayingWidget.swift) reads what the app writes to the app group's
-// folder, which the iPhone build has once its installer signs it with one (`SharedContainer`);
-// the Mac has no widgets yet.
+// Koda's widgets, on the iPhone and the Mac. Quick Play and the Control Center controls need
+// nothing from the app to draw. Now Playing, Recently Played and Listening read what the app
+// writes to the shared folder (`SharedContainer`): the app group on the iPhone, once its
+// installer signs it with one, and on the Mac a folder in the listener's Library that the
+// widget's sandbox may read.
 
 @main
 struct KodaWidgets: WidgetBundle {
     var body: some Widget {
-        QuickPlayWidget()
         NowPlayingWidget()
+        RecentlyPlayedWidget()
+        ListeningWidget()
+        QuickPlayWidget()
+        #if os(iOS)
         DownloadActivityWidget()
         LikedSongsControl()
         PlayPauseControl()
+        #endif
     }
-}
-
-/// Koda's accent, as the app's asset catalog has it.
-private extension Color {
-    static let koda = Color(red: 0x3D / 255, green: 0x5A / 255, blue: 0xFE / 255)
-    static let kodaLight = Color(red: 0x86 / 255, green: 0x9C / 255, blue: 0xFF / 255)
 }
 
 // MARK: - Quick Play
@@ -49,7 +48,11 @@ struct QuickPlayWidget: Widget {
     }
 
     private static var families: [WidgetFamily] {
+        #if os(iOS)
         [.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular]
+        #else
+        [.systemSmall, .systemMedium]
+        #endif
     }
 }
 
@@ -59,8 +62,10 @@ struct QuickPlayView: View {
     var body: some View {
         switch family {
         case .systemMedium: medium
+        #if os(iOS)
         case .accessoryCircular: circular
         case .accessoryRectangular: rectangular
+        #endif
         default: small
         }
     }
@@ -145,6 +150,7 @@ struct QuickPlayView: View {
 
 // MARK: - Control Center
 
+#if os(iOS)
 struct LikedSongsControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "LikedSongsControl") {
@@ -168,3 +174,4 @@ struct PlayPauseControl: ControlWidget {
         .description("Plays or pauses Koda.")
     }
 }
+#endif

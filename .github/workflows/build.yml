@@ -91,12 +91,11 @@ jobs:
             || { echo "::group::Errors"; grep -E "error:" build.log | sort -u | head -100; echo "::endgroup::"; exit 1; }
           lipo -info build/Build/Products/Release/Koda.app/Contents/MacOS/Koda
 
+      # The install window: Koda and Applications laid out on Packaging/dmg-background.tiff
+      # by Finder, the disk wearing Koda's icon (see Packaging/make-dmg.sh).
       - name: Package .dmg
         run: |
-          mkdir dmg
-          cp -R build/Build/Products/Release/Koda.app dmg/
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname Koda -srcfolder dmg -fs APFS -format ULFO -ov Koda.dmg
+          Packaging/make-dmg.sh build/Build/Products/Release/Koda.app Koda.dmg
           ls -lh Koda.dmg
 
       - uses: actions/upload-artifact@v7

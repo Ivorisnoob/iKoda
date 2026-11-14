@@ -69,6 +69,8 @@ KodaWidgets/         widget sources, built twice: KodaWidgets (iPhone, ivors.Kod
 KodaShare/           share extension (ivors.Koda.Share, iPhone only: `platformFilter = ios` on its embed and dependency): ShareViewController
 Koda-iOS.entitlements  the app group, put on the .ipa's bundles by CI's ad-hoc signature (not a project build setting)
 docs/                mac.md (Mac decisions and scars), lastfm.md
+Packaging/           make-dmg.sh (CI's Mac .dmg: Finder lays out the install window on dmg-background.tiff through AppleScript,
+                     disk icon = AppIcon.icns), dmg-background.swift (draws the TIFF, 1× + 2×; rerun and commit after changing it)
 Koda-Info.plist      extra Info.plist keys: URL scheme koda://, background audio, Live Activities, permission strings
 .github/workflows/   build.yml: tests KodaCore, builds the unsigned .ipa (xcode-27) and the universal .dmg (macos-26)
 ```
@@ -134,6 +136,7 @@ Koda-Info.plist      extra Info.plist keys: URL scheme koda://, background audio
 - **Share into Koda (iPhone):** `KodaShare` shows Koda in the share sheet for a web link or text holding one, and opens `koda://open?url=<link>` through `UIApplication.open` found on the responder chain (an extension has no API to open its app; this is what works from iOS 18). It links nothing from KodaCore: the app decides. `AppModel.open(url)` unwraps it (`YouTubeLink.unwrapped`); with Video Mode on, a link to YouTube itself (`YouTubeLink.isVideoSite`: youtube.com, youtu.be) opens the watch page or channel on the video tabs, otherwise (YouTube Music links, videos off) a song plays and a channel is an artist, as before.
 - **Share Lyrics:** `LyricsShareSheet` scrolls to the line it was opened from; on the Mac it has its own layout (preview left, lines right, Cancel/Copy Image/Share in the foot, `.presentationSizing(.fitted)`).
 - **App icon:** `Koda/AppIcon.icon` (Icon Composer, Liquid Glass layers), used by the app's AppIcon setting; no asset-catalog icon (two named AppIcon would clash). Xcode 26's actool crashes on Xcode 27-only keys (top-level `features`, per-group `specular`), and Xcode 27 can't run on the Intel dev Mac, so strip those keys when re-exporting. `docs/icon.png` (README) is the 256 px render from the built app's AppIcon.icns.
+- **Install window (.dmg):** Lavender: a pale tint of the indigo with the mark huge behind, wordmark, arrow and Open Anyway note in indigo, 640×420, icons 112 pt at (176, 214) and (464, 214) (kept in step between the two Packaging files). Must stay light: Finder draws icon labels in black whatever the background or appearance (dark designs were tried; the labels vanished). `make-dmg.sh` builds a UDRW HFS+ image, has Finder set the view (no toolbar/status bar, bounds = size + 32 pt title bar, nothing selected), sets the volume icon, then converts to ULFO.
 - **Persistence:** queue (`Player.persistQueue`), library JSON and audio store are flushed in `AppModel.saveState()` when the app leaves the screen.
 
 ## Machines

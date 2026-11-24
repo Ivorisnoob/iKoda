@@ -190,7 +190,7 @@ The optimized .ipa and .dmg come only from CI; never ship or test a local Debug 
 5. Install:
    - **iPhone:** from the **AltStore app on the phone** (My Apps → +). Not AltServer's "Sideload .ipa" on the PC, which issues a new certificate and breaks AltStore.
    - **Mac:** open the .dmg, drag Koda to Applications (replace the old one). It's ad-hoc signed and not notarized, so the first launch needs System Settings → Privacy & Security → **Open Anyway**.
-6. **Release**: when the person says so, fast-forward `main` to `beta`, push, wait for the `main` run, download its IPA, check `CFBundleShortVersionString` inside it, then `gh release create vX.Y <ipa> --target main` with notes. The version is `MARKETING_VERSION` in `Koda.xcodeproj/project.pbxproj`. Keep `beta` level with `main` afterwards.
+6. **Release**: when the person says so, fast-forward `main` to `beta`, push, wait for the `main` run, download its IPA, check `CFBundleShortVersionString` inside it, then `gh release create vX.Y <ipa> --target main` with notes. The version is `MARKETING_VERSION` in `Koda.xcodeproj/project.pbxproj`. **Before every release, raise both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (the build number, 4 for 0.4)**: AltStore and SideStore tell an update by the build number, and the source lists what's inside each IPA. Publishing the release rebuilds the AltStore source by itself (`altstore-source.yml`); afterwards check that run passed and that https://ivorisnoob.github.io/iKoda/source.json lists the new version. Keep `beta` level with `main` afterwards.
 7. Push to `beta` freely for CI; merging to `main` and publishing releases are public, so do them only when asked.
 
 ### Git

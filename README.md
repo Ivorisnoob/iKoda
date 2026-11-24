@@ -53,8 +53,8 @@ Koda isn't on the App Store, so you sign it yourself with your Apple ID, using a
 
 | Tool | How |
 |---|---|
-| [AltStore](https://altstore.io) | With AltServer running on your computer, open AltStore on the iPhone, go to **My Apps**, tap **+** and pick `Koda.ipa`. |
-| [SideStore](https://sidestore.io) | The same, without needing a computer after setup. |
+| [AltStore](https://altstore.io) | In AltStore go to **Sources**, tap **+** and add `https://ivorisnoob.github.io/iKoda/source.json`, then install Koda from it; AltStore offers each new version as it's released. (Or go to **My Apps**, tap **+** and pick `Koda.ipa`.) |
+| [SideStore](https://sidestore.io) | Add the same source, without needing a computer after setup. |
 | [Sideloadly](https://sideloadly.io) | Connect the iPhone to your computer, drop `Koda.ipa` in, sign in and start. |
 
 A free Apple ID's signature lasts seven days; AltStore and SideStore renew it for you. The first time, iOS may ask you to trust your Apple ID in **Settings → General → VPN & Device Management**.

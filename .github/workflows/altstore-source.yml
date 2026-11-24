@@ -1,0 +1,48 @@
+name: AltStore Source
+
+# Publishes source.json (AltStore and SideStore) to GitHub Pages whenever the releases change,
+# so the app list always matches what's on the Releases page.
+on:
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: altstore-source
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Write source.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          gh api "repos/${{ github.repository }}/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          python3 -I Packaging/altstore-source.py "$RUNNER_TEMP/releases.json" site/source.json
+          cat site/source.json
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}source.json
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

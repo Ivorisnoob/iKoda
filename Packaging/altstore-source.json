@@ -1,0 +1,30 @@
+{
+  "name": "Koda",
+  "identifier": "ivors.Koda.source",
+  "subtitle": "YouTube Music and YouTube, in one app.",
+  "description": "Koda's own source: every release of Koda for iPhone, straight from GitHub.",
+  "iconURL": "https://raw.githubusercontent.com/Ivorisnoob/iKoda/main/docs/icon.png",
+  "website": "https://github.com/Ivorisnoob/iKoda",
+  "tintColor": "#3a2ea6",
+  "apps": [
+    {
+      "name": "Koda",
+      "bundleIdentifier": "ivors.Koda",
+      "developerName": "Ivorisnoob",
+      "subtitle": "YouTube Music and YouTube, without ads.",
+      "localizedDescription": "Koda plays music from YouTube Music and videos from YouTube, without ads. Use it with no account at all, or sign in to bring your likes, playlists, subscriptions and history with you.\n\nSynced lyrics with translation, AutoMix and crossfade, an equalizer, downloads, animated album art, widgets, Siri and Shortcuts, Last.fm scrobbling, profiles, and a Video mode with picture in picture.\n\nThe Apple sibling of Koda for Android, written in SwiftUI with Liquid Glass.",
+      "iconURL": "https://raw.githubusercontent.com/Ivorisnoob/iKoda/main/docs/icon.png",
+      "tintColor": "#3a2ea6",
+      "category": "entertainment",
+      "screenshots": [],
+      "versions": [],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.security.application-groups"
+        ],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}

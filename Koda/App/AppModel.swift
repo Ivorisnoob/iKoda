@@ -106,6 +106,8 @@ final class AppModel {
     struct PlaylistTarget: Identifiable {
         let id = UUID()
         let songs: [Song]
+        /// The Mac's New Playlist… asks only for a name; everything else opens the playlist checklist.
+        var onlyNew = false
     }
 
     init() {
@@ -334,9 +336,16 @@ final class AppModel {
         }
     }
 
+    /// The playlist checklist for the songs: tick or untick each playlist, Koda's and the account's.
     func addToPlaylist(_ songs: [Song]) {
         guard !songs.isEmpty else { return }
         playlistTarget = PlaylistTarget(songs: songs)
+    }
+
+    /// A new playlist from the songs (on the Mac, the small sheet that asks for its name).
+    func newPlaylist(with songs: [Song]) {
+        guard !songs.isEmpty else { return }
+        playlistTarget = PlaylistTarget(songs: songs, onlyNew: true)
     }
 
     /// Open a YouTube, YouTube Music or koda:// link: a song plays with its radio, anything else opens its page.

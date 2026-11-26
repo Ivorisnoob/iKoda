@@ -169,6 +169,26 @@ import Testing
         #expect(library.userPlaylists.isEmpty)
     }
 
+    @Test func songsLeaveAPlaylistWhereverTheyAre() {
+        let library = Library(directory: nil)
+        let a = Song(id: "a", title: "A", artistLine: ""), b = Song(id: "b", title: "B", artistLine: ""), c = Song(id: "c", title: "C", artistLine: "")
+        let playlist = library.createPlaylist(named: "Mix", songs: [a, b, c])
+        #expect(library.remove([c, a], fromPlaylist: playlist.id) == 2)
+        #expect(library.userPlaylist(playlist.id)?.songs.map(\.id) == ["b"])
+        #expect(library.remove([a], fromPlaylist: playlist.id) == 0)
+    }
+
+    @Test func pageCacheForgetsByKeyEnding() async throws {
+        let cache = PageCache()
+        _ = try await cache.value("p1|playlist|PL1") { 1 }
+        _ = try await cache.value("p2|playlist|PL1") { 1 }
+        _ = try await cache.value("p1|playlist|PL2") { 1 }
+        await cache.remove(endingWith: "|playlist|PL1")
+        #expect(try await cache.value("p1|playlist|PL1") { 2 } == 2)
+        #expect(try await cache.value("p2|playlist|PL1") { 2 } == 2)
+        #expect(try await cache.value("p1|playlist|PL2") { 2 } == 1)
+    }
+
     @Test func countsPlaysAndListeningAndStreaks() {
         let library = Library(directory: nil)
         // Listening is filed under the phone's own days, so the test reads them the same way.

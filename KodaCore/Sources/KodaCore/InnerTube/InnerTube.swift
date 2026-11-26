@@ -132,7 +132,7 @@ struct InnerTube: Sendable {
 public final class YouTubeMusic: Sendable {
     let api: InnerTube
     let streams: StreamResolver
-    private let pages = PageCache()
+    let pages = PageCache()
     /// The session requests are signed with; the app activates and clears it.
     public let accounts: AccountSessions
     /// What history `/player` calls carry; see PlaybackHistory.swift.

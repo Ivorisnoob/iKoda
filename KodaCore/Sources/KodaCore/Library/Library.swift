@@ -405,6 +405,19 @@ public final class Library {
         return added
     }
 
+    /// Take the songs out of the playlist wherever they are; returns how many rows went.
+    @discardableResult
+    public func remove(_ songs: [Song], fromPlaylist id: UUID) -> Int {
+        let ids = Set(songs.map(\.id))
+        var removed = 0
+        editPlaylist(id) { playlist in
+            let before = playlist.songs.count
+            playlist.songs.removeAll { ids.contains($0.id) }
+            removed = before - playlist.songs.count
+        }
+        return removed
+    }
+
     public func removeSongs(atOffsets offsets: IndexSet, fromPlaylist id: UUID) {
         editPlaylist(id) { playlist in
             for index in offsets.sorted(by: >) where playlist.songs.indices.contains(index) {

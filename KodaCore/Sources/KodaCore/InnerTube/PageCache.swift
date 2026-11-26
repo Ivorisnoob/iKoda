@@ -34,4 +34,9 @@ actor PageCache {
     func removeAll() {
         entries = [:]
     }
+
+    /// Forget the pages whose key ends with `suffix`, under every profile's scope.
+    func remove(endingWith suffix: String) {
+        entries = entries.filter { !$0.key.hasSuffix(suffix) }
+    }
 }

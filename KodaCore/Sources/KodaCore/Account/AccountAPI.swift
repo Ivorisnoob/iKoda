@@ -121,12 +121,18 @@ extension YouTubeMusic {
 
     /// The account's playlists songs can be added to, for "Add to playlist". Given the
     /// songs, YouTube's own list (`playlist/get_add_to_playlist`), which has only
-    /// playlists the account can edit; music.youtube.com doesn't say which already hold
-    /// them. Without songs, the library's `PL…` playlists, as Android's sheet does,
-    /// which can include saved playlists of other people that refuse edits.
+    /// playlists the account can edit. www.youtube.com says which already hold them (its
+    /// Save dialog ticks them, and Android's capture has it); music.youtube.com doesn't, so it
+    /// is asked only if www fails. Without songs, the library's `PL…` playlists, as
+    /// Android's sheet does, which can include saved playlists of other people that refuse edits.
     public func editablePlaylists(for videoIds: [String] = []) async throws -> [EditablePlaylist] {
         if videoIds.isEmpty {
             return try await libraryPlaylists().filter { $0.id.hasPrefix("PL") }.map { EditablePlaylist(id: $0.id, title: $0.title) }
+        }
+        let payload: [String: Any] = ["videoIds": videoIds, "excludeWatchLater": true]
+        if let root = try? await api.web("playlist/get_add_to_playlist", payload, signing: .required) {
+            let options = AccountPages.addToPlaylistOptions(root)
+            if !options.isEmpty { return options }
         }
         let root = try await api.music("playlist/get_add_to_playlist", ["videoIds": videoIds], signing: .required)
         return AccountPages.addToPlaylistOptions(root)
@@ -134,6 +140,9 @@ extension YouTubeMusic {
 
     private func editPlaylist(_ playlistId: String, actions: [[String: String]]) async throws {
         let root = try await api.music("browse/edit_playlist", ["playlistId": playlistId, "actions": actions], signing: .required)
+        // The playlist's page as it was would show the edit undone for ten minutes.
+        await pages.remove(endingWith: "|playlist|" + playlistId)
+        await pages.remove(endingWith: "|playlist|VL" + playlistId)
         guard AccountPages.editSucceeded(root) else { throw MusicError.badResponse(200) }
     }
 }

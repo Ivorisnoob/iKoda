@@ -331,6 +331,26 @@ extension AppModel {
         return sent
     }
 
+    /// The account's own playlists, with whether each holds `songs` where YouTube says; nil
+    /// signed out or when it couldn't be asked.
+    func accountPlaylists(holding songs: [Song]) async -> [EditablePlaylist]? {
+        let ids = songs.map(\.id)
+        return await commentWrite { try await $0.editablePlaylists(for: ids) }
+    }
+
+    /// Add the songs to one of the account's playlists, or take them out; whether it went.
+    func setSongs(_ songs: [Song], inAccountPlaylist playlistId: String, _ isIn: Bool) async -> Bool {
+        let ids = songs.map(\.id)
+        return await commentWrite { music in
+            if isIn {
+                try await music.addToPlaylist(playlistId: playlistId, videoIds: ids)
+            } else {
+                for id in ids { try await music.removeFromPlaylist(playlistId: playlistId, videoId: id) }
+            }
+            return true
+        } ?? false
+    }
+
     /// A comment write (post, reply, like, delete) as the active account, in its turn among the
     /// other writes; nil if it didn't go.
     func commentWrite<T: Sendable>(_ write: @escaping @Sendable (YouTubeMusic) async throws -> T) async -> T? {

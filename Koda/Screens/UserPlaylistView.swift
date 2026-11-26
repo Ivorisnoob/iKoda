@@ -399,15 +399,26 @@ private struct PlaylistGlow: View {
     }
 }
 
-/// Pick one of the listener's playlists, or make a new one, for some songs.
+/// The playlists some songs are in, as a checklist (issue #11): tick a playlist to add them, untick
+/// it to take them out, as many as wanted before Done. Koda's own playlists change at once; signed
+/// in, the account's own YouTube Music playlists follow, each change sent as it's made.
 struct AddToPlaylistSheet: View {
     let target: AppModel.PlaylistTarget
 
+    @Environment(AppModel.self) private var app
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var naming = false
     @State private var draftName = ""
-    @State private var added = 0
+    @State private var changed = 0
+    @State private var refused = 0
+    /// The account's playlists; nil while they load, empty when there are none or they couldn't be read.
+    @State private var accountPlaylists: [EditablePlaylist]?
+    /// Account playlists with a change on its way.
+    @State private var sending: Set<String> = []
+
+    private var songIDs: Set<String> { Set(target.songs.map(\.id)) }
+    private var signedIn: Bool { app.roster.active.isSignedIn && !app.roster.active.isExpired }
 
     var body: some View {
         NavigationStack {
@@ -425,59 +436,33 @@ struct AddToPlaylistSheet: View {
                                 .background(.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
                             Text("New Playlist").font(.scaled(.body).weight(.medium))
                         }
+                        .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                 }
                 if !library.userPlaylists.isEmpty {
-                    Section("Your Playlists") {
+                    Section(signedIn ? "In Koda" : "Your Playlists") {
                         ForEach(library.userPlaylists) { playlist in
-                            let inside = Set(playlist.songs.map(\.id))
-                            let already = Set(target.songs.map(\.id)).intersection(inside).count
-                            let containsAll = already == Set(target.songs.map(\.id)).count
-                            Button {
-                                added += 1
-                                library.add(target.songs, toPlaylist: playlist.id)
-                                dismiss()
-                            } label: {
-                                HStack(spacing: 14) {
-                                    PlaylistCover(playlist: playlist, size: 52, cornerRadius: 8)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(playlist.name).font(.scaled(.body).weight(.medium)).lineLimit(1)
-                                        // Songs already in it are skipped, never added twice; said before the tap.
-                                        Text([playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs",
-                                              containsAll ? (target.songs.count == 1 ? "Already added" : "All already added")
-                                                  : already > 0 ? "\(already) already in it" : nil]
-                                            .compactMap { $0 }.joined(separator: " · "))
-                                            .font(.scaled(.subheadline)).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if containsAll {
-                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
-                                            .accessibilityLabel("Already added")
-                                    }
-                                }
-                                .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(containsAll)
+                            kodaRow(playlist)
                         }
                     }
                 }
+                if signedIn { accountSection }
             }
             .navigationTitle(target.songs.count == 1 ? "Add to Playlist" : "Add \(target.songs.count) Songs")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", systemImage: "xmark") { dismiss() }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", systemImage: "checkmark") { dismiss() }
                 }
             }
             .alert("New Playlist", isPresented: $naming) {
                 TextField("Name", text: $draftName)
                 Button("Cancel", role: .cancel) {}
                 Button("Create") {
-                    added += 1
+                    changed += 1
                     library.createPlaylist(named: draftName, songs: target.songs)
                     dismiss()
                 }
@@ -485,8 +470,156 @@ struct AddToPlaylistSheet: View {
                 Text(target.songs.count == 1 ? "“\(target.songs[0].title)” will be its first song." : "These \(target.songs.count) songs will be its first.")
             }
         }
+        .task {
+            guard signedIn else { return }
+            accountPlaylists = await app.accountPlaylists(holding: target.songs) ?? []
+        }
         .presentationDetents([.medium, .large])
-        .sensoryFeedback(.success, trigger: added)
+        .sensoryFeedback(.selection, trigger: changed)
+        .sensoryFeedback(.error, trigger: refused)
+        #if os(macOS)
+        .frame(minWidth: 380, idealWidth: 420, minHeight: 440, idealHeight: 520)
+        #endif
+    }
+
+    // MARK: Koda's playlists
+
+    private func kodaRow(_ playlist: UserPlaylist) -> some View {
+        let held = songIDs.intersection(playlist.songs.map(\.id)).count
+        let state = MembershipMark.State(held: held, of: songIDs.count)
+        return Button {
+            changed += 1
+            if state == .all {
+                library.remove(target.songs, fromPlaylist: playlist.id)
+            } else {
+                library.add(target.songs, toPlaylist: playlist.id)
+            }
+        } label: {
+            HStack(spacing: 14) {
+                PlaylistCover(playlist: playlist, size: 52, cornerRadius: 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(playlist.name).font(.scaled(.body).weight(.medium)).lineLimit(1)
+                    Text([playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs",
+                          state == .some ? "\(held) of these in it" : nil]
+                        .compactMap { $0 }.joined(separator: " · "))
+                        .font(.scaled(.subheadline)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                MembershipMark(state: state)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(state == .all ? .isSelected : [])
+    }
+
+    // MARK: The account's playlists
+
+    @ViewBuilder
+    private var accountSection: some View {
+        Section {
+            if let accountPlaylists {
+                ForEach(accountPlaylists) { accountRow($0) }
+            } else {
+                ForEach(0..<3, id: \.self) { _ in
+                    accountRow(EditablePlaylist(id: "", title: "Playlist name", containsSongs: false))
+                }
+                .loadingPlaceholder()
+            }
+        } header: {
+            Text("On YouTube Music")
+        } footer: {
+            if accountPlaylists?.isEmpty == true {
+                Text("No playlists of your own on YouTube Music, or they couldn't be read just now.")
+            } else {
+                Text("Changes go straight to your YouTube Music account.")
+            }
+        }
+    }
+
+    private func accountRow(_ playlist: EditablePlaylist) -> some View {
+        let state: MembershipMark.State? = playlist.containsSongs.map { $0 ? .all : .none }
+        let artwork = library.playlists.first { $0.id == playlist.id }?.artwork
+        return Button {
+            toggle(playlist)
+        } label: {
+            HStack(spacing: 14) {
+                Color.clear
+                    .frame(width: 52, height: 52)
+                    .overlay {
+                        if let artwork {
+                            ArtworkView(artwork: artwork, size: 52, cornerRadius: 8)
+                        } else {
+                            Image(systemName: "music.note.list")
+                                .font(.scaled(.title3))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, height: 52)
+                                .background(.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+                Text(playlist.title).font(.scaled(.body).weight(.medium)).lineLimit(1)
+                Spacer()
+                if sending.contains(playlist.id) {
+                    ProgressView().controlSize(.small).frame(width: 24, height: 24)
+                } else {
+                    MembershipMark(state: state ?? .none)
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(sending.contains(playlist.id))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(state == .all ? .isSelected : [])
+    }
+
+    /// Ticked (or, where YouTube didn't say, not known to be) → added; ticked → taken out.
+    private func toggle(_ playlist: EditablePlaylist) {
+        guard !sending.contains(playlist.id) else { return }
+        let adding = playlist.containsSongs != true
+        sending.insert(playlist.id)
+        changed += 1
+        Task {
+            let sent = await app.setSongs(target.songs, inAccountPlaylist: playlist.id, adding)
+            sending.remove(playlist.id)
+            if sent, let index = accountPlaylists?.firstIndex(where: { $0.id == playlist.id }) {
+                accountPlaylists?[index].containsSongs = adding
+            } else if !sent {
+                refused += 1
+            }
+        }
+    }
+}
+
+/// The tick at a row's end: filled when the playlist holds all the songs, a dash for some, an
+/// empty ring for none, as the system's selection circles are drawn.
+struct MembershipMark: View {
+    enum State {
+        case none, some, all
+
+        init(held: Int, of count: Int) {
+            self = held == 0 ? .none : held >= count ? .all : .some
+        }
+    }
+
+    let state: State
+
+    private var symbol: String {
+        switch state {
+        case .none: "circle"
+        case .some: "minus.circle.fill"
+        case .all: "checkmark.circle.fill"
+        }
+    }
+
+    var body: some View {
+        Image(systemName: symbol)
+        .font(.scaled(.title2))
+        .foregroundStyle(state == .none ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
+        .contentTransition(.symbolEffect(.replace))
+        .animation(.snappy, value: state)
+        .accessibilityHidden(true)
     }
 }
 
@@ -506,16 +639,17 @@ private struct PlaylistPickerModifier: ViewModifier {
             get: { isOnTop ? app.playlistTarget : nil },
             set: { if isOnTop { app.playlistTarget = $0 } })) { target in
             Group {
-                if Platform.isMac { MacNewPlaylistSheet(target: target) } else { AddToPlaylistSheet(target: target) }
+                if Platform.isMac, target.onlyNew { MacNewPlaylistSheet(target: target) } else { AddToPlaylistSheet(target: target) }
             }
             .appEnvironment(app)
         }
     }
 }
 
-
-/// "Add to Playlist" in a song's or a collection's menu. On the Mac it is a submenu of the
-/// listener's playlists, as Music's is, with New Playlist… first; on the iPhone it opens the sheet.
+/// "Add to Playlist" in a song's or a collection's menu. On the Mac it is a submenu, as Music's
+/// is: New Playlist… first, then each of Koda's playlists ticked when it holds the songs (choosing
+/// a ticked one takes them out), and Choose Playlists… for the checklist with the account's own.
+/// On the iPhone it opens the checklist.
 struct AddToPlaylistMenu: View {
     let songs: [Song]
     @Environment(AppModel.self) private var app
@@ -524,17 +658,20 @@ struct AddToPlaylistMenu: View {
     var body: some View {
         if Platform.isMac {
             Menu("Add to Playlist", systemImage: "text.badge.plus") {
-                Button("New Playlist…", systemImage: "plus") { app.addToPlaylist(songs) }
+                Button("New Playlist…", systemImage: "plus") { app.newPlaylist(with: songs) }
                 if !library.userPlaylists.isEmpty {
                     Divider()
                     ForEach(library.userPlaylists) { playlist in
                         let containsAll = Set(songs.map(\.id)).isSubset(of: Set(playlist.songs.map(\.id)))
-                        Button(playlist.name, systemImage: containsAll ? "checkmark" : "music.note.list") {
-                            library.add(songs, toPlaylist: playlist.id)
-                        }
-                        .disabled(containsAll)
+                        Toggle(playlist.name, isOn: Binding(
+                            get: { containsAll },
+                            set: { isIn in
+                                if isIn { library.add(songs, toPlaylist: playlist.id) } else { library.remove(songs, fromPlaylist: playlist.id) }
+                            }))
                     }
                 }
+                Divider()
+                Button("Choose Playlists…", systemImage: "checklist") { app.addToPlaylist(songs) }
             }
         } else {
             Button("Add to Playlist…", systemImage: "text.badge.plus") { app.addToPlaylist(songs) }

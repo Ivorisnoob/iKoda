@@ -455,9 +455,11 @@ private struct MacProfileRow: View {
 private struct MacPlaybackPane: View {
     @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
+    @Environment(Downloads.self) private var downloads
 
     var body: some View {
         @Bindable var player = player
+        @Bindable var downloads = downloads
         @Bindable var settings = app.settings
         MacSettingsGroup {
             MacSettingsToggle(title: "Autoplay", detail: "When the queue ends, keep going with songs like the last one.",
@@ -488,7 +490,7 @@ private struct MacPlaybackPane: View {
             }
             .disabled(player.transitions != .crossfade)
         }
-        MacSettingsGroup(title: "Sound", footer: "Data Saver streams use about a third of the data, and Low Data Mode always uses it. Downloads and songs kept as you play them are always high quality.") {
+        MacSettingsGroup(title: "Sound", footer: "Data Saver uses about a third of the data, and Low Data Mode always streams with it. Songs kept as you play them are always high quality.") {
             MacSettingsRow(title: "Equalizer", detail: "Shapes every song you play. Boosted songs play a little quieter, so loud ones never distort.") {
                 Picker("Equalizer", selection: $player.equalizer) {
                     ForEach(EqualizerPreset.allCases) { preset in
@@ -504,6 +506,9 @@ private struct MacPlaybackPane: View {
             }
             MacSettingsRow(title: "Streaming on a personal hotspot", detail: "Or any network macOS marks as metered.") {
                 qualityPicker("Streaming on a personal hotspot", selection: $player.meteredQuality)
+            }
+            MacSettingsRow(title: "Downloads", detail: "Data Saver downloads are a third of the size and arrive faster.") {
+                qualityPicker("Downloads", selection: $downloads.quality)
             }
         }
         MacSettingsGroup(title: "Videos", footer: settings.videoModeEnabled

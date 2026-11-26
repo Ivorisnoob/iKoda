@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Songs the listener downloaded, and the work of fetching them: two at a time, in the order
+/// Songs the listener downloaded, and the work of fetching them: four at a time, in the order
 /// asked, picked up again at the next launch when the app closed first. A song already held
 /// whole from listening is downloaded at once, with nothing fetched.
 @MainActor
@@ -73,17 +73,26 @@ public final class Downloads {
         }
     }
 
+    /// What a download fetches. A song already held whole from listening is kept as it is, so
+    /// Data Saver only makes the ones still to be fetched lighter (about a third of the size).
+    public var quality: StreamQuality {
+        didSet { UserDefaults.standard.set(quality.rawValue, forKey: Keys.quality) }
+    }
+
     @ObservationIgnored public let store: AudioStore
     @ObservationIgnored private let music: YouTubeMusic
     @ObservationIgnored private var session: URLSession
     @ObservationIgnored private var queue: [String] = []
     @ObservationIgnored private var running: [String: Task<Void, Never>] = [:]
 
-    private static let parallel = 2
+    /// Each song is a /player call and a few range requests; four keep a playlist moving without
+    /// asking YouTube for so much at once that it starts refusing.
+    private static let parallel = 4
     /// Bytes per request; a song takes a few.
     nonisolated private static let chunk: Int64 = 1 << 20
     private enum Keys {
         static let cellular = "koda.downloads.cellular"
+        static let quality = "koda.downloads.quality"
     }
 
     public init(store: AudioStore, music: YouTubeMusic) {
@@ -91,6 +100,7 @@ public final class Downloads {
         self.music = music
         let cellular = UserDefaults.standard.object(forKey: Keys.cellular) as? Bool ?? true
         allowsCellular = cellular
+        quality = UserDefaults.standard.string(forKey: Keys.quality).flatMap(StreamQuality.init(rawValue:)) ?? .high
         session = Self.makeSession(allowsCellular: cellular)
         for entry in store.downloads {
             guard let song = entry.song else { continue }
@@ -189,7 +199,7 @@ public final class Downloads {
         while !Task.isCancelled {
             if store.entry(id)?.isComplete == true { break }
             do {
-                let stream = try await music.stream(for: id)
+                let stream = try await music.stream(for: id, quality: quality)
                 store.prepare(stream, song: song)
                 // Without its length the file can't be laid out; a later answer may have it.
                 guard stream.contentLength != nil else { throw MusicError.network }

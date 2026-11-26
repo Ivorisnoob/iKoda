@@ -53,18 +53,28 @@ struct EqualizerSettingsView: View {
     }
 }
 
-/// Settings → Audio Quality: what to stream on Wi‑Fi and on mobile data, as Music splits it.
+/// Settings → Audio Quality: what to stream on Wi‑Fi and on mobile data, and what to download,
+/// as Music splits it.
 struct AudioQualitySettingsView: View {
     @Environment(Player.self) private var player
+    @Environment(Downloads.self) private var downloads
 
     var body: some View {
         @Bindable var player = player
+        @Bindable var downloads = downloads
         Form {
             Section {
                 picker("Wi‑Fi Streaming", selection: $player.unmeteredQuality)
                 picker("Mobile Data Streaming", selection: $player.meteredQuality)
+            } header: {
+                Text("Streaming")
             } footer: {
-                Text("Data Saver streams use about a third of the data. In Low Data Mode, Koda always uses Data Saver. Downloads and songs kept as you play them are always High Quality, so a Data Saver stream isn't kept.")
+                Text("Data Saver streams use about a third of the data. In Low Data Mode, Koda always uses Data Saver. Songs kept as you play them are always High Quality, so a Data Saver stream isn't kept.")
+            }
+            Section {
+                picker("Downloads", selection: $downloads.quality)
+            } footer: {
+                Text("Data Saver downloads are about a third of the size and arrive faster. Songs already kept from listening are downloaded as they are.")
             }
         }
         .navigationTitle("Audio Quality")

@@ -1,6 +1,13 @@
 import AppIntents
 #if !WIDGET_EXTENSION
 import KodaCore
+import os
+
+/// Each widget or Control Center tap as it reaches the app (Console: subsystem Koda, category
+/// Intents), to tell a tap that never arrives from one that arrives and finds nothing to do.
+nonisolated enum IntentLog {
+    static let logger = Logger(subsystem: "Koda", category: "Intents")
+}
 #endif
 
 // Intents the widgets and Control Center use, compiled into the app and the widget extension
@@ -32,6 +39,7 @@ struct PlayLikedSongsIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        IntentLog.logger.notice("PlayLikedSongsIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
         let songs = app.library.liked
         guard !songs.isEmpty else { return .result(dialog: "You haven't liked any songs in Koda yet.") }
         app.player.play(songs, startAt: shuffle ? Int.random(in: 0..<songs.count) : 0, shuffled: shuffle)
@@ -54,6 +62,7 @@ struct TogglePlaybackIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        IntentLog.logger.notice("TogglePlaybackIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
         let player = app.player
         if player.current != nil {
             player.togglePlayPause(from: "a shortcut or widget")
@@ -80,6 +89,7 @@ struct NextSongIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        IntentLog.logger.notice("NextSongIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
         app.player.next()
         return .result()
     }
@@ -100,6 +110,7 @@ struct PreviousSongIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        IntentLog.logger.notice("PreviousSongIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
         app.player.previous()
         return .result()
     }
@@ -129,9 +140,12 @@ struct PlayRecentSongIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        IntentLog.logger.notice("PlayRecentSongIntent (song \(songId, privacy: .public)): \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
         let library = app.library
         if let song = library.recent.first(where: { $0.id == songId }) ?? library.history.first(where: { $0.song.id == songId })?.song {
             app.player.play([song], startAt: 0)
+        } else {
+            IntentLog.logger.error("PlayRecentSongIntent: \(songId, privacy: .public) isn't in this profile's recent songs")
         }
         return .result()
     }

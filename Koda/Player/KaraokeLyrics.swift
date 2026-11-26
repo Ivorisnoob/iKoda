@@ -1,6 +1,7 @@
 import KodaCore
 import SwiftUI
 import Translation
+import os
 
 /// Synced lyrics that follow the song. Word-timed lines fill word by word as
 /// they are sung: each word lights up from its left edge, rises a touch as it
@@ -39,10 +40,19 @@ struct SyncedLyrics: View {
     private var offset: TimeInterval { player.current.map { library.lyricsOffset(for: $0.id) } ?? 0 }
     private var hasDuet: Bool { lines.contains { $0.voice != .lead } }
 
-    /// Lyrics in a language other than the listener's can be translated.
+    /// Whether Translation can take these lyrics into the listener's language; nil until asked.
+    @State private var translatable: Bool?
+
+    /// The listener's own language: the device's first, not `Locale.current`, which follows the
+    /// languages Koda is localized into (English only), so a Korean listener read as English.
+    static var listenerLanguage: Locale.Language {
+        Locale.preferredLanguages.first.map(Locale.Language.init(identifier:)) ?? Locale.current.language
+    }
+
+    /// Lyrics in a language other than the listener's, in a pair Translation supports.
     private var canTranslate: Bool {
         guard let language, let code = Locale.Language(identifier: language).languageCode else { return false }
-        return code != Locale.current.language.languageCode
+        return code != Self.listenerLanguage.languageCode && translatable == true
     }
 
     /// The line under a line, as chosen and available.
@@ -202,6 +212,7 @@ extension SyncedLyrics {
     private func readLanguage() async {
         translations = [:]
         translating = nil
+        translatable = nil
         let ids = lines.map(\.id)
         let texts = lines.map(\.text)
         let (found, said) = await Task.detached(priority: .userInitiated) { () -> (String?, [Int: String]) in
@@ -214,7 +225,14 @@ extension SyncedLyrics {
             return (language, said)
         }.value
         guard !Task.isCancelled else { return }
+        var supported = false
+        if let found {
+            let status = await LanguageAvailability().status(from: Locale.Language(identifier: found), to: Self.listenerLanguage)
+            supported = status != .unsupported
+        }
+        guard !Task.isCancelled else { return }
         language = found
+        translatable = supported
         pronunciations = said
         updateTranslation()
     }
@@ -225,10 +243,20 @@ extension SyncedLyrics {
         { @concurrent session in
             let requests = lines.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
                 .map { TranslationSession.Request(sourceText: $0.text, clientIdentifier: String($0.id)) }
-            guard let responses = try? await session.translations(from: requests) else { return }
             var found: [Int: String] = [:]
-            for response in responses {
-                if let id = response.clientIdentifier.flatMap(Int.init) { found[id] = response.targetText }
+            do {
+                for response in try await session.translations(from: requests) {
+                    if let id = response.clientIdentifier.flatMap(Int.init) { found[id] = response.targetText }
+                }
+            } catch {
+                // One line the model can't take fails the whole batch, so go line by line.
+                TranslationLog.logger.error("Lyrics batch failed: \(String(describing: error), privacy: .public)")
+                for request in requests {
+                    guard let response = try? await session.translate(request.sourceText),
+                          let id = request.clientIdentifier.flatMap(Int.init) else { continue }
+                    found[id] = response.targetText
+                }
+                if found.isEmpty { TranslationLog.logger.error("No lyrics line translated") }
             }
             let translated = found
             await MainActor.run { withAnimation(.smooth) { store.wrappedValue = translated } }
@@ -240,10 +268,15 @@ extension SyncedLyrics {
             translating = nil
             return
         }
+        // Off clears it, so picking Translation again after a failure (a download declined) asks once more.
         if translating == nil, translations.isEmpty {
-            translating = TranslationSession.Configuration(source: Locale.Language(identifier: language), target: nil)
+            translating = TranslationSession.Configuration(source: Locale.Language(identifier: language), target: Self.listenerLanguage)
         }
     }
+}
+
+private nonisolated enum TranslationLog {
+    static let logger = Logger(subsystem: "Koda", category: "Translation")
 }
 
 /// A gap in the singing long enough to show the dots: before the first line, or after `after`.

@@ -185,7 +185,7 @@ struct SideMotionArt: View {
 
 /// A muted loop on an AVPlayerLayer. It never keeps the screen awake, never goes to AirPlay
 /// and never touches the audio session: the music's own player owns all three.
-private struct LoopingVideo {
+struct LoopingVideo {
     let file: URL
     let isPlaying: Bool
     let onReady: @MainActor @Sendable () -> Void

@@ -18,6 +18,10 @@ struct CollectionHeader: View {
     var description: String?
     var accent: Color
     var shuffleTitle = "Shuffle"
+    /// The album's animated covers: the square loop plays over the still cover.
+    var motion: MotionArtwork.Covers?
+    /// Off when the page draws the art itself above the header (an album's tall loop).
+    var showsArtwork = true
     let play: () -> Void
     let shuffle: () -> Void
 
@@ -36,9 +40,15 @@ struct CollectionHeader: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            ArtworkView(artwork: artwork, size: 248, cornerRadius: 14)
-                .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
-                .padding(.bottom, 4)
+            if showsArtwork {
+                ArtworkView(artwork: artwork, size: 248, cornerRadius: 14)
+                    .overlay {
+                        MotionLoop(covers: motion, shape: .square)
+                            .clipShape(.rect(cornerRadius: 14, style: .continuous))
+                    }
+                    .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                    .padding(.bottom, 4)
+            }
             VStack(spacing: 4) {
                 Text(title)
                     .font(.scaled(.title2).bold())

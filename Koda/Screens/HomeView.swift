@@ -32,6 +32,12 @@ final class HomeModel {
         var id: String { artist }
     }
 
+    /// One of the listener's top artists whose moving portrait Apple has, for the Spotlight card.
+    nonisolated struct Spotlight: Equatable, Codable, Sendable {
+        var artist: ArtistSummary
+        var apple: AppleArtist
+    }
+
     /// Songs woven from the radios of what the listener plays most.
     nonisolated struct Mix: Equatable, Codable, Sendable {
         var artists: [String]
@@ -56,6 +62,7 @@ final class HomeModel {
     private(set) var similar: [SimilarArtists] = []
     /// Songs played often, but not for a month.
     private(set) var forgotten: [Song] = []
+    private(set) var spotlight: Spotlight?
     /// When Home last loaded, so a window coming back to it after a long while can refresh it.
     private(set) var loadedAt: Date?
     /// What's shown came from the last launch's snapshot and hasn't been refreshed yet.
@@ -69,6 +76,7 @@ final class HomeModel {
         var loadedAt: Date
         var latestReleases: [AlbumSummary]?
         var similar: [SimilarArtists]?
+        var spotlight: Spotlight?
     }
 
     /// Whose Home this is: each profile's is its own, and so is its snapshot.
@@ -85,6 +93,7 @@ final class HomeModel {
         loadedAt = saved.loadedAt
         latestReleases = saved.latestReleases ?? []
         similar = saved.similar ?? []
+        spotlight = saved.spotlight
         isFromSnapshot = true
     }
 
@@ -96,7 +105,8 @@ final class HomeModel {
 
     /// `signedIn`: the profile has a YouTube Music account, whose own Home then gives Quick picks.
     /// `includesMix`: off when the listener turned Your Mix off, which then isn't made at all.
-    func load(music: YouTubeMusic, library: Library, signedIn: Bool, includesMix: Bool = true) async {
+    /// `motion`: Apple's catalogue, for the Spotlight card; nil with Animated Art off.
+    func load(music: YouTubeMusic, library: Library, signedIn: Bool, includesMix: Bool = true, motion: MotionArtwork? = nil) async {
         // Worked out here, not in the view's body: the body is drawn again every few seconds
         // while music plays, as listening time is added, and this ranks every song ever played.
         yourArtists = topArtists(library)
@@ -146,7 +156,7 @@ final class HomeModel {
             if includesMix {
                 group.addTask { await self.buildMix(music: music, taste: taste, picks: pickedArtists, recent: recent, hidden: hidden) }
             }
-            group.addTask { await self.loadArtists(music: music, picks: pickedArtists, library: library, hidden: hidden) }
+            group.addTask { await self.loadArtists(music: music, picks: pickedArtists, library: library, hidden: hidden, motion: motion) }
         }
         // Radios that all failed still leave a card: trending songs, as for someone new.
         if includesMix, mix == nil, let trending = state.value?.trending, !trending.isEmpty {
@@ -156,7 +166,7 @@ final class HomeModel {
         if let content = state.value, let loadedAt {
             isFromSnapshot = false
             Snapshot.save(Saved(content: content, mix: mix, artistPhotos: artistPhotos, loadedAt: loadedAt,
-                                latestReleases: latestReleases, similar: similar), snapshotName)
+                                latestReleases: latestReleases, similar: similar, spotlight: spotlight), snapshotName)
         }
     }
 
@@ -195,7 +205,8 @@ final class HomeModel {
     /// The top artists' pages: their portraits, and from the first few, their latest releases
     /// and the artists like them. Pages come through the page cache, and only the first
     /// `pagesForPicks` are asked every load; further portraits only while missing.
-    private func loadArtists(music: YouTubeMusic, picks: [ArtistSummary], library: Library, hidden: NotInterested) async {
+    private func loadArtists(music: YouTubeMusic, picks: [ArtistSummary], library: Library, hidden: NotInterested,
+                             motion: MotionArtwork?) async {
         let played = yourArtists.compactMap(\.id)
         // With nothing played yet, the artists picked in taste setup stand in.
         let leading = Array((played.isEmpty ? picks.map(\.id).filter { $0.hasPrefix("UC") } : played).prefix(Self.pagesForPicks))
@@ -224,6 +235,33 @@ final class HomeModel {
             latestReleases = HomePicks.latestReleases(ordered)
             similar = likes
         }
+        if let motion {
+            let found = await Self.spotlight(from: Array(ordered.prefix(4)), photos: artistPhotos, motion: motion)
+            if found != spotlight { withAnimation(.smooth) { spotlight = found } }
+        } else {
+            spotlight = nil
+        }
+    }
+
+    /// The first of the top artists whose Apple artist has a wide moving portrait. Their pages,
+    /// already read, tell their Apple artist from others of the same name.
+    private static func spotlight(from pages: [ArtistPage], photos: [String: Artwork], motion: MotionArtwork) async -> Spotlight? {
+        let found = await withTaskGroup(of: (Int, AppleArtist?).self) { group in
+            for (index, page) in pages.enumerated() {
+                let id = page.artist.id, name = page.artist.name
+                let titles = page.topSongs.map(\.title) + page.albums.map(\.title) + page.singles.map(\.title)
+                group.addTask { (index, await motion.artist(id, name: name, allowsCellular: true) { titles }) }
+            }
+            var byIndex: [Int: AppleArtist] = [:]
+            for await (index, artist) in group { if let artist { byIndex[index] = artist } }
+            return byIndex
+        }
+        for (index, page) in pages.enumerated() {
+            guard let apple = found[index], apple.motion?.masters[.wide] != nil else { continue }
+            let artist = ArtistSummary(id: page.artist.id, name: page.artist.name, artwork: photos[page.artist.id] ?? page.artist.artwork)
+            return Spotlight(artist: artist, apple: apple)
+        }
+        return nil
     }
 
     static func latestShelf(_ releases: [AlbumSummary]) -> Shelf {
@@ -367,12 +405,23 @@ struct HomeView: View {
                 }
             }
         }
+        if let spotlight = model.spotlight {
+            ArtistSpotlight(spotlight: spotlight)
+                .padding(.horizontal, 20)
+                .transition(.opacity)
+        }
         // Signed in, the account's own shelves from YouTube Music's Home.
         ForEach(content.accountShelves ?? []) { shelf in
             ItemShelf(shelf: shelf) { player.startRadio(from: $0) }
         }
         if model.latestReleases.count >= 3 {
-            ItemShelf(shelf: HomeModel.latestShelf(model.latestReleases)) { player.startRadio(from: $0) }
+            // News, so larger than the shelves around it.
+            ShelfView(title: "New from your artists", strapline: "Out this year and last") {
+                ForEach(model.latestReleases) { album in
+                    ItemCard(item: .album(album), width: 184,
+                             subtitle: [album.artistLine, album.year.map(String.init)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")) { _ in }
+                }
+            }
         }
         let yours = model.yourArtists
         if yours.count >= 3 {
@@ -403,10 +452,7 @@ struct HomeView: View {
         if app.settings.showsChartsOnHome, !content.charts.isEmpty {
             ShelfView(title: "Charts", strapline: "Global and near you") {
                 ForEach(content.charts) { chart in
-                    NavigationLink(value: Route.playlist(chart)) {
-                        CoverCard(artwork: chart.artwork, title: chart.title, subtitle: chart.subtitle)
-                    }
-                    .buttonStyle(.plain)
+                    ItemCard(item: .playlist(chart)) { _ in }
                 }
             }
         }
@@ -427,6 +473,66 @@ struct HomeView: View {
         case 17..<22: "Good evening"
         default: "Up late"
         }
+    }
+}
+
+// MARK: - Spotlight
+
+/// One of the listener's top artists, large, in Apple's wide moving portrait of them: the still
+/// frame at once, the loop over it once it's here and while the card is in sight. It opens their
+/// page, zooming out of the card.
+struct ArtistSpotlight: View {
+    let spotlight: HomeModel.Spotlight
+    @State private var onScreen = false
+
+    var body: some View {
+        let artist = spotlight.artist
+        NavigationLink(value: Route.artist(artist)) {
+            Color.clear
+                .aspectRatio(4.0 / 3, contentMode: .fit)
+                .overlay {
+                    ZStack(alignment: .bottomLeading) {
+                        ArtworkView(artwork: spotlight.apple.still(.wide, pixels: 1200) ?? artist.artwork,
+                                    size: 400, cornerRadius: 0, fillsFrame: true)
+                        MotionLoop(covers: spotlight.apple.motion, shape: .wide, isPlaying: onScreen)
+                        LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Because you play")
+                                .font(.scaled(.caption).weight(.semibold))
+                                .textCase(.uppercase)
+                                .opacity(0.8)
+                            Text(artist.name)
+                                .font(.scaledSystem(size: 30, weight: .bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                            if let line {
+                                Text(line)
+                                    .font(.scaled(.subheadline).weight(.medium))
+                                    .opacity(0.85)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .padding(18)
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 22, style: .continuous))
+                .zoomSource(.artist(artist), shape: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onScrollVisibilityChange(threshold: 0.5) { onScreen = $0 }
+        .contextMenu { CollectionMenuItems(item: .artist(artist)) } preview: { CollectionPreview(item: .artist(artist)) }
+        .accessibilityLabel("\(artist.name), because you play them")
+    }
+
+    /// Their newest release when it's new, else their genre.
+    private var line: String? {
+        if let latest = spotlight.apple.latest, let date = latest.date, date <= .now,
+           Date.now.timeIntervalSince(date) < 60 * 86400 {
+            return "New \(latest.isSingle ? "single" : "release"): \(latest.title)"
+        }
+        return spotlight.apple.genre
     }
 }
 
@@ -738,13 +844,13 @@ struct JumpBackIn: View {
                     }
             }
         case .userPlaylist(let p):
-            CoverCard(title: p.name, subtitle: Self.songCount(p.songs.count), width: width) {
+            CoverCard(title: p.name, subtitle: Self.songCount(p.songs.count), width: width, zoom: .userPlaylist(p.id)) {
                 PlaylistCover(playlist: p, size: width)
             }
         case .album(let a):
-            CoverCard(artwork: a.artwork, title: a.title, subtitle: a.artistLine.isEmpty ? nil : a.artistLine, width: width)
+            CoverCard(artwork: a.artwork, title: a.title, subtitle: a.artistLine.isEmpty ? nil : a.artistLine, width: width, zoom: .album(a))
         case .playlist(let p):
-            CoverCard(artwork: p.artwork, title: p.title, subtitle: p.subtitle, width: width)
+            CoverCard(artwork: p.artwork, title: p.title, subtitle: p.subtitle, width: width, zoom: .playlist(p))
         }
     }
 

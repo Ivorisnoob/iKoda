@@ -75,12 +75,13 @@ struct ItemShelf: View {
 struct SongColumnsShelf: View {
     let title: String
     var strapline: String?
+    var seeAll: Route?
     let songs: [Song]
     var onPlay: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: title, strapline: strapline)
+            SectionHeader(title: title, strapline: strapline, seeAll: seeAll)
                 .padding(.horizontal, 20)
             ScrollView(.horizontal) {
                 LazyHGrid(rows: Array(repeating: GridItem(.fixed(60), spacing: 0), count: min(4, max(1, songs.count))), spacing: 20) {

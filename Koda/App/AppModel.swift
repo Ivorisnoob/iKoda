@@ -12,6 +12,10 @@ final class AppModel {
     let lyrics = LyricsClient()
     /// Animated album covers; the loops live in Caches, which the system may clear.
     let motionArtwork: MotionArtwork
+    /// Albums whose animated covers are known, by YouTube album id, read once at launch and added
+    /// to as pages find them: an album page lays itself out around the tall loop from its first
+    /// frame when it's known, rather than shifting when it arrives.
+    @ObservationIgnored var albumMotion: [String: MotionArtwork.Covers] = [:]
     let sleepTimer: SleepTimer
     /// Everyone who uses Koda on this device; the library is the active profile's.
     let roster: ProfileRoster
@@ -197,6 +201,10 @@ final class AppModel {
             return await LockScreenAnimatedArt.artwork(for: song, app: self)
         }
         connectAccounts()
+        Task { [weak self, motionArtwork] in
+            let known = await motionArtwork.knownAlbumCovers()
+            self?.albumMotion.merge(known) { found, _ in found }
+        }
         widgetBridge = WidgetBridge(player: player, library: library)
         updates.beforeRelaunch = { [weak self] in self?.saveState() }
         updates.start()
@@ -321,7 +329,7 @@ final class AppModel {
     }
 
     /// Play an album or playlist from its card, without opening its page.
-    func playCollection(_ collection: Collection) {
+    func playCollection(_ collection: Collection, shuffled: Bool = false) {
         Task {
             do {
                 let songs = switch collection {
@@ -329,7 +337,7 @@ final class AppModel {
                 case .playlist(let playlist): try await music.playlist(playlist.id).songs
                 }
                 guard !songs.isEmpty else { return }
-                player.play(songs)
+                player.play(songs, startAt: shuffled ? Int.random(in: 0..<songs.count) : 0, shuffled: shuffled)
             } catch {
                 linkError = error.friendlyMessage
             }

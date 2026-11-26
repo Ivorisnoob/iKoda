@@ -21,6 +21,35 @@ final class SearchModel {
 
     private static let launchMoods = Snapshot.load([Mood].self, "moods") ?? []
 
+    /// Two covers from each mood's own page, for its tile, as Music's category tiles carry art;
+    /// asked for as tiles come into view, one page at a time, and kept between launches.
+    private(set) var moodCovers: [String: [Artwork]] = SearchModel.launchCovers
+    private var coversAsked: Set<String> = []
+    private var coverQueue: Task<Void, Never>?
+    private static let launchCovers = Snapshot.load([String: [Artwork]].self, "mood-covers") ?? [:]
+
+    func loadCovers(for mood: Mood, music: YouTubeMusic) async {
+        guard moodCovers[mood.id] == nil, coversAsked.insert(mood.id).inserted else { return }
+        let previous = coverQueue
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let page = try? await music.mood(mood) else { return }
+            var covers: [Artwork] = []
+            for item in page.shelves.flatMap(\.items) where covers.count < 2 {
+                switch item {
+                case .playlist(let playlist): if let art = playlist.artwork { covers.append(art) }
+                case .album(let album): if let art = album.artwork { covers.append(art) }
+                default: break
+                }
+            }
+            guard let self, !covers.isEmpty else { return }
+            withAnimation(.smooth) { self.moodCovers[mood.id] = covers }
+            Snapshot.save(self.moodCovers, "mood-covers")
+        }
+        coverQueue = task
+        await task.value
+    }
+
     func loadMoods(music: YouTubeMusic) async {
         guard !moodsFresh, let explore = try? await music.explore() else { return }
         let fresh = explore.moods.filter { $0.browseId != "FEmusic_home" }
@@ -194,8 +223,9 @@ struct SearchView: View {
                         SectionHeader(title: "Moods & genres")
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                             ForEach(model.moods) { mood in
-                                NavigationLink(value: Route.mood(mood)) { MoodTile(mood: mood) }
+                                NavigationLink(value: Route.mood(mood)) { MoodTile(mood: mood, covers: model.moodCovers[mood.id] ?? []) }
                                     .buttonStyle(.plain)
+                                    .task { await model.loadCovers(for: mood, music: app.music) }
                             }
                         }
                     }
@@ -207,11 +237,21 @@ struct SearchView: View {
     }
 }
 
-/// A colour tile for a mood; the colour comes from its name, so it is the same every time.
+/// A colour tile for a mood, as Music's category tiles: its name at the top, two covers from
+/// its playlists tucked into the corner. The colour comes from its name, so it is the same every
+/// time; the covers arrive over it without moving anything.
 struct MoodTile: View {
     let title: String
+    var covers: [Artwork] = []
+    /// A mood's tile keeps room for covers from the start, so its name never rewraps when they come.
+    private var holdsCovers = false
 
-    init(mood: Mood) { title = mood.title }
+    init(mood: Mood, covers: [Artwork] = []) {
+        title = mood.title
+        self.covers = covers
+        holdsCovers = true
+    }
+
     init(title: String) { self.title = title }
 
     private var hue: Double {
@@ -226,11 +266,30 @@ struct MoodTile: View {
             .multilineTextAlignment(.leading)
             .lineLimit(2)
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .bottomLeading)
+            .padding(.trailing, holdsCovers ? 40 : 0)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
             .background {
                 LinearGradient(colors: [Color(hue: hue, saturation: 0.6, brightness: 0.75),
                                         Color(hue: hue + 0.06, saturation: 0.75, brightness: 0.5)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !covers.isEmpty {
+                    ZStack {
+                        if covers.count > 1 {
+                            ArtworkView(artwork: covers[1], size: 52, cornerRadius: 6)
+                                .rotationEffect(.degrees(-10))
+                                .offset(x: -30, y: 6)
+                                .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                        }
+                        ArtworkView(artwork: covers[0], size: 62, cornerRadius: 6)
+                            .rotationEffect(.degrees(14))
+                            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                    }
+                    .offset(x: 12, y: 14)
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+                }
             }
             .clipShape(.rect(cornerRadius: 14, style: .continuous))
     }
@@ -291,28 +350,21 @@ struct SearchResultsView: View {
         if !found.albums.isEmpty {
             ShelfView(title: "Albums") {
                 ForEach(found.albums) { album in
-                    NavigationLink(value: Route.album(album)) {
-                        CoverCard(artwork: album.artwork, title: album.title, subtitle: album.cardSubtitle, width: 140)
-                    }
-                    .buttonStyle(.plain)
+                    ItemCard(item: .album(album), width: 140) { _ in }
                 }
             }
         }
         if !found.artists.isEmpty {
             ShelfView(title: "Artists") {
                 ForEach(found.artists) { artist in
-                    NavigationLink(value: Route.artist(artist)) { ArtistCard(artist: artist, width: 100) }
-                        .buttonStyle(.plain)
+                    ItemCard(item: .artist(artist), width: 125) { _ in }
                 }
             }
         }
         if !found.playlists.isEmpty {
             ShelfView(title: "Playlists") {
                 ForEach(found.playlists) { playlist in
-                    NavigationLink(value: Route.playlist(playlist)) {
-                        CoverCard(artwork: playlist.artwork, title: playlist.title, subtitle: playlist.subtitle, width: 140)
-                    }
-                    .buttonStyle(.plain)
+                    ItemCard(item: .playlist(playlist), width: 140) { _ in }
                 }
             }
         }
@@ -408,7 +460,10 @@ extension SearchFilter {
 private struct TopResultCard: View {
     let item: MusicItem
     let songs: [Song]
+    @Environment(AppModel.self) private var app
     @Environment(Player.self) private var player
+    /// An artist's Apple Music portrait, moving in their circle when Apple has one.
+    @State private var apple: AppleArtist?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -424,14 +479,22 @@ private struct TopResultCard: View {
                 SongRow(song: song) { player.play(songs, startAt: index) }
             }
         }
+        .task(id: item.id) {
+            // The songs offered beside the artist are theirs: enough to find their Apple artist.
+            guard case .artist(let artist) = item, app.settings.animatedArt != .off else { return }
+            apple = await app.appleArtist(artist, titles: songs.map(\.title))
+        }
     }
 
     private var header: some View {
         HStack(spacing: 16) {
-            if case .artist = item {
+            if case .artist(let artist) = item {
                 ArtworkView(artwork: item.artwork, size: 84, circle: true)
+                    .overlay { MotionLoop(covers: apple?.motion, shape: .square).clipShape(.circle) }
+                    .zoomSource(.artist(artist), shape: RoundedRectangle(cornerRadius: 42))
             } else {
                 ArtworkView(artwork: item.artwork, size: 84, cornerRadius: 10)
+                    .zoomSource(Route(item))
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title).font(.scaled(.title3).bold()).foregroundStyle(.primary).lineLimit(2)

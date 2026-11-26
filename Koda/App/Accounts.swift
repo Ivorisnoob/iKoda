@@ -191,7 +191,9 @@ extension AppModel {
     func loadHome(_ model: HomeModel) async {
         await accountWork?.value
         await model.load(music: music, library: library, signedIn: roster.profile(model.profile)?.isSignedIn == true,
-                         includesMix: settings.showsMixOnHome)
+                         includesMix: settings.showsMixOnHome,
+                         // The Spotlight card is the iPhone's; the Mac's Home has none to fill.
+                         motion: Platform.isMac || settings.animatedArt == .off ? nil : motionArtwork)
     }
 
     /// A sync now, for pull to refresh, finishing when it does.

@@ -124,6 +124,7 @@ struct LibraryView: View {
                         NavigationLink(value: Route.userPlaylist(playlist.id)) {
                             VStack(alignment: .leading, spacing: 6) {
                                 PlaylistCover(playlist: playlist, size: 140, cornerRadius: 10)
+                                    .zoomSource(.userPlaylist(playlist.id))
                                 Text(playlist.name).font(.scaled(.subheadline).weight(.medium)).lineLimit(1)
                                 Text(playlist.songs.count == 1 ? "1 song" : "\(playlist.songs.count) songs")
                                     .font(.scaled(.footnote)).foregroundStyle(.secondary)
@@ -178,12 +179,12 @@ struct LibraryView: View {
                     if let route = Route(item) {
                         NavigationLink(value: route) {
                             GeometryReader { geometry in
-                                CoverCard(artwork: item.artwork, title: item.title, subtitle: subtitle(item), width: geometry.size.width)
+                                CoverCard(artwork: item.artwork, title: item.title, subtitle: subtitle(item), width: geometry.size.width, zoom: route)
                             }
                             .aspectRatio(0.78, contentMode: .fit)
                         }
                         .buttonStyle(.plain)
-                        .contextMenu { if let pin = Pin(item) { PinMenuItem(pin: pin) } }
+                        .contextMenu { CollectionMenuItems(item: item) } preview: { CollectionPreview(item: item) }
                     }
                 }
             }
@@ -255,16 +256,19 @@ private struct PinnedGrid: View {
     }
 
     private func link(_ route: Route, title: String, subtitle: String?, @ViewBuilder cover: @escaping (CGFloat) -> some View) -> some View {
-        NavigationLink(value: route) { card(title: title, subtitle: subtitle, cover: cover) }
+        NavigationLink(value: route) { card(route, title: title, subtitle: subtitle, cover: cover) }
             .buttonStyle(.plain)
     }
 
     /// The cover fills the column's width; its size comes from the column, never the image.
-    private func card(title: String, subtitle: String?, @ViewBuilder cover: @escaping (CGFloat) -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+    /// `route` is the page it opens, which zooms out of the cover.
+    private func card(_ route: Route? = nil, title: String, subtitle: String?, @ViewBuilder cover: @escaping (CGFloat) -> some View) -> some View {
+        let round: Bool = if case .artist = route { true } else { false }
+        return VStack(alignment: .leading, spacing: 5) {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { GeometryReader { cover($0.size.width) } }
+                .zoomSource(route, shape: RoundedRectangle(cornerRadius: round ? 400 : 10, style: .continuous))
             Text(title).font(.scaled(.footnote).weight(.medium)).lineLimit(1)
             if let subtitle {
                 Text(subtitle).font(.scaled(.caption)).foregroundStyle(.secondary).lineLimit(1)

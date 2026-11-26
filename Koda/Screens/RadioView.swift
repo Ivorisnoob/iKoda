@@ -13,6 +13,8 @@ struct RadioView: View {
     /// The songs Your Station starts from, worked out when the page shows rather than in its
     /// body, which is drawn again every few seconds while music plays and this ranks every play.
     @State private var yourSeeds: [Song] = []
+    /// The top artists' Apple artists, for the one station whose portrait moves.
+    @State private var apples: [String: AppleArtist] = [:]
 
     /// The listener's top artists from Home, or the ones picked in taste setup before anything's played.
     private var artists: [ArtistSummary] {
@@ -122,9 +124,19 @@ struct RadioView: View {
             SectionHeader(title: "Your Artists' Stations", strapline: "Each artist and others like them")
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 16) {
+                    // One portrait moves, the first that can: a row of them all moving would be noise.
+                    let moving = artists.first { apples[$0.id]?.motion != nil }?.id
                     ForEach(artists) { artist in
-                        ArtistStationButton(artist: artist, stations: stations)
+                        ArtistStationButton(artist: artist, stations: stations,
+                                            motion: artist.id == moving ? apples[artist.id]?.motion : nil)
                     }
+                }
+            }
+            .task(id: artists.map(\.id)) {
+                guard app.settings.animatedArt != .off else { return }
+                for artist in artists.prefix(6) where apples[artist.id] == nil {
+                    if let found = await app.appleArtist(artist) { apples[artist.id] = found }
+                    if apples.values.contains(where: { $0.motion != nil }) { break }
                 }
             }
             .scrollIndicators(.hidden)
@@ -259,6 +271,8 @@ private struct StationBadge: View {
 private struct ArtistStationButton: View {
     let artist: ArtistSummary
     let stations: Stations
+    /// Apple's moving portrait of them, for the one station in the row that moves.
+    var motion: MotionArtwork.Covers?
     @Environment(AppModel.self) private var app
 
     var body: some View {
@@ -272,6 +286,7 @@ private struct ArtistStationButton: View {
         } label: {
             VStack(spacing: 8) {
                 ArtworkView(artwork: artist.artwork, size: 104, circle: true)
+                    .overlay { MotionLoop(covers: motion, shape: .square).clipShape(.circle) }
                     .overlay(alignment: .bottomTrailing) { StationBadge(isStarting: stations.starting == id) }
                 Text(artist.name).font(.scaled(.subheadline).weight(.medium)).lineLimit(1)
             }

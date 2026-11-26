@@ -201,10 +201,23 @@ enum Pages {
         let allSongs = songShelf?["bottomEndpoint"].browseTarget.map { String($0.id.trimmingPrefix("VL")) }
 
         var albums: [AlbumSummary] = [], singles: [AlbumSummary] = [], featured: [PlaylistSummary] = [], similar: [ArtistSummary] = []
+        var videos: [Song] = [], live: [Song] = [], playlists: [PlaylistSummary] = []
+        func songs(_ items: [MusicItem]) -> [Song] {
+            items.compactMap { if case .song(let song) = $0 { return song }; return nil }
+        }
         for carousel in root.objects("musicCarouselShelfRenderer") {
             let title = carousel["header"]["musicCarouselShelfBasicHeaderRenderer"]["title"].text
             let items = carousel["contents"].array.compactMap(Rows.item(entry:))
+            // "Playlists by The Weeknd": the channel's own playlists, named after it.
+            if title.hasPrefix("Playlists by") {
+                playlists = items.compactMap { if case .playlist(let p) = $0 { return p }; return nil }
+                continue
+            }
             switch title {
+            case "Videos":
+                videos = songs(items)
+            case "Live performances":
+                live = songs(items)
             case "Albums":
                 albums = items.compactMap { if case .album(var a) = $0 { a.kind = a.kind ?? .album; if a.artistLine.isEmpty { a.artistLine = name }; return a }; return nil }
             case "Singles & EPs", "Singles", "EPs":
@@ -216,9 +229,11 @@ enum Pages {
             default: break
             }
         }
+        let subscribers = header["subscriptionButton"].first("subscribeButtonRenderer")["subscriberCountText"].text.nonEmptyString
         return ArtistPage(artist: summary, description: header["description"].text.nonEmptyString, banner: banner,
                           topSongs: topSongs, allSongsPlaylistId: allSongs, albums: albums, singles: singles,
-                          featuredOn: featured, similar: similar)
+                          featuredOn: featured, similar: similar, subscribers: subscribers,
+                          videos: videos, livePerformances: live, playlists: playlists)
     }
 
     // MARK: Playlist

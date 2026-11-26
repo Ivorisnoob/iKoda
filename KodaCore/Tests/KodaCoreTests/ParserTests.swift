@@ -161,6 +161,13 @@ func fixture(_ name: String) throws -> JSON {
         #expect(page.similar.first?.name == "Labrinth")
         #expect(page.featuredOn.first?.title == "Presenting The Weeknd")
         #expect(page.banner != nil)
+        #expect(page.subscribers == "40.2M")
+        #expect(page.videos.count == 10)
+        #expect(page.videos.first?.title == "One Of The Girls")
+        #expect(page.videos.first?.artistLine == "The Weeknd, JENNIE & Lily-Rose Depp")
+        #expect(page.videos.first?.artwork?.isLandscape == true)
+        #expect(page.livePerformances.count == 10)
+        #expect(page.playlists.first?.title == "Official Videos")
     }
 
     @Test func playlistAndItsContinuation() throws {

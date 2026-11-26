@@ -277,6 +277,13 @@ public struct ArtistPage: Sendable {
     public var singles: [AlbumSummary]
     public var featuredOn: [PlaylistSummary]
     public var similar: [ArtistSummary]
+    /// "40.2M", from the header's subscribe button.
+    public var subscribers: String? = nil
+    /// Their music videos, and live performances, as YouTube's shelves list them (16:9 frames).
+    public var videos: [Song] = []
+    public var livePerformances: [Song] = []
+    /// Playlists the artist's channel made.
+    public var playlists: [PlaylistSummary] = []
 }
 
 public struct PlaylistPage: Sendable {

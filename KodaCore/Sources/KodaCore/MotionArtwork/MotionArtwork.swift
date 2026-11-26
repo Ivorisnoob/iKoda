@@ -41,6 +41,18 @@ public actor MotionArtwork {
         var until: Date
     }
 
+    private var artists: [String: ArtistLookup] = [:]
+    private var artistsLoaded = false
+    private var artistsInFlight: [String: Task<AppleArtist?, Never>] = [:]
+
+    private struct ArtistLookup: Codable {
+        var artist: AppleArtist?
+        var until: Date
+    }
+
+    /// An artist's page changes more than an album's cover: a new release, a new portrait.
+    static let artistFoundFor: TimeInterval = 7 * 86400
+
     /// A found cover is trusted for half a year (Apple doesn't take them down); an album
     /// without one is asked again after two weeks, in case one was added.
     static let foundFor: TimeInterval = 180 * 86400
@@ -97,6 +109,23 @@ public actor MotionArtwork {
         return found
     }
 
+    /// Every YouTube album whose animated covers are already found, by its `MPRE…` id.
+    public func knownAlbumCovers() -> [String: Covers] {
+        loadLookups()
+        var found: [String: Covers] = [:]
+        for (key, lookup) in lookups where key.hasPrefix("album:") {
+            if let covers = lookup.covers { found[String(key.dropFirst("album:".count))] = covers }
+        }
+        return found
+    }
+
+    /// A YouTube album's animated covers as already found, without asking anything: for a page
+    /// that lays itself out around the loop from the start rather than shifting when it arrives.
+    public func knownCovers(album youTubeAlbum: String) -> Covers? {
+        loadLookups()
+        return lookups[Self.albumKey(youTubeAlbum)]?.covers
+    }
+
     private enum Outcome {
         case found(Covers?)
         /// No network allowed right now (cellular with Wi-Fi only, Low Data Mode): ask again later.
@@ -123,11 +152,27 @@ public actor MotionArtwork {
 
     private func search(_ song: Song, session: URLSession) async -> Outcome {
         guard let url = MotionArtworkCatalog.searchURL(for: song) else { return .found(nil) }
+        switch await catalogue(url, session: session) {
+        case .json(let json): return .found(MotionArtworkCatalog.covers(in: json, for: song))
+        case .notNow: return .notNow
+        case .failed: return .failed
+        }
+    }
+
+    private enum Fetched {
+        case json(JSON)
+        case notNow
+        case failed
+    }
+
+    /// One request to the catalogue with Music on the web's token, read again once if it was
+    /// withdrawn early.
+    private func catalogue(_ url: URL, session: URLSession) async -> Fetched {
         for attempt in 0..<2 {
             let bearer: String
             switch await webToken(session: session) {
             case .success(let found): bearer = found
-            case .failure(let error): return outcome(of: error, while: "reading Music on the web's token")
+            case .failure(let error): return fetched(outcome(of: error, while: "reading Music on the web's token"))
             }
             var request = URLRequest(url: url)
             request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
@@ -142,18 +187,23 @@ public actor MotionArtwork {
                     if attempt == 0 { continue }
                 }
                 guard (200..<300).contains(status) else {
-                    log.error("Catalogue search answered HTTP \(status)")
+                    log.error("Catalogue answered HTTP \(status)")
                     return .failed
                 }
                 guard let json = try? JSON(data: data) else {
-                    log.error("Catalogue search answer was not JSON")
+                    log.error("Catalogue answer was not JSON")
                     return .failed
                 }
-                return .found(MotionArtworkCatalog.covers(in: json, for: song))
+                return .json(json)
             } catch {
-                return outcome(of: error, while: "searching the catalogue")
+                return fetched(outcome(of: error, while: "asking the catalogue"))
             }
         }
+        return .failed
+    }
+
+    private func fetched(_ outcome: Outcome) -> Fetched {
+        if case .notNow = outcome { return .notNow }
         return .failed
     }
 
@@ -162,6 +212,89 @@ public actor MotionArtwork {
         if error is CancellationError || (error as? URLError)?.code == .cancelled { return .notNow }
         log.error("Animated covers failed \(doing, privacy: .public): \(error.localizedDescription, privacy: .public)")
         return .failed
+    }
+
+    // MARK: Artists
+
+    /// What Apple Music says about a YouTube artist (moving portrait, bio, colours, newest
+    /// release), or nil when it has no artist that is them. `titles` are the YouTube artist's
+    /// own song and album titles, read only when the catalogue has to be asked, to tell their
+    /// Apple artist from others with the same name. Remembered for a week, or two when none.
+    public func artist(_ channelID: String, name: String, allowsCellular: Bool,
+                       titles: @escaping @Sendable () async -> [String]) async -> AppleArtist? {
+        loadArtists()
+        if let known = artists[channelID], known.until > .now { return known.artist }
+        if let running = artistsInFlight[channelID] { return await running.value }
+        // Past its week, what was found still shows until the catalogue answers otherwise.
+        guard Date.now >= quietUntil else { return artists[channelID]?.artist }
+        let session = allowsCellular ? anyNetwork : unmetered
+        let task = Task { await lookUpArtist(channelID, name: name, titles: titles, session: session) }
+        artistsInFlight[channelID] = task
+        let found = await task.value
+        artistsInFlight[channelID] = nil
+        return found ?? artists[channelID]?.artist
+    }
+
+    /// The artist as last found, without asking anything: for a page that opens drawn.
+    public func knownArtist(_ channelID: String) -> AppleArtist? {
+        loadArtists()
+        return artists[channelID]?.artist
+    }
+
+    private func lookUpArtist(_ channelID: String, name: String, titles: @Sendable () async -> [String],
+                              session: URLSession) async -> AppleArtist? {
+        guard let searchURL = MotionArtworkCatalog.artistSearchURL(name: name) else { return nil }
+        let candidates: [String]
+        switch await catalogue(searchURL, session: session) {
+        case .json(let json): candidates = MotionArtworkCatalog.artistCandidates(in: json, name: name)
+        case .notNow: return nil
+        case .failed:
+            quietUntil = .now + 60
+            return nil
+        }
+        var found: AppleArtist?
+        if let url = MotionArtworkCatalog.artistsURL(ids: candidates) {
+            let known = await titles()
+            // Without the YouTube artist's titles nothing can be confirmed; ask again next time.
+            guard !known.isEmpty else { return nil }
+            switch await catalogue(url, session: session) {
+            case .json(let json): found = MotionArtworkCatalog.artist(in: json, candidates: candidates, titles: known)
+            case .notNow: return nil
+            case .failed:
+                quietUntil = .now + 60
+                return nil
+            }
+        }
+        rememberArtist(channelID, ArtistLookup(artist: found, until: .now + (found == nil ? Self.missingFor : Self.artistFoundFor)))
+        log.info("\(found == nil ? "No Apple artist" : found?.motion == nil ? "Apple artist found" : "Apple artist with motion found") for \(name, privacy: .public)")
+        return found
+    }
+
+    private var artistsFile: URL { directory.appending(path: "artists.json") }
+
+    private func loadArtists() {
+        guard !artistsLoaded else { return }
+        artistsLoaded = true
+        guard let data = try? Data(contentsOf: artistsFile),
+              let saved = try? JSONDecoder().decode([String: ArtistLookup].self, from: data) else { return }
+        // A found artist outlives its week here so a page can open drawn; the catalogue is asked again anyway.
+        artists = saved.filter { $0.value.artist != nil || $0.value.until > .now }
+    }
+
+    private func rememberArtist(_ channelID: String, _ lookup: ArtistLookup) {
+        artists[channelID] = lookup
+        if artists.count > 600 {
+            let oldest = artists.sorted { $0.value.until < $1.value.until }.prefix(artists.count - 500)
+            for (id, _) in oldest { artists[id] = nil }
+        }
+        let found = artists
+        let file = artistsFile
+        let directory = directory
+        Task.detached(priority: .utility) {
+            guard let data = try? JSONEncoder().encode(found) else { return }
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? data.write(to: file, options: .atomic)
+        }
     }
 
     // MARK: The loop file

@@ -4,18 +4,24 @@ import Foundation
 /// the one playing, which loop to take from its HLS ladder, and the one file that loop is.
 /// Everything here is pure, so it is tested against real responses.
 public enum MotionArtworkCatalog {
-    /// The two shapes Apple publishes: the square cover, and the tall one Music shows
-    /// full screen on the Lock Screen.
+    /// The shapes Apple publishes: an album's square cover and the tall one Music shows full
+    /// screen on the Lock Screen; an artist's square portrait and the wide one for wide pages.
     public enum Shape: String, Sendable, CaseIterable, Codable, CodingKeyRepresentable {
-        case square, tall
+        case square, tall, wide
 
         /// Width over height.
-        public var aspect: Double { self == .square ? 1 : 3.0 / 4 }
+        public var aspect: Double {
+            switch self {
+            case .square: 1
+            case .tall: 3.0 / 4
+            case .wide: 16.0 / 9
+            }
+        }
     }
 
-    /// An album's animated covers, as the catalogue lists them.
+    /// An album's animated covers, or an artist's moving portraits, as the catalogue lists them.
     public struct Covers: Sendable, Equatable, Codable {
-        /// Apple's album id, which names the files cached for it.
+        /// Apple's album id (an artist's is `artist<id>`), which names the files cached for it.
         public var albumID: String
         /// Each shape's HLS master playlist.
         public var masters: [Shape: URL]

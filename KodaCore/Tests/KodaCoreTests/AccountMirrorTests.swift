@@ -61,9 +61,67 @@ import Testing
         #expect(mirror.pending == [.liked(b, true)])
     }
 
+    // Issue #12: songs unliked here came back on the next refresh, because YouTube's liked list
+    // still held them for a while after the unlike went through.
+    @Test func aSentUnlikeIsntUndoneByAListThatHasntCaughtUp() {
+        let library = Library(directory: nil)
+        var mirror = AccountMirror()
+        let start = Date()
+        library.reconcile(with: AccountLibrary(liked: [a, b]), mirror: &mirror, at: start)
+        library.toggleLike(a)
+        mirror.queue(.liked(a, false))
+        mirror.sent(.liked(a, false), at: start)
+        #expect(mirror.pending.isEmpty)
+        library.reconcile(with: AccountLibrary(liked: [a, b]), mirror: &mirror, at: start + 60)
+        #expect(library.liked.map(\.id) == ["b"])
+        // The list catches up: the change has settled and the song stays gone.
+        library.reconcile(with: AccountLibrary(liked: [b]), mirror: &mirror, at: start + 120)
+        #expect(mirror.settling.isEmpty)
+        #expect(library.liked.map(\.id) == ["b"])
+    }
+
+    @Test func aSentLikeIsntDroppedByAListThatHasntCaughtUp() {
+        let library = Library(directory: nil)
+        var mirror = AccountMirror()
+        let start = Date()
+        library.reconcile(with: AccountLibrary(liked: [a, b]), mirror: &mirror, at: start)
+        // Unliked elsewhere and liked again here; the read still shows the other device's unlike.
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start)
+        library.toggleLike(b)
+        mirror.queue(.liked(b, true))
+        mirror.sent(.liked(b, true), at: start)
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start + 60)
+        #expect(library.isLiked(b))
+    }
+
+    @Test func theAccountsWordStandsOnceTheChangeHasHadTimeToSettle() {
+        let library = Library(directory: nil)
+        var mirror = AccountMirror()
+        let start = Date()
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start)
+        library.toggleLike(a)
+        mirror.queue(.liked(a, false))
+        mirror.sent(.liked(a, false), at: start)
+        // Still liked on the account an hour on: it didn't keep the unlike.
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start + AccountMirror.settleTime + 1)
+        #expect(mirror.settling.isEmpty)
+        #expect(library.isLiked(a))
+    }
+
+    @Test func aNewChangeReplacesOneStillSettling() {
+        var mirror = AccountMirror()
+        mirror.queue(.liked(a, false))
+        mirror.sent(.liked(a, false))
+        mirror.queue(.liked(a, true))
+        #expect(mirror.settling.isEmpty)
+        #expect(mirror.pending == [.liked(a, true)])
+    }
+
     @Test func survivesARoundTrip() throws {
         var mirror = AccountMirror()
         mirror.liked = ["a"]
+        mirror.queue(.liked(b, false))
+        mirror.sent(.liked(b, false), at: Date(timeIntervalSince1970: 1_000_000))
         mirror.queue(.album(AlbumSummary(id: "MPRE1", title: "Al", artistLine: "X"), true))
         let data = try JSONEncoder().encode(mirror)
         #expect(try JSONDecoder().decode(AccountMirror.self, from: data) == mirror)

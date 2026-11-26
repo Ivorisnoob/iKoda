@@ -27,17 +27,34 @@ public struct AccountMirror: Codable, Sendable, Equatable {
     public var artists: Set<String> = []
     /// Oldest first, one per item: a newer change to the same item replaces the older.
     public private(set) var pending: [LibraryChange] = []
+    /// Changes the account took that no read has shown yet. YouTube's library pages lag a write
+    /// (and a sync's read may have left before the write did), so until a read agrees, or
+    /// `settleTime` passes, a sync treats them as still on their way: an unliked song isn't
+    /// liked again from a list that still holds it.
+    public private(set) var settling: [Settling] = []
+
+    public struct Settling: Codable, Sendable, Equatable {
+        public var change: LibraryChange
+        public var sent: Date
+    }
+
+    /// Long enough for YouTube's lists to catch up; past it the account's word stands, so a
+    /// change it took and then didn't keep isn't hidden for ever.
+    public static let settleTime: TimeInterval = 60 * 60
 
     public init() {}
 
     public mutating func queue(_ change: LibraryChange) {
         pending.removeAll { $0.target == change.target }
+        settling.removeAll { $0.change.target == change.target }
         pending.append(change)
     }
 
     /// The change reached the account; a newer one to the same item stays queued.
-    public mutating func sent(_ change: LibraryChange) {
+    public mutating func sent(_ change: LibraryChange, at date: Date = Date()) {
+        guard pending.contains(change) else { return }
         pending.removeAll { $0 == change }
+        settling.append(Settling(change: change, sent: date))
     }
 
     public init(from decoder: Decoder) throws {
@@ -47,11 +64,27 @@ public struct AccountMirror: Codable, Sendable, Equatable {
         playlists = try c.decodeIfPresent(Set<String>.self, forKey: .playlists) ?? []
         artists = try c.decodeIfPresent(Set<String>.self, forKey: .artists) ?? []
         pending = try c.decodeIfPresent([LibraryChange].self, forKey: .pending) ?? []
+        settling = try c.decodeIfPresent([Settling].self, forKey: .settling) ?? []
     }
 
-    /// Ids with an unsent change, by whether the listener added or removed them.
+    /// Ids with a change the account hasn't shown yet (unsent, or sent and not read back), by
+    /// whether the listener added or removed them.
     func unsent(_ kind: LibraryChange.Kind, adding: Bool) -> Set<String> {
-        Set(pending.filter { $0.target.kind == kind && $0.isOn == adding }.map(\.target.id))
+        let changes = pending + settling.map(\.change)
+        return Set(changes.filter { $0.target.kind == kind && $0.isOn == adding }.map(\.target.id))
+    }
+
+    /// Forget the settling changes this read shows, and those past `settleTime`.
+    mutating func settle(with account: AccountLibrary, at now: Date) {
+        let held: [LibraryChange.Kind: Set<String>] = [
+            .liked: Set(account.liked.map(\.id)), .album: Set(account.albums.map(\.id)),
+            .playlist: Set(account.playlists.map(\.id)), .artist: Set(account.artists.map(\.id)),
+        ]
+        settling.removeAll { item in
+            let target = item.change.target
+            let shown = held[target.kind, default: []].contains(target.id) == item.change.isOn
+            return shown || now.timeIntervalSince(item.sent) > Self.settleTime
+        }
     }
 }
 
@@ -59,8 +92,10 @@ extension Library {
     /// Bring in what the account holds and take out what was removed from it since the last
     /// sync, then remember what it holds now. Something only ever kept here stays, and so does
     /// anything with a change still waiting to be sent: an unlike made offline isn't liked again,
-    /// a like made offline isn't dropped.
-    public func reconcile(with account: AccountLibrary, mirror: inout AccountMirror) {
+    /// a like made offline isn't dropped. Nor is either undone by a read that hasn't caught up
+    /// with a change already sent (`AccountMirror.settling`).
+    public func reconcile(with account: AccountLibrary, mirror: inout AccountMirror, at now: Date = Date()) {
+        mirror.settle(with: account, at: now)
         func incoming<T: Identifiable>(_ items: [T], _ kind: LibraryChange.Kind) -> [T] where T.ID == String {
             let removedHere = mirror.unsent(kind, adding: false)
             return items.filter { !removedHere.contains($0.id) }

@@ -54,12 +54,10 @@ struct PlaylistView: View {
 
     @ViewBuilder
     private var macActions: some View {
-        let saved = library.isSaved(playlist: summary.id)
-        Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+        LibraryToggleButton(isSaved: library.isSaved(playlist: summary.id)) {
             library.toggleSave(state.value?.playlist ?? summary)
         }
         .buttonStyle(MacIconButtonStyle())
-        .help(saved ? "Remove from Library" : "Add to Library")
         if !songs.isEmpty {
             DownloadButton(songs: songs, allSongs: allSongs)
                 .buttonStyle(MacIconButtonStyle())
@@ -115,11 +113,9 @@ struct PlaylistView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                let saved = library.isSaved(playlist: summary.id)
-                Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+                LibraryToggleButton(isSaved: library.isSaved(playlist: summary.id)) {
                     library.toggleSave(state.value?.playlist ?? summary)
                 }
-                .sensoryFeedback(.success, trigger: saved)
             }
             if !songs.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -55,9 +55,11 @@ struct DownloadButton: View {
     @Environment(Downloads.self) private var downloads
     @State private var confirmsRemoval = false
     @State private var started = 0
+    @State private var finished = 0
 
     var body: some View {
         let state = downloads.state(of: songs)
+        let coming = state == .waiting || isDownloading(state)
         Button {
             switch state {
             case .none:
@@ -70,18 +72,33 @@ struct DownloadButton: View {
                 confirmsRemoval = true
             }
         } label: {
-            switch state {
-            case .none:
-                Label("Download", systemImage: "arrow.down.circle")
-            case .waiting, .downloading:
-                DownloadProgressRing(progress: progress(state), lineWidth: 2.5)
-                    .frame(width: 20, height: 20)
-            case .downloaded:
-                Label("Downloaded", systemImage: "arrow.down.circle.fill")
+            // One arrow all along: it gives way to a ring with a stop square while the songs
+            // come, and comes back filled, with a bounce, once they're all here.
+            Label {
+                Text(label(state))
+            } icon: {
+                Image(systemName: state == .downloaded ? "arrow.down.circle.fill" : "arrow.down.circle")
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: finished)
+                    .opacity(coming ? 0 : 1)
+                    .overlay {
+                        if coming {
+                            DownloadProgressRing(progress: progress(state), lineWidth: 2.5)
+                                .overlay {
+                                    Image(systemName: "stop.fill")
+                                        .font(.scaledSystem(size: 7, weight: .black))
+                                        .foregroundStyle(.tint)
+                                }
+                                .transition(.scale(scale: 0.6).combined(with: .opacity))
+                        }
+                    }
             }
         }
+        .animation(.smooth(duration: 0.3), value: coming)
+        .onChange(of: state == .downloaded) { _, done in if done { finished += 1 } }
         .disabled(songs.isEmpty)
         .sensoryFeedback(.start, trigger: started)
+        .sensoryFeedback(.success, trigger: finished)
         .confirmationDialog(state == .downloaded ? "Remove these downloads?" : "Stop downloading?",
                             isPresented: $confirmsRemoval, titleVisibility: .visible) {
             Button(state == .downloaded ? "Remove Downloads" : "Stop and Remove", role: .destructive) {
@@ -91,6 +108,11 @@ struct DownloadButton: View {
             Text("They'll play from YouTube again, which needs a connection.")
         }
         .accessibilityLabel(label(state))
+    }
+
+    private func isDownloading(_ state: Downloads.State) -> Bool {
+        if case .downloading = state { return true }
+        return false
     }
 
     private func progress(_ state: Downloads.State) -> Double {

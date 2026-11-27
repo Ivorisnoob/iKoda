@@ -38,7 +38,12 @@ struct AlbumView: View {
                 play: { play(shuffled: false) },
                 shuffle: { play(shuffled: true) }
             ) { side in
+                // The square loop plays in the cover, as in Now Playing; the Mac has no tall one.
                 ArtworkView(artwork: album.artwork ?? summary.artwork, size: side, cornerRadius: 12)
+                    .overlay {
+                        MotionLoop(covers: squareCovers ?? app.albumMotion[summary.id], shape: .square)
+                            .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                    }
             } actions: {
                 macActions
             }
@@ -47,6 +52,21 @@ struct AlbumView: View {
                     MacTrackList(songs: page.songs, numbered: true,
                                  showsArtist: page.songs.contains { $0.artistLine != page.album.artistLine },
                                  showsAlbum: false) { player.play(page.songs, startAt: $0) }
+                    let foot = [album.year.map { "Released \($0)" }, page.detailLine].compactMap { $0 }
+                    if !foot.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(foot, id: \.self) { Text($0) }
+                        }
+                        .font(.scaled(.footnote))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, MacMetrics.gutter)
+                        .padding(.top, -16)
+                    }
+                    if !moreByArtist.isEmpty, let artist = album.artists.first {
+                        MacShelf(title: "More by \(artist.name)") {
+                            ForEach(moreByArtist) { MacItemCard(item: .album($0)) }
+                        }
+                    }
                     if !page.otherVersions.isEmpty {
                         MacShelf(title: "Other versions") {
                             ForEach(page.otherVersions) { MacItemCard(item: .album($0)) }
@@ -63,12 +83,8 @@ struct AlbumView: View {
 
     @ViewBuilder
     private var macActions: some View {
-        let saved = library.isSaved(album: summary.id)
-        Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
-            library.toggleSave(album)
-        }
-        .buttonStyle(MacIconButtonStyle())
-        .help(saved ? "Remove from Library" : "Add to Library")
+        LibraryToggleButton(isSaved: library.isSaved(album: summary.id)) { library.toggleSave(album) }
+            .buttonStyle(MacIconButtonStyle())
         if let songs = state.value?.songs, !songs.isEmpty {
             DownloadButton(songs: songs)
                 .buttonStyle(MacIconButtonStyle())
@@ -154,11 +170,7 @@ struct AlbumView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                let saved = library.isSaved(album: summary.id)
-                Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
-                    library.toggleSave(album)
-                }
-                .sensoryFeedback(.success, trigger: saved)
+                LibraryToggleButton(isSaved: library.isSaved(album: summary.id)) { library.toggleSave(album) }
             }
             if let songs = state.value?.songs, !songs.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -222,7 +234,7 @@ struct AlbumView: View {
             if song.album == nil { song.album = AlbumRef(id: summary.id, title: page.album.title) }
             if let covers = await app.motionArtwork.covers(for: song, allowsCellular: app.settings.animatedArt.allowsCellular) {
                 app.albumMotion[summary.id] = covers
-                if tallCovers == nil { withAnimation(.smooth) { squareCovers = covers } }
+                if Platform.isMac || tallCovers == nil { withAnimation(.smooth) { squareCovers = covers } }
             }
         }
         guard let artistID = page.album.artists.first?.id ?? summary.artists.first?.id,
@@ -247,7 +259,7 @@ struct AlbumView: View {
             let page = try await app.music.album(summary.id)
             state = .loaded(page)
             if summary.artwork == nil { await palette.load(page.album.artwork) }
-            if !Platform.isMac { await lookAround(page) }
+            await lookAround(page)
         } catch {
             state = .failed(error.friendlyMessage)
         }

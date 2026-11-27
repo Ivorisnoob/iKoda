@@ -700,6 +700,7 @@ private struct MacTrackRow: View {
                     .font(.scaledSystem(size: 12, weight: .semibold))
                     .foregroundStyle(liked ? Color.pink : .secondary)
                     .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: liked)
             }
             .buttonStyle(.plain)
             .help(liked ? "Remove from Liked" : "Like")

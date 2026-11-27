@@ -49,6 +49,20 @@ struct PinMenuItem: View {
     }
 }
 
+/// The + of an album, playlist or artist page: adds it to the Library, the plus turning into
+/// a tick in place to say so.
+struct LibraryToggleButton: View {
+    let isSaved: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(isSaved ? "Remove from Library" : "Add to Library", systemImage: isSaved ? "checkmark" : "plus", action: toggle)
+            .contentTransition(.symbolEffect(.replace))
+            .sensoryFeedback(trigger: isSaved) { _, saved in saved ? .success : .impact(weight: .light) }
+            .help(isSaved ? "Remove from Library" : "Add to Library")
+    }
+}
+
 /// "Suggest less" for a song or the artists on it: kept out of Home, mixes, radio and autoplay
 /// from then on. The playing song, turned down, is skipped at once.
 struct NotInterestedMenu: View {

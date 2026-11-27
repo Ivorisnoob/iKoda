@@ -14,11 +14,13 @@ struct ArtistView: View {
     /// Apple Music's artist, once matched: moving portrait, biography, colours, newest release.
     @State private var apple: AppleArtist?
     @State private var listening: ArtistListening?
-    /// The loop rests while the hero is scrolled out of sight.
-    @State private var heroOnScreen = true
-    @Environment(\.colorScheme) private var colorScheme
+    /// The loop rests while the portrait is scrolled out of sight.
+    @State private var portraitOnScreen = true
+    /// Whether Apple's moving portrait is what shows, so the colours behind it come from it.
+    @State private var loopShowing = false
 
-    private let heroHeight: CGFloat = 400
+    /// Most of the width, as Music gives an album's cover, and none of it under the toolbar.
+    private let portraitSize: CGFloat = 264
     /// One line of the audience text at the current text size.
     @ScaledMetric(relativeTo: .subheadline) private var audienceLineHeight: CGFloat = 20
 
@@ -42,7 +44,9 @@ struct ArtistView: View {
         .ignoresSafeArea(edges: .top)
         .navigationTitle(name)
         .task { await palette.load(summary.artwork) }
+        .task { if apple == nil { apple = await app.motionArtwork.knownArtist(summary.id) } }
         .task { if state.value == nil { await load() } }
+        .task(id: summary.id) { listening = ArtistListening(artistID: summary.id, library: library) }
     }
 
     /// The Mac's artist header. YouTube's banner is a wide image with the portrait pillarboxed
@@ -51,13 +55,11 @@ struct ArtistView: View {
     /// fades into the page, and sharp, round, beside their name and what to play.
     private func macHero(name: String) -> some View {
         let portrait = state.value?.artist.artwork ?? summary.artwork
-        let shape = Circle()
         return ZStack(alignment: .bottomLeading) {
             MacArtistAmbience(artwork: portrait, tint: palette.palette.mesh[4])
             HStack(alignment: .bottom, spacing: 28) {
-                ArtworkView(artwork: portrait, size: 196, circle: true)
-                    .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.3), radius: 24, y: 12)
+                ArtistPortrait(artwork: portrait, motion: apple?.motion, isPlaying: portraitOnScreen, size: 196)
+                    .onScrollVisibilityChange(threshold: 0.05) { portraitOnScreen = $0 }
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Artist")
                         .font(.scaled(.caption).weight(.semibold))
@@ -73,7 +75,7 @@ struct ArtistView: View {
                             .minimumScaleFactor(0.5)
                             .textSelection(.enabled)
                     }
-                    Text(state.value?.artist.subtitle ?? " ")
+                    Text(audience ?? " ")
                         .font(.scaled(.title3))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -84,12 +86,10 @@ struct ArtistView: View {
                                        play: { if !topSongs.isEmpty { player.play(topSongs) } },
                                        shuffle: { if let first = topSongs.first { player.startRadio(from: first) } })
                             .disabled(topSongs.isEmpty)
-                        let saved = library.isSaved(artist: summary.id)
-                        Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+                        LibraryToggleButton(isSaved: library.isSaved(artist: summary.id)) {
                             library.toggleSave(state.value?.artist ?? summary)
                         }
                         .buttonStyle(MacIconButtonStyle())
-                        .help(saved ? "Remove from Library" : "Add to Library")
                         MacMoreMenu {
                             PinMenuItem(pin: .artist(summary))
                             ShareLink(item: URL(string: "https://music.youtube.com/channel/\(summary.id)")!) {
@@ -109,6 +109,11 @@ struct ArtistView: View {
 
     @ViewBuilder
     private func macContent(_ page: ArtistPage) -> some View {
+        if let latest = latestRelease(page) {
+            LatestReleaseCard(album: latest.album, line: latest.line)
+                .frame(maxWidth: CGFloat(560).scaled, alignment: .leading)
+                .padding(.horizontal, MacMetrics.gutter)
+        }
         if !page.topSongs.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 MacSectionTitle(title: "Top songs",
@@ -122,11 +127,25 @@ struct ArtistView: View {
             }
             .padding(.horizontal, MacMetrics.gutter)
         }
+        if let listening {
+            ArtistListeningCard(name: page.artist.name, listening: listening)
+                .frame(maxWidth: CGFloat(560).scaled, alignment: .leading)
+                .padding(.horizontal, MacMetrics.gutter)
+        }
         if !page.albums.isEmpty {
             MacShelf(title: "Albums") { ForEach(page.albums) { MacItemCard(item: .album($0)) } }
         }
         if !page.singles.isEmpty {
             MacShelf(title: "Singles & EPs") { ForEach(page.singles) { MacItemCard(item: .album($0)) } }
+        }
+        if !page.videos.isEmpty {
+            VideoShelf(title: "Videos", videos: page.videos)
+        }
+        if !page.livePerformances.isEmpty {
+            VideoShelf(title: "Live performances", videos: page.livePerformances)
+        }
+        if !page.playlists.isEmpty {
+            MacShelf(title: "Playlists") { ForEach(page.playlists) { MacItemCard(item: .playlist($0)) } }
         }
         if !page.featuredOn.isEmpty {
             MacShelf(title: "Featured on") { ForEach(page.featuredOn) { MacItemCard(item: .playlist($0)) } }
@@ -134,18 +153,33 @@ struct ArtistView: View {
         if !page.similar.isEmpty {
             MacShelf(title: "Fans also like") { ForEach(page.similar) { MacArtistCard(artist: $0) } }
         }
-        if let about = page.description {
+        if let about = apple?.bio ?? page.description {
+            // Apple's biography in the serif Apple sets long reading in, with its facts beside
+            // it; YouTube's description as it was when Apple has none.
+            let bio = apple?.bio == nil ? nil : apple
             VStack(alignment: .leading, spacing: 10) {
                 MacSectionTitle(title: "About")
-                Text(about)
-                    .font(.scaled(.body))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(aboutExpanded ? nil : 5)
-                    .textSelection(.enabled)
+                HStack(alignment: .top, spacing: 40) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(ArtistBio.attributed(about))
+                            .font(.scaled(.body))
+                            .fontDesign(bio == nil ? .default : .serif)
+                            .foregroundStyle(bio == nil ? .secondary : .primary)
+                            .lineSpacing(bio == nil ? 0 : 2)
+                            .lineLimit(aboutExpanded ? nil : 5)
+                            .textSelection(.enabled)
+                        Button(aboutExpanded ? "Less" : "More") { withAnimation(.snappy) { aboutExpanded.toggle() } }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.accentColor)
+                    }
                     .frame(maxWidth: 720, alignment: .leading)
-                Button(aboutExpanded ? "Less" : "More") { withAnimation(.snappy) { aboutExpanded.toggle() } }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
+                    if let bio { ArtistFacts(artist: bio).padding(.top, 2) }
+                }
+                if bio != nil {
+                    Text("Biography from Apple Music")
+                        .font(.scaled(.footnote))
+                        .foregroundStyle(.tertiary)
+                }
             }
             .padding(.horizontal, MacMetrics.gutter)
         }
@@ -154,46 +188,31 @@ struct ArtistView: View {
     private var phoneBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                hero
+                stage
                 AsyncContent(state: state, retry: load, placeholder: .placeholder(summary)) { page in
                     content(page)
                 }
             }
             .padding(.bottom, 32)
-            // The portrait's colour washes the top of the page under it and fades out; it scrolls
-            // with the page, so it stays under the hero's edge.
-            .background(alignment: .top) {
-                LinearGradient(colors: [tint.opacity(colorScheme == .dark ? 0.3 : 0.2), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 560)
-                    .padding(.top, heroHeight)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
         }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             max(0, -(geometry.contentOffset.y + geometry.contentInsets.top))
         } action: { _, overscroll in
             pull = overscroll
         }
-        .ignoresSafeArea(edges: .top)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .revealsTitle(state.value?.artist.name ?? summary.name, after: 340)
+        .revealsTitle(state.value?.artist.name ?? summary.name, after: 330)
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                let saved = library.isSaved(artist: summary.id)
-                Button(saved ? "Remove from Library" : "Add to Library", systemImage: saved ? "checkmark" : "plus") {
+                LibraryToggleButton(isSaved: library.isSaved(artist: summary.id)) {
                     library.toggleSave(state.value?.artist ?? summary)
                 }
-                .sensoryFeedback(.success, trigger: saved)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("More", systemImage: "ellipsis") {
-                    if let first = state.value?.topSongs.first {
-                        Button("Start Radio", systemImage: "dot.radiowaves.left.and.right") { player.startRadio(from: first) }
-                    }
                     PinMenuItem(pin: .artist(summary))
                     ShareLink(item: URL(string: "https://music.youtube.com/channel/\(summary.id)")!) {
                         Label("Share", systemImage: "square.and.arrow.up")
@@ -202,16 +221,19 @@ struct ArtistView: View {
             }
         }
         #endif
-        .task { await palette.load(summary.artwork) }
+        // The colours behind the portrait are the portrait's own: YouTube's photo, or Apple's
+        // moving one once that is what shows.
+        .task(id: ambienceArtwork?.url) { await palette.load(ambienceArtwork) }
         // Known from an earlier visit, the moving portrait is there from the first frame.
         .task { if apple == nil { apple = await app.motionArtwork.knownArtist(summary.id) } }
         .task { if state.value == nil { await load() } }
         .task(id: summary.id) { listening = ArtistListening(artistID: summary.id, library: library) }
     }
 
-    /// What the page is tinted with: the portrait's own colour from Apple when it has a real
-    /// one, else the colour of YouTube's photo.
-    private var tint: Color { apple?.tint ?? palette.palette.accent }
+    private var ambienceArtwork: Artwork? {
+        let photo = state.value?.artist.artwork ?? summary.artwork
+        return loopShowing ? apple?.still(.square, pixels: 200) ?? photo : photo
+    }
 
     /// "238M monthly audience · 40.2M subscribers".
     private var audience: String? {
@@ -219,82 +241,56 @@ struct ArtistView: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// The artist's photo, or Apple's moving portrait over it, edge to edge under the status
-    /// bar. It stretches with an overscroll instead of leaving a gap above it, drifts up slower
-    /// than the page and darkens a little as it goes, and the loop rests once it's out of sight.
-    private var hero: some View {
-        let banner = state.value?.banner ?? summary.artwork
+    /// The top of the page, as Music lays out a record's: the artist large and round in the
+    /// middle (Apple's moving portrait over their photo when there is one), their name and
+    /// audience under it, then Play and Radio. It all sits below the toolbar, so the bar's soft
+    /// edge never covers a face, on a field of the portrait's own colours that runs up under the
+    /// bars and past a pull, and melts into the page with no edge. A pull grows the portrait.
+    private var stage: some View {
+        let name = state.value?.artist.name ?? summary.name
         let topSongs = state.value?.topSongs ?? []
-        return GeometryReader { geometry in
-            let width = geometry.size.width
-            let height = heroHeight + pull
-            ZStack(alignment: .bottomLeading) {
+        return VStack(spacing: 0) {
+            ArtistPortrait(artwork: state.value?.artist.artwork ?? summary.artwork, motion: apple?.motion,
+                           isPlaying: portraitOnScreen, size: portraitSize) { loopShowing = $0 }
+                .scaleEffect(1 + min(pull, 240) / 900, anchor: .bottom)
+                .onScrollVisibilityChange(threshold: 0.05) { portraitOnScreen = $0 }
+                .padding(.top, 12)
+            VStack(spacing: 4) {
+                if name.isEmpty {
+                    // Opened from a link, the name comes with the page.
+                    Capsule().fill(.primary.opacity(0.12)).frame(width: 180, height: 34)
+                        .shimmer()
+                } else {
+                    Text(name)
+                        .font(.scaledSystem(size: 34, weight: .bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
+                        .accessibilityAddTraits(.isHeader)
+                        .transition(.opacity)
+                }
+                // A slot one line tall, always there, so the name sits in the same place
+                // before the audience line arrives, after it, and for artists without one.
                 ZStack {
-                    ArtistHeroImage(artwork: banner, preview: summary.artwork, tint: palette.palette.mesh[4],
-                                    width: width, height: height)
-                    MotionLoop(covers: apple?.motion, shape: .square, isPlaying: heroOnScreen)
-                        .frame(width: width, height: height)
-                        .clipped()
-                }
-                .visualEffect { content, proxy in
-                    let scrolled = max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY)
-                    return content
-                        .offset(y: scrolled * 0.4)
-                        .brightness(-min(0.25, scrolled / 1600))
-                }
-                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
-                    .allowsHitTesting(false)
-                HStack(alignment: .bottom, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        let name = state.value?.artist.name ?? summary.name
-                        if name.isEmpty {
-                            // Opened from a link, the name comes with the page.
-                            Capsule().fill(.white.opacity(0.25)).frame(width: 180, height: 34)
-                                .shimmer()
-                        } else {
-                            Text(name)
-                                .font(.scaledSystem(size: 40, weight: .bold))
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.6)
-                                .transition(.opacity)
-                        }
-                        // A slot one line tall, always there, so the name sits in the same place
-                        // before the audience line arrives, after it, and for artists without one.
-                        ZStack(alignment: .leading) {
-                            if let audience {
-                                Text(audience)
-                                    .font(.scaled(.subheadline).weight(.medium))
-                                    .opacity(0.85)
-                                    .lineLimit(1)
-                                    .transition(.opacity)
-                            }
-                        }
-                        .frame(height: audienceLineHeight, alignment: .leading)
-                        .animation(.easeOut(duration: 0.25), value: audience)
+                    if let audience {
+                        AudienceLine(text: audience)
+                            .transition(.opacity)
                     }
-                    Spacer(minLength: 0)
-                    Button("Play", systemImage: "play.fill") {
-                        if !topSongs.isEmpty { player.play(topSongs) }
-                    }
-                    .labelStyle(.iconOnly)
-                    .font(.scaled(.title2))
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .controlSize(.extraLarge)
-                    .disabled(topSongs.isEmpty)
-                    .accessibilityLabel("Play \(summary.name)")
                 }
-                .foregroundStyle(.white)
-                // Over a photo, so the glass and the text are drawn for a dark backdrop in either appearance.
-                .environment(\.colorScheme, .dark)
-                .padding(20)
+                .frame(height: audienceLineHeight)
+                .animation(.easeOut(duration: 0.25), value: audience)
             }
-            .frame(width: width, height: height)
-            .clipped()
-            .offset(y: -pull)
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            PlayShuffleButtons(shuffleTitle: "Radio",
+                               play: { if !topSongs.isEmpty { player.play(topSongs) } },
+                               shuffle: { if let first = topSongs.first { player.startRadio(from: first) } })
+                .disabled(topSongs.isEmpty)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
         }
-        .frame(height: heroHeight)
-        .onScrollVisibilityChange(threshold: 0.05) { heroOnScreen = $0 }
+        .frame(maxWidth: .infinity)
+        .background { ArtistAmbience(palette: palette.palette) }
     }
 
     @ViewBuilder
@@ -383,7 +379,8 @@ struct ArtistView: View {
         do {
             let page = try await app.music.artist(summary.id)
             state = .loaded(page)
-            await palette.load(page.banner)
+            // The iPhone's colours follow whichever portrait shows (`ambienceArtwork`).
+            if Platform.isMac { await palette.load(page.artist.artwork ?? page.banner) }
             let found = await app.appleArtist(page.artist, page: page)
             if found != apple { withAnimation(.smooth) { apple = found } }
         } catch {
@@ -426,7 +423,11 @@ private struct ArtistListeningCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "You & \(name)", strapline: "Your listening")
+            if Platform.isMac {
+                MacSectionTitle(title: "You & \(name)", subtitle: "Your listening")
+            } else {
+                SectionHeader(title: "You & \(name)", strapline: "Your listening")
+            }
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(listening.plays == 1 ? "1 play" : "\(listening.plays) plays")
@@ -440,8 +441,12 @@ private struct ArtistListeningCard: View {
                 VStack(spacing: 0) {
                     let songs = listening.top.map(\.song)
                     ForEach(Array(listening.top.enumerated()), id: \.element.song.id) { index, stats in
-                        SongRow(song: stats.song, subtitle: stats.plays == 1 ? "1 play" : "\(stats.plays) plays") {
-                            player.play(songs, startAt: index)
+                        if Platform.isMac {
+                            MacSongTile(song: stats.song) { player.play(songs, startAt: index) }
+                        } else {
+                            SongRow(song: stats.song, subtitle: stats.plays == 1 ? "1 play" : "\(stats.plays) plays") {
+                                player.play(songs, startAt: index)
+                            }
                         }
                     }
                 }
@@ -505,30 +510,37 @@ private struct VideoShelf: View {
     @Environment(Player.self) private var player
 
     var body: some View {
-        ShelfView(title: title) {
-            ForEach(Array(videos.enumerated()), id: \.element.id) { index, video in
-                Button { player.play(videos, startAt: index) } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Color.clear
-                            .frame(width: 260, height: 146)
-                            .overlay { ArtworkView(artwork: video.artwork, size: 260, cornerRadius: 12, fillsFrame: true) }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(video.title)
-                                .font(.scaled(.subheadline).weight(.medium))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Text(video.artistLine)
-                                .font(.scaled(.footnote))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+        if Platform.isMac {
+            MacShelf(title: title) { cards }
+        } else {
+            ShelfView(title: title) { cards }
+        }
+    }
+
+    private var cards: some View {
+        let width = CGFloat(260).scaled
+        return ForEach(Array(videos.enumerated()), id: \.element.id) { index, video in
+            Button { player.play(videos, startAt: index) } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Color.clear
+                        .frame(width: width, height: width * 9 / 16)
+                        .overlay { ArtworkView(artwork: video.artwork, size: width, cornerRadius: 12, fillsFrame: true) }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(video.title)
+                            .font(.scaled(.subheadline).weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(video.artistLine)
+                            .font(.scaled(.footnote))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    .frame(width: 260, alignment: .leading)
-                    .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
-                .contextMenu { SongMenuItems(song: video) } preview: { SongPreview(song: video) }
+                .frame(width: width, alignment: .leading)
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
+            .contextMenu { SongMenuItems(song: video) } preview: { SongPreview(song: video) }
         }
     }
 }
@@ -653,69 +665,102 @@ private enum ArtistBio {
     }
 }
 
-/// The artist photo cropped by Google to the hero's shape.
-///
-/// The immersive banner is served wide with the portrait pillarboxed inside;
-/// its `-p` directive crops the full-resolution source to whatever box is
-/// asked for, which is sharper than cropping the wide banner here.
-/// The artist's banner, loaded progressively: the small photo already on screen elsewhere
-/// shows at once, blurred and enlarged, and the sharp banner fades in over it.
-private struct ArtistHeroImage: View {
+/// The artist's photo, large and round, with Apple's moving portrait over it once it plays.
+struct ArtistPortrait: View {
     let artwork: Artwork?
-    /// The small photo from the list the artist was opened from, likely cached already.
-    let preview: Artwork?
-    /// The photo's main colour, for the space while nothing has loaded.
-    let tint: Color
-    let width: CGFloat
-    let height: CGFloat
-    @Environment(\.displayScale) private var scale
-    @State private var image: PlatformImage?
-    @State private var previewImage: PlatformImage?
+    let motion: MotionArtwork.Covers?
+    var isPlaying = true
+    let size: CGFloat
+    /// Told whether the moving portrait is what shows.
+    var onShow: ((Bool) -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
 
-    private var url: URL? {
-        guard let artwork else { return nil }
-        let w = Int(width * scale), h = Int(400 * scale)
-        let string = artwork.url.absoluteString
-        guard string.contains("googleusercontent.com"), let separator = string.lastIndex(of: "=") else { return artwork.url }
-        let directives = String(string[separator...]).replacingOccurrences(of: #"w\d+-h\d+"#, with: "w\(w)-h\(h)", options: .regularExpression)
-        return URL(string: String(string[..<separator]) + directives)
+    var body: some View {
+        ArtworkView(artwork: artwork, size: size, circle: true)
+            .overlay {
+                MotionLoop(covers: motion, shape: .square, isPlaying: isPlaying, onShow: onShow)
+                    .clipShape(.circle)
+            }
+            // A hairline keeps the circle's edge where the photo and the colours behind it meet.
+            .overlay(Circle().strokeBorder(.white.opacity(colorScheme == .dark ? 0.14 : 0.4), lineWidth: 1))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.2), radius: 28, y: 14)
+            .accessibilityHidden(true)
+    }
+}
+
+/// "238M monthly audience · 40.2M subscribers", its figures rolling up from zero as the line
+/// first appears; with Reduce Motion it simply shows.
+private struct AudienceLine: View {
+    let text: String
+    @State private var shown: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        // Every digit a zero to start with, so the line keeps its length while it counts.
+        Text(shown ?? (reduceMotion ? text : String(text.map { $0.isNumber ? "0" : $0 })))
+            .font(.scaled(.subheadline).weight(.medium))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
+            .contentTransition(.numericText())
+            .accessibilityLabel(text)
+            .task(id: text) {
+                guard !reduceMotion else {
+                    shown = text
+                    return
+                }
+                if shown != nil { shown = String(text.map { $0.isNumber ? "0" : $0 }) }
+                try? await Task.sleep(for: .milliseconds(150))
+                withAnimation(.smooth(duration: 0.9)) { shown = text }
+            }
+    }
+}
+
+/// The colours behind the top of an artist's page: the portrait's own 3×3 colours as a mesh,
+/// reaching up under the bars and past a pull, and fading into the page under the buttons
+/// so the page has no edge anywhere.
+private struct ArtistAmbience: View {
+    let palette: Palette
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// How far the colours reach above the page: the bars, and a pull.
+    private static let above: CGFloat = 420
+    /// And below the buttons, for a fade long enough not to read as a line.
+    private static let below: CGFloat = 140
+
+    /// The palette is deepened for white text, which suits dark mode; under light mode's dark
+    /// text the same hues go pale, or the wash reads as a dull grey.
+    private var colors: [Color] {
+        guard colorScheme == .light else { return palette.mesh }
+        return palette.mesh.map { color in
+            guard let hsb = color.hsb else { return color }
+            return Color(hue: hsb.hue, saturation: min(hsb.saturation, 0.45) * 0.6, brightness: 0.97)
+        }
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [tint.opacity(0.9), tint.opacity(0.4)], startPoint: .top, endPoint: .bottom)
-            if let previewImage, image == nil {
-                Image(platformImage: previewImage)
-                    .resizable()
-                    .scaledToFill()
-                    .blur(radius: 24)
-                    .scaleEffect(1.2)
-                    .transition(.opacity)
-            }
-            if let image {
-                Image(platformImage: image).resizable().scaledToFill().transition(.opacity)
+        MeshGradient(width: 3, height: 3, points: [
+            [0, 0], [0.5, 0], [1, 0],
+            [0, 0.5], [0.5, 0.5], [1, 0.5],
+            [0, 1], [0.5, 1], [1, 1],
+        ], colors: colors)
+        .opacity(colorScheme == .dark ? 0.85 : 1)
+        .mask {
+            VStack(spacing: 0) {
+                Color.black.frame(height: Self.above)
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: 0.38),
+                    .init(color: .black.opacity(0.55), location: 0.66),
+                    .init(color: .black.opacity(0.18), location: 0.85),
+                    .init(color: .clear, location: 1),
+                ], startPoint: .top, endPoint: .bottom)
             }
         }
-        .frame(width: width, height: height)
-        .shimmer(image == nil && previewImage == nil)
-        .clipped()
-        .task(id: preview?.url) {
-            guard let url = preview?.url(pixels: 120), image == nil else { return }
-            var small = ImagePipeline.shared.cached(url, pixels: 120)
-            if small == nil { small = await ImagePipeline.shared.image(url, pixels: 120) }
-            guard image == nil else { return }
-            withAnimation(.easeOut(duration: 0.2)) { previewImage = small }
-        }
-        .task(id: url) {
-            guard let url else { return }
-            let pixels = Int(max(width, 400) * scale)
-            if let hit = ImagePipeline.shared.cached(url, pixels: pixels) {
-                image = hit
-                return
-            }
-            let loaded = await ImagePipeline.shared.image(url, pixels: pixels)
-            withAnimation(.easeOut(duration: 0.25)) { image = loaded }
-        }
+        .padding(.top, -Self.above)
+        .padding(.bottom, -Self.below)
+        .animation(.easeInOut(duration: 0.8), value: palette)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }

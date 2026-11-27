@@ -65,11 +65,19 @@ struct LibraryView: View {
 
                 yourPlaylists
 
-                if !library.playlists.isEmpty {
-                    grid("Saved Playlists", items: sorted(library.playlists).map(MusicItem.playlist))
-                }
-                if !library.albums.isEmpty {
-                    grid("Albums", items: sorted(library.albums).map(MusicItem.album))
+                if sort == .recent {
+                    // As Music's Library: what was saved last first, albums and playlists together.
+                    let recentlyAdded = library.recentlyAdded
+                    if !recentlyAdded.isEmpty {
+                        grid("Recently Added", items: recentlyAdded)
+                    }
+                } else {
+                    if !library.playlists.isEmpty {
+                        grid("Saved Playlists", items: sorted(library.playlists).map(MusicItem.playlist))
+                    }
+                    if !library.albums.isEmpty {
+                        grid("Albums", items: sorted(library.albums).map(MusicItem.album))
+                    }
                 }
                 if !library.artists.isEmpty {
                     ShelfView(title: "Artists") {

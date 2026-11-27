@@ -39,6 +39,10 @@ public final class Library {
     public private(set) var videoProgress: [String: VideoProgress] = [:]
     /// What the listener pinned to the top of Library, in the order pinned.
     public private(set) var pins: [Pin] = []
+    /// When each saved album and playlist arrived here, keyed `album:<id>` and `playlist:<id>`,
+    /// so Recently Added can put the two kinds in one order. What was saved before Koda kept
+    /// these has none.
+    public private(set) var savedDates: [String: Date] = [:]
     /// The newest play taken from a Koda for Android backup, so importing the same backup,
     /// or a later one that repeats its history, never counts a play twice.
     private var androidPlaysImportedThrough: Date?
@@ -256,14 +260,16 @@ public final class Library {
     public func isSaved(playlist id: String) -> Bool { playlists.contains { $0.id == id } }
     public func isSaved(artist id: String) -> Bool { artists.contains { $0.id == id } }
 
-    public func toggleSave(_ album: AlbumSummary) {
+    public func toggleSave(_ album: AlbumSummary, at date: Date = Date()) {
         let saved = toggle(album, in: &albums)
+        savedDates[Self.savedKey(album: album.id)] = saved ? date : nil
         save()
         onChange?(.album(album, saved))
     }
 
-    public func toggleSave(_ playlist: PlaylistSummary) {
+    public func toggleSave(_ playlist: PlaylistSummary, at date: Date = Date()) {
         let saved = toggle(playlist, in: &playlists)
+        savedDates[Self.savedKey(playlist: playlist.id)] = saved ? date : nil
         save()
         onChange?(.playlist(playlist, saved))
     }
@@ -288,7 +294,11 @@ public final class Library {
     /// What the account has and the library lacks is added in the account's order ahead of the
     /// rest; nothing here is removed, so a like made offline and not yet sent isn't lost.
     public func mergeAccount(liked accountLiked: [Song], albums accountAlbums: [AlbumSummary],
-                             playlists accountPlaylists: [PlaylistSummary], artists accountArtists: [ArtistSummary]) {
+                             playlists accountPlaylists: [PlaylistSummary], artists accountArtists: [ArtistSummary],
+                             at date: Date = Date()) {
+        // What arrives now is dated now: the account doesn't say when it was saved there.
+        for album in accountAlbums where !isSaved(album: album.id) { savedDates[Self.savedKey(album: album.id)] = date }
+        for playlist in accountPlaylists where !isSaved(playlist: playlist.id) { savedDates[Self.savedKey(playlist: playlist.id)] = date }
         liked = Self.merged(accountLiked, into: liked)
         albums = Self.merged(accountAlbums, into: albums)
         playlists = Self.merged(accountPlaylists, into: playlists)
@@ -303,8 +313,34 @@ public final class Library {
         if let keepAlbums { albums.removeAll { !keepAlbums.contains($0.id) } }
         if let keepPlaylists { playlists.removeAll { !keepPlaylists.contains($0.id) } }
         if let keepArtists { artists.removeAll { !keepArtists.contains($0.id) } }
+        let kept = Set(albums.map { Self.savedKey(album: $0.id) } + playlists.map { Self.savedKey(playlist: $0.id) })
+        savedDates = savedDates.filter { kept.contains($0.key) }
         save()
     }
+
+    /// Saved albums and playlists in one list, newest first, as Music's Recently Added. Each
+    /// list is already newest first, so the two are merged by when their items arrived; ones
+    /// saved before Koda kept dates come last, each list in its own order.
+    public var recentlyAdded: [MusicItem] {
+        var items: [MusicItem] = []
+        items.reserveCapacity(albums.count + playlists.count)
+        var a = 0, p = 0
+        while a < albums.count || p < playlists.count {
+            let albumDate = a < albums.count ? savedDates[Self.savedKey(album: albums[a].id)] ?? .distantPast : nil
+            let playlistDate = p < playlists.count ? savedDates[Self.savedKey(playlist: playlists[p].id)] ?? .distantPast : nil
+            if let albumDate, albumDate >= playlistDate ?? .distantPast {
+                items.append(.album(albums[a]))
+                a += 1
+            } else {
+                items.append(.playlist(playlists[p]))
+                p += 1
+            }
+        }
+        return items
+    }
+
+    private static func savedKey(album id: String) -> String { "album:" + id }
+    private static func savedKey(playlist id: String) -> String { "playlist:" + id }
 
     private static func merged<T: Identifiable>(_ incoming: [T], into list: [T]) -> [T] where T.ID == String {
         let known = Set(list.map(\.id))
@@ -527,6 +563,7 @@ public final class Library {
         var videoProgress: [String: VideoProgress] = [:]
         var androidPlaysImportedThrough: Date?
         var pins: [Pin] = []
+        var savedDates: [String: Date] = [:]
 
         init() {}
 
@@ -550,6 +587,7 @@ public final class Library {
             androidPlaysImportedThrough = try c.decodeIfPresent(Date.self, forKey: .androidPlaysImportedThrough)
             // A pin of a kind a later version adds is dropped, not the whole file.
             pins = (try? c.decodeIfPresent([Lossy<Pin>].self, forKey: .pins))?.compactMap(\.value) ?? []
+            savedDates = try c.decodeIfPresent([String: Date].self, forKey: .savedDates) ?? [:]
         }
     }
 
@@ -581,6 +619,7 @@ public final class Library {
         videoProgress = snapshot.videoProgress
         androidPlaysImportedThrough = snapshot.androidPlaysImportedThrough
         pins = snapshot.pins
+        savedDates = snapshot.savedDates
     }
 
     /// Write the library a moment later, off the main thread, and only its newest state: with
@@ -656,6 +695,7 @@ public final class Library {
         snapshot.videoProgress = videoProgress
         snapshot.androidPlaysImportedThrough = androidPlaysImportedThrough
         snapshot.pins = pins
+        snapshot.savedDates = savedDates
         return snapshot
     }
 
@@ -837,12 +877,15 @@ extension Library {
         liked += newLikes
         summary.likedSongs = newLikes.count
 
+        let now = Date()
         for album in backup.albums where !isSaved(album: album.id) {
             albums.insert(album, at: 0)
+            savedDates[Self.savedKey(album: album.id)] = now
             summary.saved += 1
         }
         for playlist in backup.savedPlaylists where !isSaved(playlist: playlist.id) {
             playlists.insert(playlist, at: 0)
+            savedDates[Self.savedKey(playlist: playlist.id)] = now
             summary.saved += 1
         }
 

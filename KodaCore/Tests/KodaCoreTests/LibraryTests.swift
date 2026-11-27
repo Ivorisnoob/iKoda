@@ -149,6 +149,40 @@ import Testing
         library.toggleSave(p)
         #expect(!library.isSaved(playlist: "PL1"))
     }
+
+    @Test func recentlyAddedMixesAlbumsAndPlaylistsByWhenTheyArrived() throws {
+        let dir = try tempDirectory()
+        let library = Library(directory: dir)
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        library.toggleSave(AlbumSummary(id: "MPRE1", title: "First", artistLine: "X"), at: start)
+        library.toggleSave(PlaylistSummary(id: "PL1", title: "Second"), at: start.addingTimeInterval(60))
+        library.toggleSave(AlbumSummary(id: "MPRE2", title: "Third", artistLine: "X"), at: start.addingTimeInterval(120))
+        #expect(library.recentlyAdded.map(\MusicItem.title) == ["Third", "Second", "First"])
+
+        // Saved again later, an album comes back to the front; the order survives a relaunch.
+        library.toggleSave(AlbumSummary(id: "MPRE1", title: "First", artistLine: "X"))
+        library.toggleSave(AlbumSummary(id: "MPRE1", title: "First", artistLine: "X"), at: start.addingTimeInterval(180))
+        library.flush()
+        #expect(Library(directory: dir).recentlyAdded.map(\MusicItem.title) == ["First", "Third", "Second"])
+    }
+
+    @Test func recentlyAddedPutsUndatedSavesAfterDatedOnesInTheirOwnOrder() throws {
+        let dir = try tempDirectory()
+        // A library from before Koda dated its saves.
+        var old = Library.Snapshot()
+        old.albums = [AlbumSummary(id: "MPRE1", title: "Old album 1", artistLine: "X"), AlbumSummary(id: "MPRE2", title: "Old album 2", artistLine: "X")]
+        old.playlists = [PlaylistSummary(id: "PL1", title: "Old playlist")]
+        try JSONEncoder().encode(old).write(to: dir.appending(path: "library.json"))
+
+        let library = Library(directory: dir)
+        library.toggleSave(PlaylistSummary(id: "PL2", title: "New playlist"))
+        library.mergeAccount(liked: [], albums: [AlbumSummary(id: "MPRE3", title: "From the account", artistLine: "X")],
+                             playlists: [], artists: [], at: .distantFuture)
+        #expect(library.recentlyAdded.map(\MusicItem.title) == ["From the account", "New playlist", "Old album 1", "Old album 2", "Old playlist"])
+
+        library.dropMissing(liked: nil, albums: ["MPRE1", "MPRE2"], playlists: nil, artists: nil)
+        #expect(library.savedDates.keys.sorted() == ["playlist:PL2"])
+    }
 }
 
 @MainActor

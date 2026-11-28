@@ -125,7 +125,58 @@ import Testing
         mirror.queue(.album(AlbumSummary(id: "MPRE1", title: "Al", artistLine: "X"), true))
         let data = try JSONEncoder().encode(mirror)
         #expect(try JSONDecoder().decode(AccountMirror.self, from: data) == mirror)
-        #expect(try JSONDecoder().decode(AccountMirror.self, from: Data("{}".utf8)) == AccountMirror())
+        // A mirror saved before likesSource existed was read from the Songs list.
+        var older = AccountMirror()
+        older.likesSource = 0
+        #expect(try JSONDecoder().decode(AccountMirror.self, from: Data("{}".utf8)) == older)
+    }
+
+    // MARK: Likes moving from the Songs list to Liked Music (#12)
+
+    /// A mirror read from the Songs list, as one saved before the move: `a` liked, `b` only
+    /// added to the library, both liked here.
+    func songsListMirror(_ library: Library) throws -> AccountMirror {
+        library.toggleLike(a)
+        library.toggleLike(b)
+        return try JSONDecoder().decode(AccountMirror.self, from: Data(#"{"liked":["a","b"]}"#.utf8))
+    }
+
+    @Test func movingToLikedMusicDropsNothing() throws {
+        let library = Library(directory: nil)
+        var mirror = try songsListMirror(library)
+        #expect(mirror.likesSource == 0)
+        // Liked Music holds only `a`; `b` was never liked, only in the Songs list.
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror)
+        #expect(Set(library.liked.map(\.id)) == ["a", "b"])
+        #expect(mirror.liked == ["a"])
+        #expect(mirror.likesSource == AccountMirror.likedMusic)
+    }
+
+    @Test func anUnlikeOfASongOnlyInTheSongsListStaysGone() throws {
+        let library = Library(directory: nil)
+        var mirror = try songsListMirror(library)
+        let start = Date()
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start)
+        library.toggleLike(b)
+        mirror.queue(.liked(b, false))
+        mirror.sent(.liked(b, false), at: start)
+        // Past the settling window the account's word stands, and Liked Music never held `b`.
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start + AccountMirror.settleTime + 1)
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror, at: start + 2 * AccountMirror.settleTime)
+        #expect(library.liked.map(\.id) == ["a"])
+    }
+
+    @Test func theMoveHappensOnce() throws {
+        let library = Library(directory: nil)
+        var mirror = try songsListMirror(library)
+        library.reconcile(with: AccountLibrary(liked: [a]), mirror: &mirror)
+        // Unliked on another device after the move: that unlike reaches here.
+        library.reconcile(with: AccountLibrary(), mirror: &mirror)
+        #expect(library.liked.map(\.id) == ["b"])
+    }
+
+    @Test func aNewMirrorStartsOnLikedMusic() {
+        #expect(AccountMirror().likesSource == AccountMirror.likedMusic)
     }
 
     @Test func mergingDoesNotTellOnChange() {

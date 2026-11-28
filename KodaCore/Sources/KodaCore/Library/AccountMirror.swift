@@ -42,6 +42,13 @@ public struct AccountMirror: Codable, Sendable, Equatable {
     /// change it took and then didn't keep isn't hidden for ever.
     public static let settleTime: TimeInterval = 60 * 60
 
+    /// Which list `liked` was read from. Mirrors saved before 1 were read from the library's
+    /// Songs list, which holds songs that were only added to the library, not liked; see
+    /// `Library.reconcile` for how a mirror moves to Liked Music.
+    public var likesSource: Int = AccountMirror.likedMusic
+    /// The Liked Music playlist, which `YouTubeMusic.likedSongs` reads.
+    public static let likedMusic = 1
+
     public init() {}
 
     public mutating func queue(_ change: LibraryChange) {
@@ -65,6 +72,8 @@ public struct AccountMirror: Codable, Sendable, Equatable {
         artists = try c.decodeIfPresent(Set<String>.self, forKey: .artists) ?? []
         pending = try c.decodeIfPresent([LibraryChange].self, forKey: .pending) ?? []
         settling = try c.decodeIfPresent([Settling].self, forKey: .settling) ?? []
+        // A mirror saved before the field existed was read from the Songs list.
+        likesSource = try c.decodeIfPresent(Int.self, forKey: .likesSource) ?? 0
     }
 
     /// Ids with a change the account hasn't shown yet (unsent, or sent and not read back), by
@@ -94,7 +103,16 @@ extension Library {
     /// anything with a change still waiting to be sent: an unlike made offline isn't liked again,
     /// a like made offline isn't dropped. Nor is either undone by a read that hasn't caught up
     /// with a change already sent (`AccountMirror.settling`).
+    ///
+    /// The first sync after likes moved from the Songs list to Liked Music forgets the old
+    /// liked set before comparing, so nothing is dropped for being on one list and not the
+    /// other. A song that was in the Songs list without a like stays here as a like of this
+    /// device's own, the same as one liked while signed out; unliking it here removes it for good.
     public func reconcile(with account: AccountLibrary, mirror: inout AccountMirror, at now: Date = Date()) {
+        if mirror.likesSource < AccountMirror.likedMusic {
+            mirror.liked = []
+            mirror.likesSource = AccountMirror.likedMusic
+        }
         mirror.settle(with: account, at: now)
         func incoming<T: Identifiable>(_ items: [T], _ kind: LibraryChange.Kind) -> [T] where T.ID == String {
             let removedHere = mirror.unsent(kind, adding: false)

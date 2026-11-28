@@ -208,6 +208,9 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
                     UpdateCheckRow()
+                    #if os(iOS)
+                    NavigationLink("Widget Taps") { WidgetTapsView() }
+                    #endif
                     Link(destination: URL(string: "https://github.com/Ivorisnoob/iKoda")!) {
                         Label("Koda on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                     }

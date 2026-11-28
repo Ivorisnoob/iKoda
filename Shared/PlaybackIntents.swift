@@ -12,7 +12,9 @@ nonisolated enum IntentLog {
 
 // Intents the widgets and Control Center use, compiled into the app and the widget extension
 // alike. They're audio intents, so the system performs them in the app, starting it in the
-// background if it isn't running: the extension's copies only name them and never run.
+// background if it isn't running. The extension's copies were meant never to run; since iOS
+// 27.2.1 left most widget buttons doing nothing (issue #10), they note the tap and hand it to
+// the app (`WidgetTaps`), which runs it once whichever copy the system picked.
 
 /// Liked songs, shuffled by default. From Siri, Shortcuts, widgets and Control Center.
 struct PlayLikedSongsIntent: AudioPlaybackIntent {
@@ -33,16 +35,20 @@ struct PlayLikedSongsIntent: AudioPlaybackIntent {
     }
 
     #if WIDGET_EXTENSION
-    func perform() async throws -> some IntentResult { .result() }
+    func perform() async throws -> some IntentResult {
+        WidgetTaps.extensionReceived(.playLiked, shuffle: shuffle)
+        return .result()
+    }
     #else
     @Dependency private var app: AppModel
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         IntentLog.logger.notice("PlayLikedSongsIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
-        let songs = app.library.liked
-        guard !songs.isEmpty else { return .result(dialog: "You haven't liked any songs in Koda yet.") }
-        app.player.play(songs, startAt: shuffle ? Int.random(in: 0..<songs.count) : 0, shuffled: shuffle)
+        guard !app.library.liked.isEmpty else { return .result(dialog: "You haven't liked any songs in Koda yet.") }
+        if WidgetTapRelay.shared.ranInApp(.playLiked) {
+            WidgetTaps.Action.playLiked.run(on: app, shuffle: shuffle)
+        }
         return .result(dialog: "Playing your liked songs.")
     }
     #endif
@@ -56,20 +62,17 @@ struct TogglePlaybackIntent: AudioPlaybackIntent {
     init() {}
 
     #if WIDGET_EXTENSION
-    func perform() async throws -> some IntentResult { .result() }
+    func perform() async throws -> some IntentResult {
+        WidgetTaps.extensionReceived(.toggle)
+        return .result()
+    }
     #else
     @Dependency private var app: AppModel
 
     @MainActor
     func perform() async throws -> some IntentResult {
         IntentLog.logger.notice("TogglePlaybackIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
-        let player = app.player
-        if player.current != nil {
-            player.togglePlayPause(from: "a shortcut or widget")
-        } else if !app.library.liked.isEmpty {
-            let songs = app.library.liked
-            player.play(songs, startAt: Int.random(in: 0..<songs.count), shuffled: true)
-        }
+        if WidgetTapRelay.shared.ranInApp(.toggle) { WidgetTaps.Action.toggle.run(on: app) }
         return .result()
     }
     #endif
@@ -83,14 +86,17 @@ struct NextSongIntent: AudioPlaybackIntent {
     init() {}
 
     #if WIDGET_EXTENSION
-    func perform() async throws -> some IntentResult { .result() }
+    func perform() async throws -> some IntentResult {
+        WidgetTaps.extensionReceived(.next)
+        return .result()
+    }
     #else
     @Dependency private var app: AppModel
 
     @MainActor
     func perform() async throws -> some IntentResult {
         IntentLog.logger.notice("NextSongIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
-        app.player.next()
+        if WidgetTapRelay.shared.ranInApp(.next) { WidgetTaps.Action.next.run(on: app) }
         return .result()
     }
     #endif
@@ -104,14 +110,17 @@ struct PreviousSongIntent: AudioPlaybackIntent {
     init() {}
 
     #if WIDGET_EXTENSION
-    func perform() async throws -> some IntentResult { .result() }
+    func perform() async throws -> some IntentResult {
+        WidgetTaps.extensionReceived(.previous)
+        return .result()
+    }
     #else
     @Dependency private var app: AppModel
 
     @MainActor
     func perform() async throws -> some IntentResult {
         IntentLog.logger.notice("PreviousSongIntent: \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
-        app.player.previous()
+        if WidgetTapRelay.shared.ranInApp(.previous) { WidgetTaps.Action.previous.run(on: app) }
         return .result()
     }
     #endif
@@ -134,20 +143,52 @@ struct PlayRecentSongIntent: AudioPlaybackIntent {
     }
 
     #if WIDGET_EXTENSION
-    func perform() async throws -> some IntentResult { .result() }
+    func perform() async throws -> some IntentResult {
+        WidgetTaps.extensionReceived(.playRecent, songId: songId)
+        return .result()
+    }
     #else
     @Dependency private var app: AppModel
 
     @MainActor
     func perform() async throws -> some IntentResult {
         IntentLog.logger.notice("PlayRecentSongIntent (song \(songId, privacy: .public)): \(app.player.current == nil ? "nothing queued" : "playing", privacy: .public)")
-        let library = app.library
-        if let song = library.recent.first(where: { $0.id == songId }) ?? library.history.first(where: { $0.song.id == songId })?.song {
-            app.player.play([song], startAt: 0)
-        } else {
-            IntentLog.logger.error("PlayRecentSongIntent: \(songId, privacy: .public) isn't in this profile's recent songs")
-        }
+        if WidgetTapRelay.shared.ranInApp(.playRecent) { WidgetTaps.Action.playRecent.run(on: app, songId: songId) }
         return .result()
     }
     #endif
 }
+
+#if !WIDGET_EXTENSION
+extension WidgetTaps.Action {
+    /// What each intent does in the app: from the app's own copy of the intent, and for a tap
+    /// the widget extension handed over (`WidgetTapRelay`).
+    @MainActor
+    func run(on app: AppModel, shuffle: Bool = true, songId: String? = nil) {
+        let player = app.player
+        let liked = app.library.liked
+        switch self {
+        case .playLiked:
+            guard !liked.isEmpty else { return }
+            player.play(liked, startAt: shuffle ? Int.random(in: 0..<liked.count) : 0, shuffled: shuffle)
+        case .toggle:
+            if player.current != nil {
+                player.togglePlayPause(from: "a shortcut or widget")
+            } else if !liked.isEmpty {
+                player.play(liked, startAt: Int.random(in: 0..<liked.count), shuffled: true)
+            }
+        case .next:
+            player.next()
+        case .previous:
+            player.previous()
+        case .playRecent:
+            let library = app.library
+            if let songId, let song = library.recent.first(where: { $0.id == songId }) ?? library.history.first(where: { $0.song.id == songId })?.song {
+                player.play([song], startAt: 0)
+            } else {
+                IntentLog.logger.error("PlayRecentSongIntent: \(songId ?? "no id", privacy: .public) isn't in this profile's recent songs")
+            }
+        }
+    }
+}
+#endif

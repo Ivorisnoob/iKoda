@@ -19,13 +19,29 @@ extension YouTubeMusic {
     /// Liked songs, newest first, every page up to `limit`. All or nothing: a page that
     /// fails throws rather than returning part of the list, which a sync would read as
     /// unlikes.
+    ///
+    /// Read from the Liked Music playlist (`LM`), not the library's Songs list
+    /// (`FEmusic_liked_videos`). The Songs list also holds songs added to the library without
+    /// a like, and an unlike leaves them there, so reading it made an unliked song come back
+    /// as liked at the next sync (#12).
     public func likedSongs(limit: Int = 5000) async throws -> [Song] {
-        let items = try await library("FEmusic_liked_videos", limit: limit)
-        return items.compactMap { if case .song(let song) = $0 { return song }; return nil }
+        var root = try await api.music("browse", ["browseId": "VLLM"], signing: .required)
+        var songs = Pages.playlistSongs(root)
+        var token = Pages.playlistContinuation(root)
+        var seen = Set<String>()
+        // 100 rows a page: 80 pages is past any library, so a chain that long isn't ending.
+        while let current = token, songs.count < limit, seen.count < 80, seen.insert(current).inserted {
+            try Task.checkCancellation()
+            root = try await api.music("browse", ["continuation": current], signing: .required)
+            songs += Pages.playlistSongs(root)
+            let next = Pages.playlistContinuation(root)
+            token = next == current ? nil : next
+        }
+        return Array(Pages.dedupe(songs).prefix(limit))
     }
 
     /// Playlists in the library: the account's own and ones it saved. Liked Music and
-    /// Episodes for Later are left out; liked songs come from `likedSongs`.
+    /// Episodes for Later are left out; liked songs come from `likedSongs`, which reads Liked Music itself.
     public func libraryPlaylists() async throws -> [PlaylistSummary] {
         try await library("FEmusic_liked_playlists").compactMap {
             if case .playlist(let p) = $0, p.id != "LM", p.id != "SE" { return p }

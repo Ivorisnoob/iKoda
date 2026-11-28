@@ -20,6 +20,8 @@ struct KodaApp: App {
         // Siri and Shortcuts reach the app's objects through this, also when an intent starts
         // the app in the background.
         AppDependencyManager.shared.add(dependency: model)
+        // Widget taps the extension saw and the app didn't (issue #10).
+        WidgetTapRelay.shared.start(app: model)
         #if os(macOS)
         KodaMacAppDelegate.model = model
         #endif
